@@ -15,6 +15,7 @@ mfem.lib    = $(mfem.prefix)/lib/libmfem.a
 mfem.build  = $(mfem.prefix)/build
 
 exe = mmp-$(SYS_TYPE)
+src = src/main.cpp
 
 .DEFAULT_GOAL := $(exe)
 
@@ -26,7 +27,7 @@ $(mfem.lib): $(mfem.exists)
 	$(MAKE) -C mfem config $(mfem.opts) MFEM_STATIC=YES MFEM_CXX=$(cxx) MFEM_CXXFLAGS="$(cxxflags)" BUILD_DIR=$(mfem.build) PREFIX=$(mfem.prefix) $(cfg)
 	$(MAKE) -C $(mfem.build) install
 
-$(exe): mmp.cpp $(mfem.lib)
+$(exe): $(src) $(mfem.lib)
 	$(cxx) $(cxxflags) $< -I$(mfem.prefix)/include -L$(mfem.prefix)/lib -lmfem -o $@
 
 clean:
@@ -35,7 +36,7 @@ clean:
 	rm -rf $(mfem.prefix)
 
 format:
-	clang-format -i mmp.cpp
+	clang-format -i $(src)
 
 info:
 	@echo "compiler = $(cxx)"

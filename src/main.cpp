@@ -1,49 +1,16 @@
-#include <mfem.hpp>
-#include <mfem/general/forall.hpp>
-#include <mfem/linalg/dtensor.hpp>
 #include <stdio.h>
 #include <stdlib.h>
 #include <vector>
 
+#include "mfem.hpp"
+#include "mfem/general/forall.hpp"
+#include "mfem/linalg/dtensor.hpp"
+
+#include "eos.hpp"
+#include "eos_idealgas.hpp"
+
 #define RESHAPE_TENSOR(m, op) mfem::Reshape(m.op(), m.SizeI(), m.SizeJ(), m.SizeK())
 
-struct EOS
-{
-   virtual void Eval(const int length,
-                     const double *density,
-                     const double *energy,
-                     double *pressure,
-                     double *soundspeed2,
-                     double *bulkmod,
-                     double *temperature) = 0;
-};
-
-struct IdealGas : public EOS
-{
-   const double gamma_;
-   const double specific_heat_;
-
-   IdealGas(double gamma, double specific_heat) : gamma_(gamma), specific_heat_(specific_heat) {}
-
-   void Eval(const int length,
-             const double *density,
-             const double *energy,
-             double *pressure,
-             double *soundspeed2,
-             double *bulkmod,
-             double *temperature) override
-   {
-      const double gamma         = gamma_;
-      const double specific_heat = specific_heat_;
-      using mfem::ForallWrap;
-      MFEM_FORALL(i, length, {
-         pressure[i]    = (gamma - 1) * density[i] * energy[i];
-         soundspeed2[i] = gamma * (gamma - 1) * energy[i];
-         bulkmod[i]     = gamma * pressure[i];
-         temperature[i] = energy[i] / specific_heat;
-      });
-   }
-};
 
 double unitrand() { return (double)rand() / RAND_MAX; }
 
