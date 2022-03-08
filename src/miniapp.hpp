@@ -48,8 +48,8 @@ public:
     }
 
     ~MiniApp() {
-        for (int k = 0; k < num_mats; ++k) {
-            delete eoses[k];
+        for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
+            delete eoses[mat_idx];
         }
     }
 
@@ -74,94 +74,91 @@ public:
         const auto d_bulkmod     = RESHAPE_TENSOR(bulkmod, Write);
         const auto d_temperature = RESHAPE_TENSOR(temperature, Write);
 
-        for (int k = 0; k < num_mats; ++k) {
+        for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
 
-            int num_elems_k = 0;
-            for (int i = 0; i < num_elems; ++i) {
-                num_elems_k += indicators(i, k);
+            int num_elems_for_mat = 0;
+            for (int elem_idx = 0; elem_idx < num_elems; ++elem_idx) {
+                num_elems_for_mat += indicators(elem_idx, mat_idx);
             }
 
-            if (num_elems_k == 0) {
+            if (num_elems_for_mat == 0) {
                 continue;
             }
 
             // NOTE: we've found it's faster to do sparse lookups on GPUs but on CPUs the dense
             // packing->looked->unpacking is better if we're using expensive eoses. in the future
             // we may just use dense representations everywhere but for now we use sparse ones.
-            else if (is_cpu && pack_sparse_mats && num_elems_k < num_elems) {
+            else if (is_cpu && pack_sparse_mats && num_elems_for_mat < num_elems) {
 
-                printf(" material %d: using sparse packing for %lu elems\n", k, num_elems_k);
+                printf(" material %d: using sparse packing for %lu elems\n", mat_idx, num_elems_for_mat);
 
+                // compute sparse indices
                 using mfem::ForallWrap;
-                mfem::Array<int> sparse_index(num_elems_k);
-                for (int i = 0, nz = 0; i < num_elems; ++i) {
-                    if (indicators(i, k)) {
-                        sparse_index[nz++] = i;
+                mfem::Array<int> sparse_index(num_elems_for_mat);
+                for (int elem_idx = 0, nz = 0; elem_idx < num_elems; ++elem_idx) {
+                    if (indicators(elem_idx, mat_idx)) {
+                        sparse_index[nz++] = elem_idx;
                     }
                 }
 
                 const auto *d_sparse_index = sparse_index.Read();
 
-                mfem::Array<double> dense_density(num_elems_k * num_qpts);
-                mfem::Array<double> dense_energy(num_elems_k * num_qpts);
+                mfem::Array<double> dense_density(num_elems_for_mat * num_qpts);
+                mfem::Array<double> dense_energy(num_elems_for_mat * num_qpts);
 
-                auto d_dense_density = mfem::Reshape(dense_density.Write(), num_qpts, num_elems_k);
-                auto d_dense_energy = mfem::Reshape(dense_energy.Write(), num_qpts, num_elems_k);
+                auto d_dense_density = mfem::Reshape(dense_density.Write(), num_qpts, num_elems_for_mat);
+                auto d_dense_energy = mfem::Reshape(dense_energy.Write(), num_qpts, num_elems_for_mat);
 
                 // sparse -> dense
-                MFEM_FORALL(i, num_elems_k, {
-                    const int sparse_i = d_sparse_index[i];
-                    for (int j = 0; j < num_qpts; ++j)
+                MFEM_FORALL(elem_idx, num_elems_for_mat, {
+                    const int sparse_elem_idx = d_sparse_index[elem_idx];
+                    for (int qpt_idx = 0; qpt_idx < num_qpts; ++qpt_idx)
                     {
-                        d_dense_density(j, i) = d_density(j, sparse_i, k);
-                        d_dense_energy(j, i)  = d_energy(j, sparse_i, k);
+                        d_dense_density(qpt_idx, elem_idx) = d_density(qpt_idx, sparse_elem_idx, mat_idx);
+                        d_dense_energy(qpt_idx, elem_idx)  = d_energy(qpt_idx, sparse_elem_idx, mat_idx);
                     }
                 });
 
-                mfem::Array<double> dense_pressure(num_elems_k * num_qpts);
-                mfem::Array<double> dense_soundspeed2(num_elems_k * num_qpts);
-                mfem::Array<double> dense_bulkmod(num_elems_k * num_qpts);
-                mfem::Array<double> dense_temperature(num_elems_k * num_qpts);
+                mfem::Array<double> dense_pressure(num_elems_for_mat * num_qpts);
+                mfem::Array<double> dense_soundspeed2(num_elems_for_mat * num_qpts);
+                mfem::Array<double> dense_bulkmod(num_elems_for_mat * num_qpts);
+                mfem::Array<double> dense_temperature(num_elems_for_mat * num_qpts);
 
-                auto d_dense_pressure = mfem::Reshape(dense_pressure.Write(), num_qpts, num_elems_k);
-                auto d_dense_soundspeed2 = mfem::Reshape(dense_soundspeed2.Write(),
-                                                         num_qpts,
-                                                         num_elems_k);
-                auto d_dense_bulkmod = mfem::Reshape(dense_bulkmod.Write(), num_qpts, num_elems_k);
-                auto d_dense_temperature = mfem::Reshape(dense_temperature.Write(),
-                                                         num_qpts,
-                                                         num_elems_k);
+                auto d_dense_pressure = mfem::Reshape(dense_pressure.Write(), num_qpts, num_elems_for_mat);
+                auto d_dense_soundspeed2 = mfem::Reshape(dense_soundspeed2.Write(), num_qpts, num_elems_for_mat);
+                auto d_dense_bulkmod = mfem::Reshape(dense_bulkmod.Write(), num_qpts, num_elems_for_mat);
+                auto d_dense_temperature = mfem::Reshape(dense_temperature.Write(), num_qpts, num_elems_for_mat);
 
-                eoses[k]->Eval(num_elems_k * num_qpts,
-                                       &d_dense_density(0, 0),
-                                       &d_dense_energy(0, 0),
-                                       &d_dense_pressure(0, 0),
-                                       &d_dense_soundspeed2(0, 0),
-                                       &d_dense_bulkmod(0, 0),
-                                       &d_dense_temperature(0, 0));
+                eoses[mat_idx]->Eval(num_elems_for_mat * num_qpts,
+                                     &d_dense_density(0, 0),
+                                     &d_dense_energy(0, 0),
+                                     &d_dense_pressure(0, 0),
+                                     &d_dense_soundspeed2(0, 0),
+                                     &d_dense_bulkmod(0, 0),
+                                     &d_dense_temperature(0, 0));
 
                 // dense -> sparse
-                MFEM_FORALL(i, num_elems_k, {
-                   const int sparse_i = d_sparse_index[i];
-                   for (int j = 0; j < num_qpts; ++j)
+                MFEM_FORALL(elem_idx, num_elems_for_mat, {
+                   const int sparse_elem_idx = d_sparse_index[elem_idx];
+                   for (int qpt_idx = 0; qpt_idx < num_qpts; ++qpt_idx)
                    {
-                      d_pressure(j, sparse_i, k)    = d_dense_pressure(j, i);
-                      d_soundspeed2(j, sparse_i, k) = d_dense_soundspeed2(j, i);
-                      d_bulkmod(j, sparse_i, k)     = d_dense_bulkmod(j, i);
-                      d_temperature(j, sparse_i, k) = d_dense_temperature(j, i);
+                      d_pressure(qpt_idx, sparse_elem_idx, mat_idx)    = d_dense_pressure(qpt_idx, elem_idx);
+                      d_soundspeed2(qpt_idx, sparse_elem_idx, mat_idx) = d_dense_soundspeed2(qpt_idx, elem_idx);
+                      d_bulkmod(qpt_idx, sparse_elem_idx, mat_idx)     = d_dense_bulkmod(qpt_idx, elem_idx);
+                      d_temperature(qpt_idx, sparse_elem_idx, mat_idx) = d_dense_temperature(qpt_idx, elem_idx);
                    }
                 });
          }
 
             else {
-                printf(" material %d: using dense packing for %lu elems\n", k, num_elems_k);
-                eoses[k]->Eval(num_elems * num_qpts,
-                               &d_density(0, 0, k),
-                               &d_energy(0, 0, k),
-                               &d_pressure(0, 0, k),
-                               &d_soundspeed2(0, 0, k),
-                               &d_bulkmod(0, 0, k),
-                               &d_temperature(0, 0, k));
+                printf(" material %d: using dense packing for %lu elems\n", mat_idx, num_elems_for_mat);
+                eoses[mat_idx]->Eval(num_elems * num_qpts,
+                                     &d_density(0, 0, mat_idx),
+                                     &d_energy(0, 0, mat_idx),
+                                     &d_pressure(0, 0, mat_idx),
+                                     &d_soundspeed2(0, 0, mat_idx),
+                                     &d_bulkmod(0, 0, mat_idx),
+                                     &d_temperature(0, 0, mat_idx));
             }
         }
     }
@@ -172,11 +169,12 @@ public:
                       const std::string &label) {
 
         printf("-- printing tensor (%s)\n", label.c_str());
-        for (int m = 0; m < num_mats; ++m) {
-            for (int e = 0; e < num_elems; ++e) {
-                if (indicators(e, m)) {
-                    for (int q = 0; q < num_qpts; ++q) {
-                        printf("%s[%d][%d][%d] = %f\n", label.c_str(), q, e, m, values(q,e,m));
+        for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
+            for (int elem_idx = 0; elem_idx < num_elems; ++elem_idx) {
+                if (indicators(elem_idx, mat_idx)) {
+                    for (int qpt_idx = 0; qpt_idx < num_qpts; ++qpt_idx) {
+                        printf("%s[%d][%d][%d] = %f\n", label.c_str(),
+                               qpt_idx, elem_idx, mat_idx, values(qpt_idx,elem_idx,mat_idx));
                     }
                 }
             }

@@ -28,9 +28,9 @@ int main(int argc, char **argv) {
     printf("\n");
 
     // setup eos
-    for (int k = 0; k < miniapp.num_mats; ++k)
+    for (int mat_idx = 0; mat_idx < miniapp.num_mats; ++mat_idx)
     {
-        miniapp.eoses[k] = new IdealGas(1.6, 1.4);
+        miniapp.eoses[mat_idx] = new IdealGas(1.6, 1.4);
     }
 
     // setup indicators
@@ -39,22 +39,19 @@ int main(int argc, char **argv) {
 
     // only needed on host
     auto indicators = mfem::Reshape(indicators_arr.HostReadWrite(), miniapp.num_elems, miniapp.num_mats);
-    for (int k = 0; k < miniapp.num_mats; ++k)
-    {
+    for (int mat_idx = 0; mat_idx < miniapp.num_mats; ++mat_idx) {
+
         // min ratio if empty_element_ratio is -1
         const double min_ratio = .2;
         const double ratio     = miniapp.empty_element_ratio == -1 ? unitrand() * (1 - min_ratio) + min_ratio
-                                                                    : 1 - miniapp.empty_element_ratio;
+                                                                   : 1 - miniapp.empty_element_ratio;
         const int num_nonzero_elems = ratio * miniapp.num_elems;
-        printf("using %d/%d elements for material %d\n", num_nonzero_elems, miniapp.num_elems, k);
+        printf("using %d/%d elements for material %d\n", num_nonzero_elems, miniapp.num_elems, mat_idx);
 
-        for (int i = 0, nz = 0; i < miniapp.num_elems; ++i)
-        {
-            if (nz < num_nonzero_elems)
-            {
-                if (((num_nonzero_elems - nz) == (miniapp.num_elems - i)) || unitrand() <= ratio)
-                {
-                    indicators(i, k) = true;
+        for (int elem_idx = 0, nz = 0; elem_idx < miniapp.num_elems; ++elem_idx) {
+            if (nz < num_nonzero_elems) {
+                if (((num_nonzero_elems - nz) == (miniapp.num_elems - elem_idx)) || unitrand() <= ratio) {
+                    indicators(elem_idx, mat_idx) = true;
                     nz++;
                 }
             }
@@ -71,23 +68,18 @@ int main(int argc, char **argv) {
     mfem::DenseTensor bulkmod(miniapp.num_qpts, miniapp.num_elems, miniapp.num_mats);
     mfem::DenseTensor temperature(miniapp.num_qpts, miniapp.num_elems, miniapp.num_mats);
 
+    // init inputs
     density = 0;
     energy = 0;
 
-    // init inputs
     // TODO: what are good initial values?
-    for (int k = 0; k < miniapp.num_mats; ++k)
-    {
-        for (int i = 0; i < miniapp.num_elems; ++i)
-        {
-            if (!indicators(i, k))
-            {
-                continue;
-            }
-            for (int j = 0; j < miniapp.num_qpts; ++j)
-            {
-                density(j, i, k) = .1 + unitrand();
-                energy(j, i, k)  = .1 + unitrand();
+    for (int mat_idx = 0; mat_idx < miniapp.num_mats; ++mat_idx) {
+        for (int elem_idx = 0; elem_idx < miniapp.num_elems; ++elem_idx) {
+            if (indicators(elem_idx, mat_idx)) {
+                for (int qpt_idx = 0; qpt_idx < miniapp.num_qpts; ++qpt_idx) {
+                    density(qpt_idx, elem_idx, mat_idx) = .1 + unitrand();
+                    energy(qpt_idx, elem_idx, mat_idx)  = .1 + unitrand();
+                }
             }
         }
     }
@@ -102,7 +94,6 @@ int main(int argc, char **argv) {
         miniapp.evaluate(density, energy, indicators,
                          pressure, soundspeed2, bulkmod, temperature);
     }
-
 
     //miniapp.print_tensor(pressure, indicators, "pressure");
     return 0;
