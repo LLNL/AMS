@@ -7,6 +7,7 @@
 
 #include "eos.hpp"
 #include "eos_idealgas.hpp"
+#include "surrogate.hpp"
 #include "miniapp.hpp"
 
 double unitrand() { return (double)rand() / RAND_MAX; }
@@ -31,6 +32,7 @@ int main(int argc, char **argv) {
     for (int mat_idx = 0; mat_idx < miniapp.num_mats; ++mat_idx)
     {
         miniapp.eoses[mat_idx] = new IdealGas(1.6, 1.4);
+        miniapp.surrogates[mat_idx] = new SurrogateModel(1.6, 1.4);
     }
 
     // setup indicators

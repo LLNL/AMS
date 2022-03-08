@@ -8,6 +8,7 @@
 #include "mfem/linalg/dtensor.hpp"
 
 #include "eos.hpp"
+#include "surrogate.hpp"
 
 #define RESHAPE_TENSOR(m, op) mfem::Reshape(m.op(), m.SizeI(), m.SizeJ(), m.SizeK())
 
@@ -29,6 +30,7 @@ public:
     bool is_cpu                = true;
 
     std::vector<EOS *> eoses;
+    std::vector<SurrogateModel *> surrogates;
 
     // -------------------------------------------------------------------------
     // constructor and destructor
@@ -45,11 +47,13 @@ public:
 
         // setup eos
         eoses.resize(num_mats, nullptr);
+        surrogates.resize(num_mats, nullptr);
     }
 
     ~MiniApp() {
         for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
             delete eoses[mat_idx];
+            delete surrogates[mat_idx];
         }
     }
 
@@ -129,6 +133,23 @@ public:
                 auto d_dense_bulkmod = mfem::Reshape(dense_bulkmod.Write(), num_qpts, num_elems_for_mat);
                 auto d_dense_temperature = mfem::Reshape(dense_temperature.Write(), num_qpts, num_elems_for_mat);
 
+
+                // create for uq flags
+                // ask Tom about the memory management for this
+                // should we create this memory again and again?
+                mfem::Array<bool> dense_uq(num_elems_for_mat * num_qpts);
+                auto d_dense_uq = mfem::Reshape(dense_uq.Write(), num_qpts, num_elems_for_mat);
+
+                surrogates[mat_idx]->Eval_with_uq(num_elems_for_mat * num_qpts,
+                                                  &d_dense_density(0, 0),
+                                                  &d_dense_energy(0, 0),
+                                                  &d_dense_pressure(0, 0),
+                                                  &d_dense_soundspeed2(0, 0),
+                                                  &d_dense_bulkmod(0, 0),
+                                                  &d_dense_temperature(0, 0),
+                                                  &d_dense_uq(0, 0));
+
+                // TODO: how to slice the data based on uq flag?
                 eoses[mat_idx]->Eval(num_elems_for_mat * num_qpts,
                                      &d_dense_density(0, 0),
                                      &d_dense_energy(0, 0),
