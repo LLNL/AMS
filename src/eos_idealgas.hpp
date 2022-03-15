@@ -20,7 +20,7 @@ public:
              double *pressure,
              double *soundspeed2,
              double *bulkmod,
-             double *temperature) override
+             double *temperature) const override
    {
       const double gamma         = gamma_;
       const double specific_heat = specific_heat_;

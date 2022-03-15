@@ -9,6 +9,7 @@
 
 #include "eos.hpp"
 #include "surrogate.hpp"
+#include "hdcache.hpp"
 
 #define RESHAPE_TENSOR(m, op) mfem::Reshape(m.op(), m.SizeI(), m.SizeJ(), m.SizeK())
 
@@ -30,6 +31,9 @@ public:
     bool is_cpu                = true;
 
     std::vector<EOS *> eoses;
+
+    // added to include ML
+    std::vector<HDCache *> hdcaches;
     std::vector<SurrogateModel *> surrogates;
 
     // -------------------------------------------------------------------------
@@ -47,12 +51,14 @@ public:
 
         // setup eos
         eoses.resize(num_mats, nullptr);
+        hdcaches.resize(num_mats, nullptr);
         surrogates.resize(num_mats, nullptr);
     }
 
     ~MiniApp() {
         for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
             delete eoses[mat_idx];
+            delete hdcaches[mat_idx];
             delete surrogates[mat_idx];
         }
     }
@@ -140,16 +146,33 @@ public:
                 mfem::Array<bool> dense_uq(num_elems_for_mat * num_qpts);
                 auto d_dense_uq = mfem::Reshape(dense_uq.Write(), num_qpts, num_elems_for_mat);
 
-                surrogates[mat_idx]->Eval_with_uq(num_elems_for_mat * num_qpts,
-                                                  &d_dense_density(0, 0),
-                                                  &d_dense_energy(0, 0),
-                                                  &d_dense_pressure(0, 0),
-                                                  &d_dense_soundspeed2(0, 0),
-                                                  &d_dense_bulkmod(0, 0),
-                                                  &d_dense_temperature(0, 0),
-                                                  &d_dense_uq(0, 0));
 
-                // TODO: how to slice the data based on uq flag?
+                // STEP 1:
+                // call the hdcache to look at input uncertainties
+                // to decide if making a ML inference makes sense
+                hdcaches[mat_idx]->Eval(num_elems_for_mat * num_qpts,
+                                                &d_dense_density(0, 0),
+                                                &d_dense_energy(0, 0),
+                                                &d_dense_uq(0, 0));
+
+                // STEP 2:
+                // slide the data based on d_dense_uq flag
+                // TODO: need help from Tom
+
+
+                // STEP 3a:
+                // for d_dense_uq = False, we call surrogate
+                surrogates[mat_idx]->Eval(num_elems_for_mat * num_qpts,
+                                          &d_dense_density(0, 0),
+                                          &d_dense_energy(0, 0),
+                                          &d_dense_pressure(0, 0),
+                                          &d_dense_soundspeed2(0, 0),
+                                          &d_dense_bulkmod(0, 0),
+                                          &d_dense_temperature(0, 0));
+
+
+                // STEP 3b:
+                // for d_dense_uq = True, we call physics
                 eoses[mat_idx]->Eval(num_elems_for_mat * num_qpts,
                                      &d_dense_density(0, 0),
                                      &d_dense_energy(0, 0),

@@ -29,10 +29,11 @@ int main(int argc, char **argv) {
     printf("\n");
 
     // setup eos
+    IdealGas *temp_eos = new IdealGas(1.6, 1.4);
     for (int mat_idx = 0; mat_idx < miniapp.num_mats; ++mat_idx)
     {
         miniapp.eoses[mat_idx] = new IdealGas(1.6, 1.4);
-        miniapp.surrogates[mat_idx] = new SurrogateModel(1.6, 1.4);
+        miniapp.surrogates[mat_idx] = new SurrogateModel(temp_eos);
     }
 
     // setup indicators

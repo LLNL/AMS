@@ -8,10 +8,10 @@
 //! An implementation for a surrogate model
 class SurrogateModel : public EOS {
 
-    IdealGas _temp_eos;
+    const IdealGas *base_eos;
 
 public:
-    SurrogateModel(double gamma, double specific_heat) : _temp_eos(gamma, specific_heat) {}
+    SurrogateModel(const IdealGas *_base_eos) : base_eos(_base_eos) {}
 
     void Eval_with_uq(const int length,
                       const double *density,
@@ -20,15 +20,15 @@ public:
                       double *soundspeed2,
                       double *bulkmod,
                       double *temperature,
-                      bool *is_acceptable) {
+                      bool *is_acceptable)  const {
 
         // fill in random values for uq
         const double uq_factor = 0.5;
-        for(int i = 0; i < l; i++) {
+        for(int i = 0; i < length; i++) {
             is_acceptable[i] = ((double)rand() / RAND_MAX) <= uq_factor;
         }
 
-        _temp_eos.Eval(length, density, energy, pressure, soundspeed2, bulkmod, temperature);
+        base_eos->Eval(length, density, energy, pressure, soundspeed2, bulkmod, temperature);
     }
 
     void Eval(const int length,
@@ -37,12 +37,12 @@ public:
               double *pressure,
               double *soundspeed2,
               double *bulkmod,
-              double *temperature) override {
+              double *temperature)  const override {
 
         // this is where we will call the surrogate model
         // through tensorflow or torch
         // currently, we will just use the ideal gas eos
-        _temp_eos.Eval(length, density, energy, pressure, soundspeed2, bulkmod, temperature);
+        base_eos->Eval(length, density, energy, pressure, soundspeed2, bulkmod, temperature);
     }
 };
 

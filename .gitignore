@@ -1,3 +1,7 @@
 mmp-*
 mfem
 build
+
+*.DS_Store
+Makefile.user
+src/*.autosave

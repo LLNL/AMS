@@ -13,7 +13,7 @@ public:
                      double *pressure,
                      double *soundspeed2,
                      double *bulkmod,
-                     double *temperature) = 0;
+                     double *temperature) const = 0;
 };
 
 #endif
