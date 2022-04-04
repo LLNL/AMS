@@ -10,6 +10,7 @@
 #include "eos.hpp"
 #include "surrogate.hpp"
 #include "hdcache.hpp"
+#include "basedb.hpp"
 
 #define RESHAPE_TENSOR(m, op) mfem::Reshape(m.op(), m.SizeI(), m.SizeJ(), m.SizeK())
 
@@ -36,6 +37,10 @@ public:
     std::vector<HDCache *> hdcaches;
     std::vector<SurrogateModel *> surrogates;
 
+    // Added to include an offline DB
+    // (currently implemented as a file)
+    BaseDB *DB;
+
     // -------------------------------------------------------------------------
     // constructor and destructor
     // -------------------------------------------------------------------------
@@ -45,6 +50,11 @@ public:
         bool success = _parse_args(argc, argv);
         if (!success) {
             exit(1);
+        }
+
+        DB = new BaseDB("miniApp_data.txt");
+        if ( !DB ){
+            std::cout << "Cannot create static database\n";
         }
 
         is_cpu = std::string(device_name) == "cpu";
@@ -61,6 +71,7 @@ public:
             delete hdcaches[mat_idx];
             delete surrogates[mat_idx];
         }
+        delete DB;
     }
 
 
@@ -161,7 +172,7 @@ public:
 
 
                 // STEP 3a:
-                // for d_dense_uq = False, we call surrogate
+                // for d_dense_uq = True, we call surrogate
                 surrogates[mat_idx]->Eval(num_elems_for_mat * num_qpts,
                                           &d_dense_density(0, 0),
                                           &d_dense_energy(0, 0),
@@ -169,10 +180,17 @@ public:
                                           &d_dense_soundspeed2(0, 0),
                                           &d_dense_bulkmod(0, 0),
                                           &d_dense_temperature(0, 0));
-
-
                 // STEP 3b:
-                // for d_dense_uq = True, we call physics
+                // for d_dense_uq = False we store into DB.
+                double *inputs[] = {&d_dense_density(0, 0), &d_dense_energy(0, 0)};
+
+                double *outputs[] = {&d_dense_pressure(0, 0),
+                                     &d_dense_soundspeed2(0, 0),
+                                     &d_dense_bulkmod(0, 0),
+                                     &d_dense_temperature(0, 0)};
+                DB->Store(num_elems_for_mat * num_qpts, 2, 4,inputs, outputs);
+                // STEP 3c:
+                // for d_dense_uq = False, we call physics
                 eoses[mat_idx]->Eval(num_elems_for_mat * num_qpts,
                                      &d_dense_density(0, 0),
                                      &d_dense_energy(0, 0),
