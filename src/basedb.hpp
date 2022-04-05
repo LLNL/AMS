@@ -39,7 +39,7 @@ public:
       for (size_t j = 0; j < num_out - 1; j++) {
         fd << outputs[j][i] << ":";
       }
-      fd << ":" << outputs[num_out - 1][i] << "\n";
+      fd << outputs[num_out - 1][i] << "\n";
     }
   }
 };
