@@ -2,8 +2,8 @@
 #include <stdlib.h>
 #include <vector>
 
-#include "mfem.hpp"
-#include "mfem/linalg/dtensor.hpp"
+#include <mfem.hpp>
+#include <mfem/linalg/dtensor.hpp>
 
 #include "eos.hpp"
 #include "eos_idealgas.hpp"
@@ -91,6 +91,7 @@ int main(int argc, char **argv) {
 
     // run through the cycles (time-steps)
     printf("\n");
+    miniapp.start();
     for (int c = 0; c <= miniapp.stop_cycle; ++c)
     {
         printf("cycle %d\n", c);
