@@ -2,10 +2,11 @@
 #include <stdlib.h>
 #include <cassert>
 #include <vector>
+#include <string>
 
-#include "mfem.hpp"
-#include "mfem/general/forall.hpp"
-#include "mfem/linalg/dtensor.hpp"
+#include <mfem.hpp>
+#include <mfem/general/forall.hpp>
+#include <mfem/linalg/dtensor.hpp>
 
 #include "eos.hpp"
 #include "surrogate.hpp"
@@ -13,6 +14,17 @@
 #include "basedb.hpp"
 
 #define RESHAPE_TENSOR(m, op) mfem::Reshape(m.op(), m.SizeI(), m.SizeJ(), m.SizeK())
+
+// This is usefull to completely remove
+// caliper at compile time.
+
+#ifdef __ENABLE_CALIPER__
+#include <caliper/cali.h>
+#include <caliper/cali-manager.h>
+#define CALIPER(stmt) stmt
+#else
+#define CALIPER(stmt)
+#endif
 
 
 //! ----------------------------------------------------------------------------
@@ -30,6 +42,7 @@ public:
     int seed                   = 0;
     bool pack_sparse_mats      = true;
     bool is_cpu                = true;
+    CALIPER(cali::ConfigManager mgr;)
 
     std::vector<EOS *> eoses;
 
@@ -45,7 +58,6 @@ public:
     // constructor and destructor
     // -------------------------------------------------------------------------
     MiniApp(int argc, char **argv) {
-
         // parse command line arguments
         bool success = _parse_args(argc, argv);
         if (!success) {
@@ -65,12 +77,17 @@ public:
         surrogates.resize(num_mats, nullptr);
     }
 
+    void start() {
+        CALIPER(mgr.start();)
+    }
+
     ~MiniApp() {
         for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
             delete eoses[mat_idx];
             delete hdcaches[mat_idx];
             delete surrogates[mat_idx];
         }
+        CALIPER(mgr.flush());
         delete DB;
     }
 
@@ -86,7 +103,7 @@ public:
                   mfem::DenseTensor &bulkmod,
                   mfem::DenseTensor &temperature) {
 
-
+        CALIPER(CALI_MARK_FUNCTION_BEGIN;)
         // move/allocate data on the device. if the data is already on the device this is basically a noop
         const auto d_density     = RESHAPE_TENSOR(density, Read);
         const auto d_energy      = RESHAPE_TENSOR(energy, Read);
@@ -130,6 +147,7 @@ public:
                 auto d_dense_density = mfem::Reshape(dense_density.Write(), num_qpts, num_elems_for_mat);
                 auto d_dense_energy = mfem::Reshape(dense_energy.Write(), num_qpts, num_elems_for_mat);
 
+                CALIPER(CALI_MARK_BEGIN("SPARSE_TO_DENSE");)
                 // sparse -> dense
                 MFEM_FORALL(elem_idx, num_elems_for_mat, {
                     const int sparse_elem_idx = d_sparse_index[elem_idx];
@@ -139,6 +157,7 @@ public:
                         d_dense_energy(qpt_idx, elem_idx)  = d_energy(qpt_idx, sparse_elem_idx, mat_idx);
                     }
                 });
+                CALIPER(CALI_MARK_END("SPARSE_TO_DENSE");)
 
                 mfem::Array<double> dense_pressure(num_elems_for_mat * num_qpts);
                 mfem::Array<double> dense_soundspeed2(num_elems_for_mat * num_qpts);
@@ -157,7 +176,7 @@ public:
                 mfem::Array<bool> dense_uq(num_elems_for_mat * num_qpts);
                 auto d_dense_uq = mfem::Reshape(dense_uq.Write(), num_qpts, num_elems_for_mat);
 
-
+                CALIPER(CALI_MARK_BEGIN("UQ_MODULE");)
                 // STEP 1:
                 // call the hdcache to look at input uncertainties
                 // to decide if making a ML inference makes sense
@@ -165,6 +184,7 @@ public:
                                                 &d_dense_density(0, 0),
                                                 &d_dense_energy(0, 0),
                                                 &d_dense_uq(0, 0));
+                CALIPER(CALI_MARK_END("UQ_MODULE");)
 
                 // STEP 2:
                 // slide the data based on d_dense_uq flag
@@ -173,6 +193,7 @@ public:
 
                 // STEP 3a:
                 // for d_dense_uq = True, we call surrogate
+                CALIPER(CALI_MARK_BEGIN("SURROGATE");)
                 surrogates[mat_idx]->Eval(num_elems_for_mat * num_qpts,
                                           &d_dense_density(0, 0),
                                           &d_dense_energy(0, 0),
@@ -180,8 +201,10 @@ public:
                                           &d_dense_soundspeed2(0, 0),
                                           &d_dense_bulkmod(0, 0),
                                           &d_dense_temperature(0, 0));
+                CALIPER(CALI_MARK_END("SURROGATE");)
                 // STEP 3b:
                 // for d_dense_uq = False we store into DB.
+                CALIPER(CALI_MARK_BEGIN("DBSTORE");)
                 double *inputs[] = {&d_dense_density(0, 0), &d_dense_energy(0, 0)};
 
                 double *outputs[] = {&d_dense_pressure(0, 0),
@@ -189,8 +212,10 @@ public:
                                      &d_dense_bulkmod(0, 0),
                                      &d_dense_temperature(0, 0)};
                 DB->Store(num_elems_for_mat * num_qpts, 2, 4,inputs, outputs);
+                CALIPER(CALI_MARK_END("DBSTORE");)
                 // STEP 3c:
                 // for d_dense_uq = False, we call physics
+                CALIPER(CALI_MARK_BEGIN("PHYSICS MODULE");)
                 eoses[mat_idx]->Eval(num_elems_for_mat * num_qpts,
                                      &d_dense_density(0, 0),
                                      &d_dense_energy(0, 0),
@@ -198,8 +223,10 @@ public:
                                      &d_dense_soundspeed2(0, 0),
                                      &d_dense_bulkmod(0, 0),
                                      &d_dense_temperature(0, 0));
+                CALIPER(CALI_MARK_END("PHYSICS MODULE");)
 
                 // dense -> sparse
+                CALIPER(CALI_MARK_BEGIN("DENSE_TO_SPARSE");)
                 MFEM_FORALL(elem_idx, num_elems_for_mat, {
                    const int sparse_elem_idx = d_sparse_index[elem_idx];
                    for (int qpt_idx = 0; qpt_idx < num_qpts; ++qpt_idx)
@@ -210,6 +237,7 @@ public:
                       d_temperature(qpt_idx, sparse_elem_idx, mat_idx) = d_dense_temperature(qpt_idx, elem_idx);
                    }
                 });
+                CALIPER(CALI_MARK_END("DENSE_TO_SPARSE");)
          }
 
             else {
@@ -223,6 +251,7 @@ public:
                                      &d_temperature(0, 0, mat_idx));
             }
         }
+        CALIPER(CALI_MARK_FUNCTION_END);
     }
 
 
