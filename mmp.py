@@ -1,11 +1,8 @@
 import numpy
 import argparse
-import ctypes
+from subprocess import Popen, PIPE
+from ctypes import cdll, POINTER, c_bool, c_double
 
-#mylib = ctypes.CDLL("mmp-toss_3_x86_64_ib")
-from ctypes import cdll
-
-lib = cdll.LoadLibrary('./mmp-toss_3_x86_64_ib.so')
 
 p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 p.add_argument("-d", "--device", help="Device config string", default="cpu")
@@ -44,7 +41,25 @@ for k in range(args.num_mats):
         for j in range(args.num_qpts):
             density[j + i*args.num_qpts + k*args.num_elems*args.num_qpts] = .1 + numpy.random.random()
             energy[j + i*args.num_qpts + k*args.num_elems*args.num_qpts]  = .1 + numpy.random.random()
-is_cpu = True
-lib._Z9eval_dataibbiiiPdS_Pb(args.stop_cycle, is_cpu, args.pack_sparse,
-args.num_qpts, args.num_elems, args.num_mats, 
-density.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), energy.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), indicators.ctypes.data_as(ctypes.POINTER(ctypes.c_bool))  )
+
+is_cpu = args.device.lower() == "cpu"
+libname = './mmp-toss_3_x86_64_ib.so'
+lib = cdll.LoadLibrary(libname)
+
+p = Popen(("nm", f"{libname}"), stdout=PIPE, stderr=PIPE)
+o, e = p.communicate()
+
+# Figures out the mangled name
+# I know it's a hack
+for l in o.decode().split("\n"):
+    if "eval_data" in l:
+        eval_data_function_name = l.split()[2]
+
+eval_data_function = getattr(lib, eval_data_function_name)
+
+# Now let's call it
+eval_data_function(args.stop_cycle, is_cpu, args.pack_sparse,
+                   args.num_qpts, args.num_elems, args.num_mats,
+                   density.ctypes.data_as(POINTER(c_double)),
+                   energy.ctypes.data_as(POINTER(c_double)),
+                   indicators.ctypes.data_as(POINTER(c_bool)))

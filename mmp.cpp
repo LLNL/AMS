@@ -67,6 +67,12 @@ int eval_data(int stop_cycle, bool is_cpu, bool pack_sparse_mats, int num_qpts, 
          }
          for (int j = 0; j < num_qpts; ++j)
          {
+            // Note that loops go k,i,j (and was shipped here in that order)
+            // But we put them in i,j,k order
+            // We might want to pass them ordered differently and be able 
+            // to simply use the pointer rather than
+            // copying the data again.
+            // printf("Density %d, %d, %d, %f\n", i,j,k, density_in[j+ i*num_qpts + k*num_elems*num_qpts]);
             density(i,j,k) = density_in[j+ i*num_qpts + k*num_elems*num_qpts];
             energy(i,j,k)  = energy_in[j+ i*num_qpts + k*num_elems*num_qpts] ;
          }
