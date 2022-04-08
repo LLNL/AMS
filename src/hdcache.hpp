@@ -19,10 +19,10 @@ class HDCache {
     // TODO: currently, using a single input vector
     // but, really, this should be a matrix if size (N, D)
     // N query points, and D features
-    std::vector<idx_dist_pair> find_nearest_neighbors(const size_t length,
-                                                    const double *input) const {
+    std::vector<idx_dist_pair>
+    find_nearest_neighbors(const size_t length, const double *input) const {
 
-        // return a vector of tuples: (index of, distance to) the nearest nbr
+       // return a vector of tuples: (index of, distance to) the nearest nbr
        std::vector<idx_dist_pair> nnbrs (length);
         for (size_t i = 0; i < length; i++) {
             nnbrs[i].first = -1;
@@ -67,6 +67,7 @@ public:
        const double acceptable_error = 0.5;
        for(int i = 0; i < length; i++) {
            is_acceptable[i] = nnbrs[i].second <= acceptable_error;
+           //std::cout << i << " " << nnbrs[i].second << " " << is_acceptable[i] << "\n";
        }
    }
 

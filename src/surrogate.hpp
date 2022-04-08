@@ -44,6 +44,22 @@ public:
         // currently, we will just use the ideal gas eos
         base_eos->Eval(length, density, energy, pressure, soundspeed2, bulkmod, temperature);
     }
+
+
+    void Eval_with_filter(const int length,
+              const double *density,
+              const double *energy,
+              const bool* filter,
+              double *pressure,
+              double *soundspeed2,
+              double *bulkmod,
+              double *temperature)  const override {
+
+        // this is where we will call the surrogate model
+        // through tensorflow or torch
+        // currently, we will just use the ideal gas eos
+        base_eos->Eval(length, density, energy, pressure, soundspeed2, bulkmod, temperature);
+    }
 };
 
 #endif

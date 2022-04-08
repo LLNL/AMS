@@ -12,15 +12,17 @@ class IdealGas : public EOS
    const double specific_heat_;
 
 public:
-   IdealGas(double gamma, double specific_heat) : gamma_(gamma), specific_heat_(specific_heat) {}
+   IdealGas(double gamma, double specific_heat) :
+       gamma_(gamma), specific_heat_(specific_heat) {}
 
-   void Eval(const int length,
-             const double *density,
-             const double *energy,
-             double *pressure,
-             double *soundspeed2,
-             double *bulkmod,
-             double *temperature) const override
+   void
+   Eval(const int length,
+        const double *density,
+        const double *energy,
+        double *pressure,
+        double *soundspeed2,
+        double *bulkmod,
+        double *temperature) const override
    {
       const double gamma         = gamma_;
       const double specific_heat = specific_heat_;
@@ -33,6 +35,32 @@ public:
          temperature[i] = energy[i] / specific_heat;
       });
    }
+
+
+   void
+   Eval_with_filter(const int length,
+                    const double *density,
+                    const double *energy,
+                    const bool *filter,
+                    double *pressure,
+                    double *soundspeed2,
+                    double *bulkmod,
+                    double *temperature) const override
+   {
+      const double gamma         = gamma_;
+      const double specific_heat = specific_heat_;
+
+      using mfem::ForallWrap;
+      MFEM_FORALL(i, length, {
+         if (filter[i]) {
+             pressure[i]    = (gamma - 1) * density[i] * energy[i];
+             soundspeed2[i] = gamma * (gamma - 1) * energy[i];
+             bulkmod[i]     = gamma * pressure[i];
+             temperature[i] = energy[i] / specific_heat;
+        }
+      });
+   }
+
 };
 
 #endif

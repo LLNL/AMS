@@ -1,5 +1,5 @@
-#include <stdio.h>
-#include <stdlib.h>
+#include <cstdio>
+#include <cstdlib>
 #include <cassert>
 #include <vector>
 
@@ -11,7 +11,7 @@
 #include "surrogate.hpp"
 #include "hdcache.hpp"
 
-#define RESHAPE_TENSOR(m, op) mfem::Reshape(m.op(), m.SizeI(), m.SizeJ(), m.SizeK())
+#include "mfem_utils.hpp"
 
 
 //! ----------------------------------------------------------------------------
@@ -76,7 +76,8 @@ public:
                   mfem::DenseTensor &temperature) {
 
 
-        // move/allocate data on the device. if the data is already on the device this is basically a noop
+        // move/allocate data on the device.
+        // if the data is already on the device this is basically a noop
         const auto d_density     = RESHAPE_TENSOR(density, Read);
         const auto d_energy      = RESHAPE_TENSOR(energy, Read);
         const auto d_pressure    = RESHAPE_TENSOR(pressure, Write);
@@ -86,6 +87,9 @@ public:
 
         for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
 
+            // TODO: this is repeated computation in each cycle
+            // cant think of any reason we should do this
+            // we perhaps dont even need indicators on the device
             int num_elems_for_mat = 0;
             for (int elem_idx = 0; elem_idx < num_elems; ++elem_idx) {
                 num_elems_for_mat += indicators(elem_idx, mat_idx);
@@ -129,6 +133,8 @@ public:
                     }
                 });
 
+                // TODO: I think Tom mentiond we can allocate these outside the loop
+                // check again
                 mfem::Array<double> dense_pressure(num_elems_for_mat * num_qpts);
                 mfem::Array<double> dense_soundspeed2(num_elems_for_mat * num_qpts);
                 mfem::Array<double> dense_bulkmod(num_elems_for_mat * num_qpts);
@@ -139,11 +145,11 @@ public:
                 auto d_dense_bulkmod = mfem::Reshape(dense_bulkmod.Write(), num_qpts, num_elems_for_mat);
                 auto d_dense_temperature = mfem::Reshape(dense_temperature.Write(), num_qpts, num_elems_for_mat);
 
-
-                // create for uq flags
+                // create uq flags
                 // ask Tom about the memory management for this
                 // should we create this memory again and again?
                 mfem::Array<bool> dense_uq(num_elems_for_mat * num_qpts);
+                dense_uq = false;
                 auto d_dense_uq = mfem::Reshape(dense_uq.Write(), num_qpts, num_elems_for_mat);
 
 
@@ -155,13 +161,9 @@ public:
                                                 &d_dense_energy(0, 0),
                                                 &d_dense_uq(0, 0));
 
+
                 // STEP 2:
-                // slide the data based on d_dense_uq flag
-                // TODO: need help from Tom
-
-
-                // STEP 3a:
-                // for d_dense_uq = False, we call surrogate
+                // let's call surrogate for everything
                 surrogates[mat_idx]->Eval(num_elems_for_mat * num_qpts,
                                           &d_dense_density(0, 0),
                                           &d_dense_energy(0, 0),
@@ -171,17 +173,19 @@ public:
                                           &d_dense_temperature(0, 0));
 
 
-                // STEP 3b:
-                // for d_dense_uq = True, we call physics
-                eoses[mat_idx]->Eval(num_elems_for_mat * num_qpts,
-                                     &d_dense_density(0, 0),
-                                     &d_dense_energy(0, 0),
-                                     &d_dense_pressure(0, 0),
-                                     &d_dense_soundspeed2(0, 0),
-                                     &d_dense_bulkmod(0, 0),
-                                     &d_dense_temperature(0, 0));
+                // STEP 3:
+                // let's call physics module only where the d_dense_uq = flags are true
+                eoses[mat_idx]->Eval_with_filter(num_elems_for_mat * num_qpts,
+                                                 &d_dense_density(0, 0),
+                                                 &d_dense_energy(0, 0),
+                                                 &d_dense_uq(0, 0),
+                                                 &d_dense_pressure(0, 0),
+                                                 &d_dense_soundspeed2(0, 0),
+                                                 &d_dense_bulkmod(0, 0),
+                                                 &d_dense_temperature(0, 0));
 
-                // dense -> sparse
+
+                // STEP 3: convert dense -> sparse
                 MFEM_FORALL(elem_idx, num_elems_for_mat, {
                    const int sparse_elem_idx = d_sparse_index[elem_idx];
                    for (int qpt_idx = 0; qpt_idx < num_qpts; ++qpt_idx)
@@ -203,24 +207,6 @@ public:
                                      &d_soundspeed2(0, 0, mat_idx),
                                      &d_bulkmod(0, 0, mat_idx),
                                      &d_temperature(0, 0, mat_idx));
-            }
-        }
-    }
-
-
-    void print_tensor(const mfem::DenseTensor &values,
-                      const mfem::DeviceTensor<2, bool>& indicators,
-                      const std::string &label) {
-
-        printf("-- printing tensor (%s)\n", label.c_str());
-        for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
-            for (int elem_idx = 0; elem_idx < num_elems; ++elem_idx) {
-                if (indicators(elem_idx, mat_idx)) {
-                    for (int qpt_idx = 0; qpt_idx < num_qpts; ++qpt_idx) {
-                        printf("%s[%d][%d][%d] = %f\n", label.c_str(),
-                               qpt_idx, elem_idx, mat_idx, values(qpt_idx,elem_idx,mat_idx));
-                    }
-                }
             }
         }
     }

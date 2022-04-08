@@ -8,9 +8,12 @@
 #include "eos.hpp"
 #include "eos_idealgas.hpp"
 #include "surrogate.hpp"
+#include "hdcache.hpp"
 #include "miniapp.hpp"
+#include "mfem_utils.hpp"
 
 double unitrand() { return (double)rand() / RAND_MAX; }
+
 
 //! ----------------------------------------------------------------------------
 //! entry point to the mini app
@@ -26,22 +29,31 @@ int main(int argc, char **argv) {
     // setup device
     mfem::Device device(miniapp.device_name);
     device.Print();
-    printf("\n");
+    std::cout << std::endl;
 
-    // setup eos
+    // setup eos, surrogare models, and hdcaches
+    // TODO: keeping it consistent with Tom's existing code currently
+    // Do we want different surrogates and caches for different materials?
     IdealGas *temp_eos = new IdealGas(1.6, 1.4);
-    for (int mat_idx = 0; mat_idx < miniapp.num_mats; ++mat_idx)
-    {
+    int cache_dim = 2;
+    for (int mat_idx = 0; mat_idx < miniapp.num_mats; ++mat_idx) {
         miniapp.eoses[mat_idx] = new IdealGas(1.6, 1.4);
         miniapp.surrogates[mat_idx] = new SurrogateModel(temp_eos);
+        miniapp.hdcaches[mat_idx] = new HDCache(cache_dim);
     }
 
+
+    // -------------------------------------------------------------------------
     // setup indicators
+    //  to represent which combinations of materials and elements exist
+    // -------------------------------------------------------------------------
     mfem::Array<bool> indicators_arr(miniapp.num_elems * miniapp.num_mats);
     indicators_arr = false;
 
     // only needed on host
+    // indicators is of type mfem::DeviceTensor
     auto indicators = mfem::Reshape(indicators_arr.HostReadWrite(), miniapp.num_elems, miniapp.num_mats);
+
     for (int mat_idx = 0; mat_idx < miniapp.num_mats; ++mat_idx) {
 
         // min ratio if empty_element_ratio is -1
@@ -49,7 +61,7 @@ int main(int argc, char **argv) {
         const double ratio     = miniapp.empty_element_ratio == -1 ? unitrand() * (1 - min_ratio) + min_ratio
                                                                    : 1 - miniapp.empty_element_ratio;
         const int num_nonzero_elems = ratio * miniapp.num_elems;
-        printf("using %d/%d elements for material %d\n", num_nonzero_elems, miniapp.num_elems, mat_idx);
+        std::cout << "using " << num_nonzero_elems << "/"<< miniapp.num_elems << " for material " << mat_idx << std::endl;
 
         for (int elem_idx = 0, nz = 0; elem_idx < miniapp.num_elems; ++elem_idx) {
             if (nz < num_nonzero_elems) {
@@ -60,7 +72,12 @@ int main(int argc, char **argv) {
             }
         }
     }
+    //print_device_tensor("indicators", indicators, {miniapp.num_qpts, miniapp.num_mats});
 
+
+    // -------------------------------------------------------------------------
+    // initialize inputs and outputs
+    // -------------------------------------------------------------------------
     // inputs
     mfem::DenseTensor density(miniapp.num_qpts, miniapp.num_elems, miniapp.num_mats);
     mfem::DenseTensor energy(miniapp.num_qpts, miniapp.num_elems, miniapp.num_mats);
@@ -87,19 +104,21 @@ int main(int argc, char **argv) {
         }
     }
 
-    //miniapp.print_tensor(pressure, indicators, "pressure");
+    //print_dense_tensor("energy", energy, indicators);
 
+    // -------------------------------------------------------------------------
     // run through the cycles (time-steps)
     printf("\n");
     for (int c = 0; c <= miniapp.stop_cycle; ++c)
     {
-        printf("cycle %d\n", c);
+        std::cout << "--> cycle " << c << std::endl;
         miniapp.evaluate(density, energy, indicators,
                          pressure, soundspeed2, bulkmod, temperature);
+        break;
     }
 
-    //miniapp.print_tensor(pressure, indicators, "pressure");
-    return 0;
+    //print_dense_tensor("pressure", pressure, indicators);
+    return EXIT_SUCCESS;
 }
 
 //! ----------------------------------------------------------------------------
