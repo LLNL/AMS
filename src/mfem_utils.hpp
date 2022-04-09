@@ -12,6 +12,33 @@
 
 template<typename T>
 static void
+print_tensor_array(const std::string &label,
+                   const T *values,
+                   const std::array<int,3> &sz) {
+
+    const int K = sz[0], J = sz[1], I = sz[2];
+    if (K == 1) {
+        std::cout << "--> printing ["<<J<<" x "<<I<<"] tensor \""<<label<<"\"\n";
+        for (int j = 0; j < J; ++j) {
+        for (int i = 0; i < I; ++i) {
+            int idx = i + I*j;
+            std::cout << label << "["<<j<<","<<i<<"] = " << idx << " = " << values[idx] << std::endl;
+        }}
+    }
+    else {
+        std::cout << "--> printing ["<<K<<" x "<<J<<" x "<<I<<"] tensor \""<<label<<"\"\n";
+        for (int k = 0; k < K; ++k) {
+        for (int j = 0; j < J; ++j) {
+        for (int i = 0; i < I; ++i) {
+            int idx = i + I*(j + k*J);
+            std::cout << label << "["<<k<<", "<<j<<","<<i<<"] = " << values[idx] << std::endl;
+        }}}
+    }
+}
+
+
+template<typename T>
+static void
 print_array(const std::string &label,
             const mfem::Array<T> &values) {
 
@@ -28,10 +55,10 @@ void print_dense_tensor(const std::string &label,
     const int I = values.SizeI(), J = values.SizeJ(), K = values.SizeK();
     std::cout << "--> printing ["<<I<<" x "<<J<<" x "<<K<<"] dense_tensor \""<<label<<"\"\n";// = " << values << "\n";
 
-    for (int i = 0; i < I; ++i) {
-    for (int j = 0; j < J; ++j) {
     for (int k = 0; k < K; ++k) {
-        std::cout << label<<"["<<i<<"]["<<j<<"]["<<k<<"] = " << values(i,j,k)<<"\n";
+    for (int j = 0; j < J; ++j) {
+    for (int i = 0; i < I; ++i) {
+        std::cout << label<<"["<<i<<","<<j<<", "<<k<<"] = " << values(i,j,k) <<"\n";
     }}}
 }
 
@@ -42,16 +69,32 @@ void print_dense_tensor(const std::string &label,
     const int I = values.SizeI(), J = values.SizeJ(), K = values.SizeK();
     std::cout << "--> printing ["<<I<<" x "<<J<<" x "<<K<<"] dense_tensor \""<<label<<"\"\n";// = " << values << "\n";
 
-    // TODO: check out the mem layout of tensors
-    // here, due to filters, we have to traverse the last index first,
-    // which might be inefficent.
-    for (int i = 0; i < I; ++i) {
-    for (int j = 0; j < J; ++j) {
     for (int k = 0; k < K; ++k) {
-        if (filter(j,k)) {
-                std::cout << label<<"["<<i<<"]["<<j<<"]["<<k<<"] = " << values(i,j,k)<<"\n";
-            }
-    }}}
+    for (int j = 0; j < J; ++j) {
+        if (!filter(j,k)) {
+            continue;
+        }
+        for (int i = 0; i < I; ++i) {
+            std::cout << label<<"["<<i<<","<<j<<", "<<k<<"] = " << values(i,j,k) <<"\n";
+        }
+    }}
+}
+
+void print_dense_tensor(const std::string &label,
+                        const mfem::DenseTensor &values,
+                        const bool *filter) {
+
+    const int I = values.SizeI(), J = values.SizeJ(), K = values.SizeK();
+    std::cout << "--> printing ["<<I<<" x "<<J<<" x "<<K<<"] dense_tensor \""<<label<<"\"\n";// = " << values << "\n";
+
+    for (int k = 0; k < K; ++k) {
+    for (int j = 0; j < J; ++j) {
+        if (!filter[j+k*J])
+            continue;
+        for (int i = 0; i < I; ++i) {
+            std::cout << label<<"["<<i<<","<<j<<", "<<k<<"] = " << values(i,j,k) <<"\n";
+        }
+    }}
 }
 
 template<typename T>
