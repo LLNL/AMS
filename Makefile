@@ -11,11 +11,11 @@ cfg      ?= $(call use-if-def,$($(SYS_TYPE).cfg))
 mfem.dir    = mfem
 mfem.exists = $(mfem.dir)/makefile
 mfem.prefix = $(realpath .)/build/$(SYS_TYPE)
-mfem.lib    = $(mfem.prefix)/lib/libmfem.a
+mfem.lib    = $(mfem.prefix)/lib/libmfem
 mfem.build  = $(mfem.prefix)/build
 
-exe = mmp-$(SYS_TYPE)
 src = src/main.cpp
+exe = mmp-$(SYS_TYPE)
 
 .DEFAULT_GOAL := $(exe)
 
@@ -24,10 +24,11 @@ $(mfem.exists):
 	git clone https://github.com/mfem/mfem.git $(mfem.dir)
 
 $(mfem.lib): $(mfem.exists)
-	$(MAKE) -C mfem config $(mfem.opts) MFEM_STATIC=YES MFEM_CXX=$(cxx) MFEM_CXXFLAGS="$(cxxflags)" BUILD_DIR=$(mfem.build) PREFIX=$(mfem.prefix) $(cfg)
+	$(MAKE) -C mfem config $(mfem.opts) MFEM_SHARED=YES MFEM_CXX=$(cxx) MFEM_CXXFLAGS="$(cxxflags)" BUILD_DIR=$(mfem.build) PREFIX=$(mfem.prefix) $(cfg)
 	$(MAKE) -C $(mfem.build) install
 
 $(exe): $(src) $(mfem.lib)
+	$(cxx) $(cxxflags) $< -I$(mfem.prefix)/include -L$(mfem.prefix)/lib -lmfem -fPIC --shared -o $@.so
 	$(cxx) $(cxxflags) $< -I$(mfem.prefix)/include -L$(mfem.prefix)/lib -lmfem -o $@
 
 clean:
