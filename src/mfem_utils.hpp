@@ -1,6 +1,7 @@
 #ifndef _MFEM_UTILS_HPP_
 #define _MFEM_UTILS_HPP_
 
+#include <array>
 #include <iostream>
 
 #include "mfem.hpp"

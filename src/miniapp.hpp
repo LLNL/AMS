@@ -131,7 +131,7 @@ public:
             // we may just use dense representations everywhere but for now we use sparse ones.
             else if (is_cpu && pack_sparse_mats && num_elems_for_mat < num_elems) {
 
-                printf(" material %d: using sparse packing for %lu elems\n", mat_idx, num_elems_for_mat);
+                std::cout << " material " << mat_idx << ": using sparse packing for " << num_elems_for_mat << " elems\n";
 
                 // compute sparse indices
                 using mfem::ForallWrap;
@@ -252,7 +252,7 @@ public:
                 CALIPER(CALI_MARK_END("DENSE_TO_SPARSE");)
          }
          else {
-                printf(" material %d: using dense packing for %lu elems\n", mat_idx, num_elems_for_mat);
+                std::cout << " material " << mat_idx << ": using dense packing for " << num_elems_for_mat << " elems\n";
                 eoses[mat_idx]->Eval(num_elems * num_qpts,
                                      &d_density(0, 0, mat_idx),
                                      &d_energy(0, 0, mat_idx),

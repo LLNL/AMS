@@ -3,6 +3,8 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <string>
+#include <vector>
 
 //! An implementation of hdcache
 //! the idea is to have a single class that exposes
