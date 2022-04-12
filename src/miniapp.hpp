@@ -1,12 +1,12 @@
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <cassert>
 #include <vector>
-#include <string>
 
-#include <mfem.hpp>
-#include <mfem/general/forall.hpp>
-#include <mfem/linalg/dtensor.hpp>
+#include "mfem.hpp"
+#include "mfem/general/forall.hpp"
+#include "mfem/linalg/dtensor.hpp"
 
 #include "eos.hpp"
 #include "surrogate.hpp"
@@ -17,13 +17,12 @@
 
 // This is usefull to completely remove
 // caliper at compile time.
-
 #ifdef __ENABLE_CALIPER__
-#include <caliper/cali.h>
-#include <caliper/cali-manager.h>
-#define CALIPER(stmt) stmt
+    #include <caliper/cali.h>
+    #include <caliper/cali-manager.h>
+    #define CALIPER(stmt) stmt
 #else
-#define CALIPER(stmt)
+    #define CALIPER(stmt)
 #endif
 
 
@@ -38,6 +37,7 @@ public:
     int num_mats               = 5;
     int num_elems              = 10000;
     int num_qpts               = 64;
+
     CALIPER(cali::ConfigManager mgr;)
 
     std::vector<EOS *> eoses;
@@ -53,7 +53,6 @@ public:
     // -------------------------------------------------------------------------
     // constructor and destructor
     // -------------------------------------------------------------------------
-<<<<<<< HEAD
     MiniApp(int _num_mats, int _num_elems, int _num_qpts,
             bool _is_cpu, bool _pack_sparse_mats) {
 
@@ -102,6 +101,7 @@ public:
                   mfem::DenseTensor &temperature) {
 
         CALIPER(CALI_MARK_FUNCTION_BEGIN;)
+
         // move/allocate data on the device.
         // if the data is already on the device this is basically a noop
         const auto d_density     = RESHAPE_TENSOR(density, Read);
@@ -151,8 +151,9 @@ public:
                 auto d_dense_density = mfem::Reshape(dense_density.Write(), num_qpts, num_elems_for_mat);
                 auto d_dense_energy = mfem::Reshape(dense_energy.Write(), num_qpts, num_elems_for_mat);
 
-                CALIPER(CALI_MARK_BEGIN("SPARSE_TO_DENSE");)
+
                 // sparse -> dense
+                CALIPER(CALI_MARK_BEGIN("SPARSE_TO_DENSE");)
                 MFEM_FORALL(elem_idx, num_elems_for_mat, {
                     const int sparse_elem_idx = d_sparse_index[elem_idx];
                     for (int qpt_idx = 0; qpt_idx < num_qpts; ++qpt_idx) {
@@ -161,6 +162,7 @@ public:
                     }
                 });
                 CALIPER(CALI_MARK_END("SPARSE_TO_DENSE");)
+
 
                 // TODO: I think Tom mentiond we can allocate these outside the loop
                 // check again
@@ -234,6 +236,7 @@ public:
                                                  &d_dense_temperature(0, 0));
                 CALIPER(CALI_MARK_END("PHYSICS MODULE");)
 
+
                 // STEP 4: convert dense -> sparse
                 CALIPER(CALI_MARK_BEGIN("DENSE_TO_SPARSE");)
                 MFEM_FORALL(elem_idx, num_elems_for_mat, {
@@ -248,8 +251,7 @@ public:
                 });
                 CALIPER(CALI_MARK_END("DENSE_TO_SPARSE");)
          }
-
-            else {
+         else {
                 printf(" material %d: using dense packing for %lu elems\n", mat_idx, num_elems_for_mat);
                 eoses[mat_idx]->Eval(num_elems * num_qpts,
                                      &d_density(0, 0, mat_idx),
@@ -260,6 +262,7 @@ public:
                                      &d_temperature(0, 0, mat_idx));
             }
         }
+
         CALIPER(CALI_MARK_FUNCTION_END);
     }
 };
