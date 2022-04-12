@@ -2,8 +2,8 @@
 #include <stdlib.h>
 #include <vector>
 
-#include "mfem.hpp"
-#include "mfem/linalg/dtensor.hpp"
+#include <mfem.hpp>
+#include <mfem/linalg/dtensor.hpp>
 
 #include "eos.hpp"
 #include "eos_idealgas.hpp"
@@ -103,6 +103,7 @@ int mmp_main(bool is_cpu, int stop_cycle, bool pack_sparse_mats,
     // -------------------------------------------------------------------------
     // run through the cycles (time-steps)
     printf("\n");
+    miniapp.start();
     for (int c = 0; c <= stop_cycle; ++c)
     {
         std::cout << "--> cycle " << c << std::endl;

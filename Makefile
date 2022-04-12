@@ -14,8 +14,12 @@ mfem.prefix = $(realpath .)/build/$(SYS_TYPE)
 mfem.lib    = $(mfem.prefix)/lib/libmfem
 mfem.build  = $(mfem.prefix)/build
 
-src = src/main.cpp
+# Add this line if we want to start writting files.
+#cxxflags += -D__ENABLE_DB__
+
 exe = mmp-$(SYS_TYPE)
+src = src/main.cpp
+headers = src/basedb.hpp  src/eos.hpp  src/eos_idealgas.hpp  src/hdcache.hpp  src/miniapp.hpp  src/surrogate.hpp
 
 .DEFAULT_GOAL := $(exe)
 
@@ -27,7 +31,7 @@ $(mfem.lib): $(mfem.exists)
 	$(MAKE) -C mfem config $(mfem.opts) MFEM_SHARED=YES MFEM_CXX=$(cxx) MFEM_CXXFLAGS="$(cxxflags)" BUILD_DIR=$(mfem.build) PREFIX=$(mfem.prefix) $(cfg)
 	$(MAKE) -C $(mfem.build) install
 
-$(exe): $(src) $(mfem.lib)
+$(exe): $(src) $(mfem.lib) $(headers) Makefile
 	$(cxx) $(cxxflags) $< -I$(mfem.prefix)/include -L$(mfem.prefix)/lib -lmfem -fPIC --shared -o $@.so
 	$(cxx) $(cxxflags) $< -I$(mfem.prefix)/include -L$(mfem.prefix)/lib -lmfem -o $@
 
