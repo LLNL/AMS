@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+
+# ------------------------------------------------------------------------------
 import argparse
 from ctypes import CDLL, POINTER, c_bool, c_double
 import numpy as np
@@ -97,11 +100,15 @@ def setup_data(num_mats, num_elems, num_qpts,
 # ------------------------------------------------------------------------------
 if __name__ == '__main__':
 
-    arch = 'darwin'
-
     try:
-        miniapp_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-        libpath = os.path.join(miniapp_path, f'mmp-{arch}.so')
+        # TODO: the lib name and path are still hardcoded!
+        libname = 'libmmp'
+        libpath = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../install/lib')
+
+        if os.path.isfile(os.path.join(libpath, f'{libname}.dylib')):
+            libpath = os.path.join(libpath, f'{libname}.dylib')
+        elif os.path.isfile(os.path.join(libpath, f'{libname}.so')):
+            libpath = os.path.join(libpath, f'{libname}.so')
 
         mmp_lib = CDLL(libpath)
         print (f'Found \"mmp_main\" = {mmp_lib.mmp_main} in ({libpath})')
