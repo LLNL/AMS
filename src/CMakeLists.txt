@@ -25,16 +25,18 @@ link_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 # setup the lib first
 target_compile_definitions(mmp PUBLIC ${AMS_DEFINES})
-target_include_directories(mmp PRIVATE ${MFEM_INCLUDE_DIRS} ${AMS_APP_INCLUDE})
-target_link_libraries(mmp PUBLIC ${MFEM_LIBRARIES} ${AMS_APP_LIBRARIES})
+target_include_directories(mmp PRIVATE ${MFEM_INCLUDE_DIRS} ${FAISS_INCLUDE_DIRS} ${AMS_APP_INCLUDE})
+target_link_directories(mmp PRIVATE ${FAISS_LIB_DIR})
+target_link_libraries(mmp PUBLIC ${MFEM_LIBRARIES}  ${FAISS_LIBRARIES} ${AMS_APP_LIBRARIES})
 
 
 # setup the exec
-SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath -Wl,$ORIGIN")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath -Wl,$ORIGIN")
 
 target_compile_definitions(mmpbin PUBLIC ${AMS_DEFINES})
-target_include_directories(mmpbin PRIVATE ${MFEM_INCLUDE_DIRS} ${AMS_APP_INCLUDE})
-target_link_libraries(mmpbin PUBLIC ${MFEM_LIBRARIES} ${AMS_APP_LIBRARIES} mmp)
+target_include_directories(mmpbin PRIVATE ${MFEM_INCLUDE_DIRS} ${FAISS_INCLUDE_DIRS} ${AMS_APP_INCLUDE})
+target_link_directories(mmpbin PRIVATE ${FAISS_LIB_DIR})
+target_link_libraries(mmpbin PUBLIC ${MFEM_LIB_DIR} ${FAISS_LIBRARIES} ${MFEM_LIBRARIES} ${AMS_APP_LIBRARIES} mmp)
 
 # rename the exec target to "mmp"
 set_target_properties(mmpbin PROPERTIES OUTPUT_NAME mmp)
