@@ -22,6 +22,7 @@ option(WITH_CALIPER "Option to enable the DB" OFF)
 option(WITH_MPI "Option to enable MPI" OFF)
 option(WITH_TORCH "Use C/C++ Torch interface for model inference" OFF)
 option(WITH_TORCH_DEBUG "Compute RMSE of Surrogate Model and Physics Module" OFF)
+
 # ------------------------------------------------------------------------------
 if (WITH_CUDA)
   #we need to enable nvcc
@@ -77,6 +78,21 @@ if ( WITH_TORCH )
   endif()
 endif()
 
+
+# ------------------------------------------------------------------------------
+#find_package(FAISS REQUIRED HINTS ${FAISS_DIR})
+message(STATUS "FAISS_DIR = ${FAISS_DIR}")
+
+set(FAISS_INCLUDE_DIRS "${FAISS_DIR}/include")
+set(FAISS_LIB_DIR "${FAISS_DIR}/lib64")
+set(FAISS_LIBRARIES "faiss")
+
+message(STATUS "FAISS_INCLUDE_DIRS = ${FAISS_INCLUDE_DIRS}")
+message(STATUS "FAISS_LIB_DIR = ${FAISS_LIB_DIR}")
+message(STATUS "FAISS_LIBRARIES = ${FAISS_LIBRARIES}")
+
+
+# ------------------------------------------------------------------------------
 add_subdirectory(src)
 
 # ------------------------------------------------------------------------------
