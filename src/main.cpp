@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
+#include <string>
 
 #include "mfem.hpp"
 #include "mmp.hpp"
@@ -13,12 +14,13 @@ double unitrand() { return (double)rand() / RAND_MAX; }
 struct MiniAppArgs {
 
     const char *device_name    = "cpu";
+    const char *model_path     = nullptr;
     bool is_cpu                = true;
 
     int seed                   = 0;
     double empty_element_ratio = -1;
 
-    int stop_cycle             = 10;
+    int stop_cycle             = 1;
 
     int num_mats               = 5;
     int num_elems              = 10000;
@@ -29,6 +31,7 @@ struct MiniAppArgs {
 
         mfem::OptionsParser args(argc, argv);
         args.AddOption(&device_name, "-d", "--device", "Device config string");
+        args.AddOption(&model_path, "-S", "--surrogate", "Path to surrogate model");
         args.AddOption(&stop_cycle, "-c", "--stop-cycle", "Stop cycle");
         args.AddOption(&num_mats, "-m", "--num-mats", "Number of materials");
         args.AddOption(&num_elems, "-e", "--num-elems", "Number of elements");
@@ -53,12 +56,23 @@ struct MiniAppArgs {
            return false;
         }
         args.PrintOptions(std::cout);
+        std::cout << "Device:" << device_name << "\n";
+        if (strcmp(device_name, "cuda") == 0){
+            is_cpu = false;
+            std::cout << "IS_CPU:" << is_cpu << "\n";
+        }
 
         // small validation
         assert(stop_cycle > 0);
         assert(num_mats > 0);
         assert(num_elems > 0);
         assert(num_qpts > 0);
+#ifdef __ENABLE_TORCH__
+        if (model_path == nullptr){
+            std::cerr<< "Compiled with Py-Torch enabled. It is mandatory to provide a surrogate model\n";
+            exit(-1);
+        }
+#endif
         assert((empty_element_ratio >= 0 && empty_element_ratio < 1) || empty_element_ratio == -1);
 
         return true;
@@ -140,8 +154,8 @@ int main(int argc, char **argv) {
     }
 
     // -------------------------------------------------------------------------
-    mmp_main(args.is_cpu, args.stop_cycle, args.pack_sparse_mats,
-             args.num_mats, args.num_elems, args.num_qpts,
+    mmp_main(args.is_cpu, args.device_name, args.stop_cycle, args.pack_sparse_mats,
+             args.num_mats, args.num_elems, args.num_qpts, args.model_path,
              density.data(), energy.data(), indicators);
 
 

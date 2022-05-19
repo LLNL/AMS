@@ -3,8 +3,6 @@
 #include <fstream>
 #include <iostream>
 
-using namespace std;
-
 // A simple class writting data
 // into a file. At some point we should
 // convert this into a pure virtual class.
@@ -47,9 +45,9 @@ public:
     class BaseDB {
     public:
       // path to the file storing the db data
-      string fn;
+      std::string fn;
       // "Emulated data base through a file"
-      fstream fd;
+      std::fstream fd;
       //
       BaseDB(string fn) : fn(fn) {
         // void

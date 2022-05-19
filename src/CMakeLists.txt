@@ -4,25 +4,23 @@ file(GLOB AMS_INCLUDES "*.hpp")
 set(AMS_LIB_SRC mmp.cpp)
 set(AMS_EXE_SRC main.cpp)
 
-if (WITH_CUDA)
-    set_source_files_properties(mmp.cpp PROPERTIES LANGUAGE CUDA)
-    set_source_files_properties(main.cpp PROPERTIES LANGUAGE CUDA)
-endif()
-
-link_directories(${CMAKE_CURRENT_BINARY_DIR})
-
-
 # two targets: a shared lib and an exec
 add_library(mmp SHARED ${AMS_LIB_SRC} ${AMS_INCLUDES})
 add_executable(mmpbin ${AMS_EXE_SRC} ${AMS_INCLUDES})
 
-
-if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-      # using regular Clang or AppleClang
-else()
+if (WITH_CUDA)
+    set_source_files_properties(mmp.cpp PROPERTIES LANGUAGE CUDA)
+    set_source_files_properties(main.cpp PROPERTIES LANGUAGE CUDA)
     target_compile_options(mmp PUBLIC "--expt-extended-lambda")
     target_compile_options(mmpbin PUBLIC "--expt-extended-lambda")
 endif()
+
+link_directories(${CMAKE_CURRENT_BINARY_DIR})
+
+#if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+#      # using regular Clang or AppleClang
+#else()
+#endif()
 
 
 # setup the lib first

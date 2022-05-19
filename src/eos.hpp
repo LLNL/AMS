@@ -26,6 +26,14 @@ public:
                      double *soundspeed2,
                      double *bulkmod,
                      double *temperature) const = 0;
+
+   virtual void computeRMSE(const int length,
+        const double *density,
+        const double *energy,
+        double *pressure,
+        double *soundspeed2,
+        double *bulkmod,
+        double *temperature) const = 0;
 };
 
 #endif

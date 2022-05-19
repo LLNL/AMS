@@ -37,7 +37,6 @@ public:
     int num_mats               = 5;
     int num_elems              = 10000;
     int num_qpts               = 64;
-
     CALIPER(cali::ConfigManager mgr;)
 
     std::vector<EOS *> eoses;
@@ -194,31 +193,31 @@ public:
                                                 &d_dense_uq(0, 0));
                 CALIPER(CALI_MARK_END("UQ_MODULE");)
 
-
-
                 // STEP 2:
                 // let's call surrogate for everything
-                CALIPER(CALI_MARK_BEGIN("SURROGATE");)
-                surrogates[mat_idx]->Eval(num_elems_for_mat * num_qpts,
-                                          &d_dense_density(0, 0),
-                                          &d_dense_energy(0, 0),
-                                          &d_dense_pressure(0, 0),
-                                          &d_dense_soundspeed2(0, 0),
-                                          &d_dense_bulkmod(0, 0),
-                                          &d_dense_temperature(0, 0));
-                CALIPER(CALI_MARK_END("SURROGATE");)
+                double *inputs[] = {&d_dense_density(0, 0), &d_dense_energy(0, 0)};
+                double *outputs[] = {&d_dense_pressure(0, 0),
+                                     &d_dense_soundspeed2(0, 0),
+                                     &d_dense_bulkmod(0, 0),
+                                     &d_dense_temperature(0, 0)};
 
+                CALIPER(CALI_MARK_BEGIN("SURROGATE");)
+                surrogates[mat_idx]->Eval( num_elems_for_mat * num_qpts, 2, 4,inputs, outputs);
+                CALIPER(CALI_MARK_END("SURROGATE");)
+#ifdef __SURROGATE_DEBUG__
+                eoses[mat_idx]->computeRMSE(num_elems_for_mat * num_qpts,
+                                                 &d_dense_density(0, 0),
+                                                 &d_dense_energy(0, 0),
+                                                 &d_dense_pressure(0, 0),
+                                                 &d_dense_soundspeed2(0, 0),
+                                                 &d_dense_bulkmod(0, 0),
+                                                 &d_dense_temperature(0, 0));
+#endif
 
                 // STEP 3b:
 #ifdef __ENABLE_DB__
                 // for d_dense_uq = False we store into DB.
                 CALIPER(CALI_MARK_BEGIN("DBSTORE");)
-                double *inputs[] = {&d_dense_density(0, 0), &d_dense_energy(0, 0)};
-
-                double *outputs[] = {&d_dense_pressure(0, 0),
-                                     &d_dense_soundspeed2(0, 0),
-                                     &d_dense_bulkmod(0, 0),
-                                     &d_dense_temperature(0, 0)};
                 DB->Store(num_elems_for_mat * num_qpts, 2, 4,inputs, outputs);
                 CALIPER(CALI_MARK_END("DBSTORE");)
 #endif
@@ -252,6 +251,27 @@ public:
                 CALIPER(CALI_MARK_END("DENSE_TO_SPARSE");)
          }
          else {
+                double *inputs[] = {
+                    const_cast<double*>(&d_density(0, 0, mat_idx)),
+                    const_cast<double*>(&d_energy(0, 0, mat_idx))};
+                double *outputs[] = {
+                                        const_cast<double*>(&d_pressure(0, 0, mat_idx)),
+                                        const_cast<double*>(&d_soundspeed2(0, 0, mat_idx)),
+                                        const_cast<double*>(&d_bulkmod(0, 0, mat_idx)),
+                                        const_cast<double*>(&d_temperature(0, 0, mat_idx))
+                                     };
+                CALIPER(CALI_MARK_BEGIN("SURROGATE");)
+                surrogates[mat_idx]->Eval( num_elems_for_mat * num_qpts, 2, 4,inputs, outputs);
+                CALIPER(CALI_MARK_END("SURROGATE");)
+#ifdef __SURROGATE_DEBUG__
+//                eoses[mat_idx]->computeRMSE(num_elems_for_mat * num_qpts,
+//                                                 &d_dense_density(0, 0),
+//                                                 &d_dense_energy(0, 0),
+//                                                 &d_dense_pressure(0, 0),
+//                                                 &d_dense_soundspeed2(0, 0),
+//                                                 &d_dense_bulkmod(0, 0),
+//                                                 &d_dense_temperature(0, 0));
+#endif
                 std::cout << " material " << mat_idx << ": using dense packing for " << num_elems_for_mat << " elems\n";
                 eoses[mat_idx]->Eval(num_elems * num_qpts,
                                      &d_density(0, 0, mat_idx),

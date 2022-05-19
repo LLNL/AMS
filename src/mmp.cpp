@@ -16,8 +16,8 @@
 //! ----------------------------------------------------------------------------
 //! the main miniapp function that is exposed to the shared lib
 extern "C"
-void mmp_main(bool is_cpu, int stop_cycle, bool pack_sparse_mats,
-             int num_mats, int num_elems, int num_qpts,
+void mmp_main(bool is_cpu, const char *device_name, int stop_cycle, bool pack_sparse_mats,
+             int num_mats, int num_elems, int num_qpts, const char *model_path,
              double *density_in, double *energy_in, bool *indicators_in) {
 
 
@@ -26,8 +26,8 @@ void mmp_main(bool is_cpu, int stop_cycle, bool pack_sparse_mats,
 
     // setup device
 
-    //mfem::Device device(miniapp.device_name);
-    mfem::Device device("cpu");
+    mfem::Device device(device_name);
+    //mfem::Device device("cpu");
     device.Print();
     std::cout << std::endl;
 
@@ -39,7 +39,7 @@ void mmp_main(bool is_cpu, int stop_cycle, bool pack_sparse_mats,
     int cache_dim = 2;
     for (int mat_idx = 0; mat_idx < miniapp.num_mats; ++mat_idx) {
         miniapp.eoses[mat_idx] = new IdealGas(1.6, 1.4);
-        miniapp.surrogates[mat_idx] = new SurrogateModel(temp_eos);
+        miniapp.surrogates[mat_idx] = new SurrogateModel(temp_eos, model_path, is_cpu);
         miniapp.hdcaches[mat_idx] = new HDCache(cache_dim);
     }
 
@@ -51,7 +51,7 @@ void mmp_main(bool is_cpu, int stop_cycle, bool pack_sparse_mats,
     // mfem::DenseTensor has shapw (i,j,k)
     //  contains k 2D "DenseMatrix" each of size ixj
 
-#if 1
+#if 0
     // if the data has been defined in C order (mat x elems x qpts)
     // the following conversion works
     mfem::DenseTensor density(density_in, num_qpts, num_elems, num_mats);
