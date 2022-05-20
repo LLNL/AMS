@@ -1,6 +1,48 @@
 # marbl material proporties mini-miniapp
 
+
+## Setup and Build using shared `spack`
+
+All dependencies needed for the `miniapp` are installed through `spack` on a shared
+space `/usr/workspace/AMS`.
+
+Steps to build the code.
+
+1. Clone the code repository.
+```
+$ git clone ssh://git@czgitlab.llnl.gov:7999/autonomous-multiscale-project/marbl-matprops-miniapp.git
+$ CODE_ROOT=`pwd`/marbl-matprops-miniapp
+```
+
+2. Setup the environment -- the following script will load all dependencies and
+setup some relevant paths.
+```
+$ cd $CODE_ROOT
+$ source setup_env.sh
+```
+
+3. Build the mini-app. Please note the optional features that can be turned off.
+```
+$ mkdir build; cd build
+$  cmake \
+  -DMFEM_DIR=$AMS_MFEM_PATH \
+  -DWITH_CUDA=On \
+  -DWITH_CALIPER=On \  
+  -DWITH_TORCH=On -DTorch_DIR=$AMS_TORCH_PATH \
+  -DWITH_FAISS=On -DFAISS_DIR=$AMS_FAISS_PATH \
+  ../
+```
+
+4. Running.
+```
+$ ./build/src/mmp
+```
+  **TODO:** add instructions on command line options!
+
 ## System Setup Using Spack
+
+** These are the instructions to create a new spack environment. not needed if
+you can simply use the shared installations from above.**
 
 To install all dependencies of the proxy-app we rely on spack@0.18.0 (Earlier versions should work as
 well) and on spack environments. We provide instruction on how to install on an IBM-NVIDIA V100 system.
@@ -10,7 +52,7 @@ Change directory to the root of the repo. Then:
 1. Create a new spack environment.
 ```bash
 mkdir spack_env
-spack env create -d spack_env 
+spack env create -d spack_env
 ```
 2. Open and edit the spack environement configuration file (spack_env/spack.yaml). In the end the configuration file should look like the following:
 
@@ -31,13 +73,13 @@ spack:
       cuda:
         externals:
         - spec: cuda@11.1.0 arch=linux-rhel7-power9le
-          prefix: PREFIX_TO_CUDA@11.1.0 
+          prefix: PREFIX_TO_CUDA@11.1.0
         - spec: cuda@11.2.0 arch=linux-rhel7-power9le
-          prefix: PREFIX_TO_CUDA@11.2.0 
+          prefix: PREFIX_TO_CUDA@11.2.0
         - spec: cuda@11.3.0 arch=linux-rhel7-power9le
-          prefix: PREFIX_TO_CUDA@11.3.0 
+          prefix: PREFIX_TO_CUDA@11.3.0
         - spec: cuda@11.4.1 arch=linux-rhel7-power9le
-          prefix: PREFIX_TO_CUDA@11.4.1 
+          prefix: PREFIX_TO_CUDA@11.4.1
         - spec: cuda@11.5.0 arch=linux-rhel7-power9le
           prefix: PREFIX_TO_CUDA@11.5.0
         buildable: false
@@ -73,8 +115,8 @@ python -m pip install cmake ninja
 
 6. Add next dependencies to the spack environment.
 ```bash
-spack add mfem%gcc@8.3.1+cuda~mpi+shared cuda_arch=70 ^cuda@11.1.0 ^spectrum-mpi 
-spack add caliper@2.7.0%gcc@8.3.1~adiak+cuda cuda_arch=70 ^cuda@11.1.0 ^spectrum-mpi 
+spack add mfem%gcc@8.3.1+cuda~mpi+shared cuda_arch=70 ^cuda@11.1.0 ^spectrum-mpi
+spack add caliper@2.7.0%gcc@8.3.1~adiak+cuda cuda_arch=70 ^cuda@11.1.0 ^spectrum-mpi
 spack add python@3.8.6%gcc@8.3.1
 spack add py-torch@1.8.1%gcc@8.3.1+cuda~distributed~mkldnn~xnnpack cuda_arch=70
 spack concretize
@@ -86,7 +128,7 @@ The previous commands instruct spack to install mfem, py-torch and caliper. It e
 ## Build Proxy Application using the Spack environment
 1. Activate the installed environment and load all required packages:
 ```bash
-spack env activate spack_env 
+spack env activate spack_env
 spack load mfem
 spack load caliper
 spack load python
