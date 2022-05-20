@@ -16,10 +16,12 @@
 #include "faiss/IndexFlat.h"
 
 
-// c++14 already defines this!
-template <bool B, typename T = void>
-using enable_if_t = typename std::enable_if<B, T>::type;
+#if __cplusplus < 201402L
+  template <bool B, typename T = void>
+  using enable_if_t = typename std::enable_if<B, T>::type;
+#else
 
+#endif
 
 
 //! ----------------------------------------------------------------------------
@@ -49,7 +51,7 @@ class HDCache {
     //! -----------------------------------------------------------------------
 
     //! when  (data type = TypeValue)
-    template <class T, enable_if_t<std::is_same<TypeValue,T>::value>* = nullptr>
+    template <class T, std::enable_if_t<std::is_same<TypeValue,T>::value>* = nullptr>
     static inline
     TypeValue*
     _cast_to_typevalue(const size_t n, T *data) {
@@ -57,7 +59,7 @@ class HDCache {
     }
 
     //! when  (data type != TypeValue)
-    template <typename T, enable_if_t<!std::is_same<TypeValue,T>::value>* = nullptr>
+    template <typename T, std::enable_if_t<!std::is_same<TypeValue,T>::value>* = nullptr>
     static inline
     TypeValue*
     _cast_to_typevalue(const size_t n, T *data) {
@@ -73,14 +75,14 @@ class HDCache {
     //! -----------------------------------------------------------------------
 
     //! when  (data type = TypeValue)
-    template <typename T, enable_if_t<std::is_same<TypeValue,T>::value>* = nullptr>
+    template <typename T, std::enable_if_t<std::is_same<TypeValue,T>::value>* = nullptr>
     inline void
     _add(const size_t ndata, const T *data) {
         index->add(ndata, data);
     }
 
     //! when  (data type != TypeValue)
-    template <class T, enable_if_t<!std::is_same<TypeValue,T>::value>* = nullptr>
+    template <class T, std::enable_if_t<!std::is_same<TypeValue,T>::value>* = nullptr>
     inline void
     _add(const size_t ndata, const T *data) {
         TypeValue *vdata = _cast_to_typevalue(ndata, data);
@@ -93,7 +95,7 @@ class HDCache {
     //! ------------------------------------------------------------------------
 
     //! when  (data type = TypeValue)
-    template <typename T, enable_if_t<std::is_same<TypeValue,T>::value>* = nullptr>
+    template <typename T, std::enable_if_t<std::is_same<TypeValue,T>::value>* = nullptr>
     inline void
     _train(const size_t ndata, const T *data) {
 
@@ -108,7 +110,7 @@ class HDCache {
     }
 
     //! when  (data type != TypeValue)
-    template <typename T, enable_if_t<!std::is_same<TypeValue,T>::value>* = nullptr>
+    template <typename T, std::enable_if_t<!std::is_same<TypeValue,T>::value>* = nullptr>
     inline void
     _train(const size_t ndata, const T *data) {
 
@@ -129,7 +131,7 @@ class HDCache {
     //! compute mean distance to k nearest neighbors
     //! ------------------------------------------------------------------------
 
-    template <typename T, enable_if_t<std::is_same<TypeValue,T>::value>* = nullptr>
+    template <typename T, std::enable_if_t<std::is_same<TypeValue,T>::value>* = nullptr>
     inline
     void
     _mean_dist_to_knn(const size_t ndata, const T *data, const uint8_t k,
@@ -159,7 +161,7 @@ class HDCache {
         }
     }
 
-    template <typename T, enable_if_t<!std::is_same<TypeValue,T>::value>* = nullptr>
+    template <typename T, std::enable_if_t<!std::is_same<TypeValue,T>::value>* = nullptr>
     inline
     void
     _mean_dist_to_knn(const size_t ndata, const T *data, const uint8_t k,
