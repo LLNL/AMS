@@ -11,10 +11,11 @@
 #include <stdexcept>
 #include <type_traits>
 
+#ifdef __ENABLE_FAISS__
 #include <faiss/index_io.h>
 #include <faiss/index_factory.h>
 #include "faiss/IndexFlat.h"
-
+#endif
 
 #if __cplusplus < 201402L
   template <bool B, typename T = void>
@@ -35,15 +36,23 @@ class HDCache {
     static_assert (std::is_floating_point<TypeInValue>::value,
                   "HDCache supports floating-point values (floats, doubles, or long doubles) only!");
 
+#ifdef __ENABLE_FAISS__
     using TypeIndex = faiss::Index::idx_t;      // 64-bit int
+#else
+    using TypeIndex = uint64_t;
+#endif
     using TypeValue = float;                    // faiss uses floats
 
     //! faiss index
+    const char* index_key = "IVF4096,Flat";
+#ifdef __ENABLE_FAISS__
+    faiss::Index* index;
+#else
+    void *index;
+#endif
+
     const uint8_t dim;
     const uint8_t knbrs;
-
-    const char* index_key = "IVF4096,Flat";
-    faiss::Index* index;
 
 
     //! -----------------------------------------------------------------------
@@ -69,7 +78,7 @@ class HDCache {
         return fdata;
     }
 
-
+#ifdef __ENABLE_FAISS__
     //! -----------------------------------------------------------------------
     //! add points to cache
     //! -----------------------------------------------------------------------
@@ -98,7 +107,6 @@ class HDCache {
     template <typename T, std::enable_if_t<std::is_same<TypeValue,T>::value>* = nullptr>
     inline void
     _train(const size_t ndata, const T *data) {
-
         if (index != nullptr && index->is_trained)
             throw std::invalid_argument("Trying to re-train an already trained index!");
 
@@ -113,7 +121,6 @@ class HDCache {
     template <typename T, std::enable_if_t<!std::is_same<TypeValue,T>::value>* = nullptr>
     inline void
     _train(const size_t ndata, const T *data) {
-
         if (index != nullptr && index->is_trained)
             throw std::invalid_argument("Trying to re-train an already trained index!");
 
@@ -130,7 +137,6 @@ class HDCache {
     //! ------------------------------------------------------------------------
     //! compute mean distance to k nearest neighbors
     //! ------------------------------------------------------------------------
-
     template <typename T, std::enable_if_t<std::is_same<TypeValue,T>::value>* = nullptr>
     inline
     void
@@ -171,7 +177,7 @@ class HDCache {
         _mean_dist_to_knn(ndata, data, k, mean_dists);
         delete []  vdata;
     }
-
+#endif
 
     //! -----------------------------------------------------------------------
     //! linearize a set of features (vector of pointers) into
@@ -199,17 +205,30 @@ public:
     }
 
     void load_cache(const std::string &filename) {
+#ifdef __ENABLE_FAISS__
         index = faiss::read_index(filename.c_str());
         std::cout << "Loaded hd cache with " << index->ntotal << " points from ("<<filename<<")\n";
+#else
+        std::cerr << "HDCache::load_cache() is a no-op without Faiss\n";
+#endif
     }
     void save_cache(const std::string &filename) {
+#ifdef __ENABLE_FAISS__
         std::cout << "Saving hd cache with " << index->ntotal << " points to ("<<filename<<")\n";
         faiss::write_index(index, filename.c_str());
+#else
+        std::cerr << "HDCache::save_cache() is a no-op without Faiss\n";
+#endif
     }
 
     //! -----------------------------------------------------------------------
+#ifdef __ENABLE_FAISS__
     inline bool has_index() const { return index != nullptr && index->is_trained; }
     inline bool count() const {     return has_index() ? index->ntotal : 0;       }
+#else
+    inline bool has_index() const { return false; }
+    inline bool count() const {     return 0;     }
+#endif
 
     //! -----------------------------------------------------------------------
     //! add points to the cache
@@ -217,7 +236,7 @@ public:
 
     //! add the data that comes as separate features (a vector of pointers)
     void add(const size_t ndata, const std::vector<const TypeInValue *> &data) {
-
+#ifdef __ENABLE_FAISS__
         std::cout << "Adding " << ndata << " " << data.size() << "-dim points!\n";
 
         if (data.size() != dim)
@@ -231,11 +250,14 @@ public:
         lin_data.clear();
 
         std::cout << "Successfully added! Cache has " << index->ntotal << " points!\n";
+#else
+        std::cerr << "HDCache::add() is a no-op without Faiss\n";
+#endif
     }
 
     //! add the data that comes as linearized features
     void add(const size_t ndata, const size_t d, TypeInValue *data) {
-
+#ifdef __ENABLE_FAISS__
         std::cout << "Adding " << ndata << " " << d << "-dim points!\n";
 
         if (d != dim)
@@ -246,6 +268,9 @@ public:
 
         _add(ndata, data);
         std::cout << "Successfully added! Cache has " << index->ntotal << " points!\n";
+#else
+        std::cerr << "HDCache::add() is a no-op without Faiss\n";
+#endif
     }
 
     //! -----------------------------------------------------------------------
@@ -254,7 +279,7 @@ public:
 
     //! train on data that comes separate features (a vector of pointers)
     void train(const size_t ndata, const std::vector<const TypeInValue *> &data) {
-
+#ifdef __ENABLE_FAISS__
         std::cout << "Training a " << int(dim) << "-dim cache "
                   << "using " << ndata << " " << data.size() << "-dim points!\n";
 
@@ -269,11 +294,14 @@ public:
         lin_data.clear();
 
         std::cout << "Successfully trained " << int(dim) << "-dim faiss index!\n";
+#else
+        std::cerr << "HDCache::train() is a no-op without Faiss\n";
+#endif
     }
 
     //! train on data that comes as linearized features
     void train(const size_t ndata, const size_t d, TypeInValue *data) {
-
+#ifdef __ENABLE_FAISS__
         std::cout << "Training a " << int(dim) << "-dim cache "
                   << "using " << ndata << " " << d << "-dim points!\n";
 
@@ -285,6 +313,9 @@ public:
 
         _train(ndata, data);
         std::cout << "Successfully trained " << int(dim) << "-dim faiss index!\n";
+#else
+        std::cerr << "HDCache::train() is a no-op without Faiss\n";
+#endif
     }
 
 
@@ -299,17 +330,24 @@ public:
               const TypeInValue *energy,
               bool *is_acceptable)  const {
 
+      static const TypeInValue acceptable_error = 0.5;
+
+#ifdef __ENABLE_FAISS__
         // keep static. can we afford to hold the memory??
         static std::vector<TypeValue> mean_dists (length);
 
         std::vector<TypeValue> data = linearize_features(length, {density, energy});
-
         _mean_dist_to_knn(length, data.data(), knbrs, mean_dists);
 
-        const TypeInValue acceptable_error = 0.5;
         std::transform(mean_dists.begin(), mean_dists.end(), is_acceptable,
                        [&acceptable_error](const TypeValue& v) { return v <= acceptable_error; });
-    }
+#else
+
+        for(int i = 0; i < length; i++) {
+          is_acceptable[i] = ((TypeInValue)rand() / RAND_MAX) <= acceptable_error;
+        }
+#endif
+   }
 
 
    //! this function can use both "inputs" and "outputs"
