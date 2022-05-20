@@ -31,6 +31,7 @@ $  cmake \
   -DWITH_TORCH=On -DTorch_DIR=$AMS_TORCH_PATH \
   -DWITH_FAISS=On -DFAISS_DIR=$AMS_FAISS_PATH \
   ../
+$ make -j6
 ```
 
 4. Running.
