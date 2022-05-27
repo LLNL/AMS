@@ -183,44 +183,50 @@ public:
                 dense_uq = false;
                 auto d_dense_uq = mfem::Reshape(dense_uq.Write(), num_qpts, num_elems_for_mat);
 
-                CALIPER(CALI_MARK_BEGIN("UQ_MODULE");)
-                // STEP 1:
-                // call the hdcache to look at input uncertainties
-                // to decide if making a ML inference makes sense
-                hdcaches[mat_idx]->Eval(num_elems_for_mat * num_qpts,
-                                                &d_dense_density(0, 0),
-                                                &d_dense_energy(0, 0),
-                                                &d_dense_uq(0, 0));
-                CALIPER(CALI_MARK_END("UQ_MODULE");)
+                if (hdcaches[mat_idx] != nullptr)
+                {
+                   CALIPER(CALI_MARK_BEGIN("UQ_MODULE");)
+                   // STEP 1:
+                   // call the hdcache to look at input uncertainties
+                   // to decide if making a ML inference makes sense
+                   hdcaches[mat_idx]->Eval(num_elems_for_mat * num_qpts,
+                                                   &d_dense_density(0, 0),
+                                                   &d_dense_energy(0, 0),
+                                                   &d_dense_uq(0, 0));
+                   CALIPER(CALI_MARK_END("UQ_MODULE");)
+                }
 
-                // STEP 2:
-                // let's call surrogate for everything
-                double *inputs[] = {&d_dense_density(0, 0), &d_dense_energy(0, 0)};
-                double *outputs[] = {&d_dense_pressure(0, 0),
-                                     &d_dense_soundspeed2(0, 0),
-                                     &d_dense_bulkmod(0, 0),
-                                     &d_dense_temperature(0, 0)};
+                if (surrogates[mat_idx] != nullptr)
+                {
+                   // STEP 2:
+                   // let's call surrogate for everything
+                   double *inputs[] = {&d_dense_density(0, 0), &d_dense_energy(0, 0)};
+                   double *outputs[] = {&d_dense_pressure(0, 0),
+                                        &d_dense_soundspeed2(0, 0),
+                                        &d_dense_bulkmod(0, 0),
+                                        &d_dense_temperature(0, 0)};
 
-                CALIPER(CALI_MARK_BEGIN("SURROGATE");)
-                surrogates[mat_idx]->Eval( num_elems_for_mat * num_qpts, 2, 4,inputs, outputs);
-                CALIPER(CALI_MARK_END("SURROGATE");)
+                   CALIPER(CALI_MARK_BEGIN("SURROGATE");)
+                   surrogates[mat_idx]->Eval( num_elems_for_mat * num_qpts, 2, 4,inputs, outputs);
+                   CALIPER(CALI_MARK_END("SURROGATE");)
 #ifdef __SURROGATE_DEBUG__
-                eoses[mat_idx]->computeRMSE(num_elems_for_mat * num_qpts,
-                                                 &d_dense_density(0, 0),
-                                                 &d_dense_energy(0, 0),
-                                                 &d_dense_pressure(0, 0),
-                                                 &d_dense_soundspeed2(0, 0),
-                                                 &d_dense_bulkmod(0, 0),
-                                                 &d_dense_temperature(0, 0));
+                   eoses[mat_idx]->computeRMSE(num_elems_for_mat * num_qpts,
+                                                    &d_dense_density(0, 0),
+                                                    &d_dense_energy(0, 0),
+                                                    &d_dense_pressure(0, 0),
+                                                    &d_dense_soundspeed2(0, 0),
+                                                    &d_dense_bulkmod(0, 0),
+                                                    &d_dense_temperature(0, 0));
 #endif
-
-                // STEP 3b:
+                   // STEP 3b:
 #ifdef __ENABLE_DB__
-                // for d_dense_uq = False we store into DB.
-                CALIPER(CALI_MARK_BEGIN("DBSTORE");)
-                DB->Store(num_elems_for_mat * num_qpts, 2, 4,inputs, outputs);
-                CALIPER(CALI_MARK_END("DBSTORE");)
+                   // for d_dense_uq = False we store into DB.
+                   CALIPER(CALI_MARK_BEGIN("DBSTORE");)
+                   DB->Store(num_elems_for_mat * num_qpts, 2, 4,inputs, outputs);
+                   CALIPER(CALI_MARK_END("DBSTORE");)
 #endif
+                }
+
 
                 // STEP 3:
                 // let's call physics module only where the d_dense_uq = flags are true
@@ -251,6 +257,8 @@ public:
                 CALIPER(CALI_MARK_END("DENSE_TO_SPARSE");)
          }
          else {
+            if (surrogates[mat_idx] != nullptr)
+            {
                 double *inputs[] = {
                     const_cast<double*>(&d_density(0, 0, mat_idx)),
                     const_cast<double*>(&d_energy(0, 0, mat_idx))};
@@ -263,6 +271,7 @@ public:
                 CALIPER(CALI_MARK_BEGIN("SURROGATE");)
                 surrogates[mat_idx]->Eval( num_elems_for_mat * num_qpts, 2, 4,inputs, outputs);
                 CALIPER(CALI_MARK_END("SURROGATE");)
+            }
 #ifdef __SURROGATE_DEBUG__
 //                eoses[mat_idx]->computeRMSE(num_elems_for_mat * num_qpts,
 //                                                 &d_dense_density(0, 0),
@@ -286,4 +295,3 @@ public:
         CALIPER(CALI_MARK_FUNCTION_END);
     }
 };
-

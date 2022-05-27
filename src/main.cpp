@@ -2,19 +2,21 @@
 #include <cstdlib>
 #include <vector>
 #include <string>
+#include <unordered_set>
 
 #include "mfem.hpp"
 #include "mmp.hpp"
 
 
 double unitrand() { return (double)rand() / RAND_MAX; }
+const std::unordered_set<std::string> eos_options { "ideal_gas", "constant_host" };
 
 
 //! ----------------------------------------------------------------------------
 struct MiniAppArgs {
-
     const char *device_name    = "cpu";
-    const char *model_path     = nullptr;
+    const char *eos_name       = "ideal_gas";
+    const char *model_path     = "";
     bool is_cpu                = true;
 
     int seed                   = 0;
@@ -48,6 +50,7 @@ struct MiniAppArgs {
                        "-np",
                        "--do-not-pack-sparse",
                        "pack sparse material data before evals (cpu only)");
+        args.AddOption(&eos_name, "-z", "--eos", "EOS model type");
 
         args.Parse();
         if (!args.Good())
@@ -55,12 +58,27 @@ struct MiniAppArgs {
            args.PrintUsage(std::cout);
            return false;
         }
+
+        if (eos_options.find(eos_name) == eos_options.end()) {
+           std::cerr << "Unsupported eos `" << eos_name << "'" << std::endl << "Available options: " << std::endl;
+           for (const auto & s : eos_options)
+           {
+              std::cerr << " - " << s << std::endl;
+           }
+           return false;
+        }
+        else
+        {
+           std::cout << "Using `" << eos_name << "'" << std::endl;
+        }
+
         args.PrintOptions(std::cout);
-        std::cout << "Device:" << device_name << "\n";
+        std::cout << "Device:" << device_name << std::endl;
         if (strcmp(device_name, "cuda") == 0){
             is_cpu = false;
-            std::cout << "IS_CPU:" << is_cpu << "\n";
+            std::cout << "IS_CPU:" << is_cpu << std::endl;
         }
+        std::cout << std::endl;
 
         // small validation
         assert(stop_cycle > 0);
@@ -155,7 +173,7 @@ int main(int argc, char **argv) {
 
     // -------------------------------------------------------------------------
     mmp_main(args.is_cpu, args.device_name, args.stop_cycle, args.pack_sparse_mats,
-             args.num_mats, args.num_elems, args.num_qpts, args.model_path,
+             args.num_mats, args.num_elems, args.num_qpts, args.model_path, args.eos_name,
              density.data(), energy.data(), indicators);
 
 

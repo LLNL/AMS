@@ -72,6 +72,17 @@ list(APPEND AMS_APP_LIB_DIRS "${MFEM_LIB_DIR}")
 
 
 # ------------------------------------------------------------------------------
+find_package(Umpire REQUIRED PATHS ${UMPIRE_DIR}/share/umpire/cmake)
+list(APPEND AMS_APP_LIBRARIES umpire)
+list(APPEND AMS_APP_INCLUDE ${umpire_INCLUDE_DIR})
+
+
+# ------------------------------------------------------------------------------
+# tms (22/05/27) I needed this but others don't?
+find_package(Threads REQUIRED)
+
+
+# ------------------------------------------------------------------------------
 if (WITH_TORCH)
   find_package(Torch REQUIRED)
 

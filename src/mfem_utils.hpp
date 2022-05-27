@@ -54,12 +54,12 @@ void print_dense_tensor(const std::string &label,
                         const mfem::DenseTensor &values) {
 
     const int I = values.SizeI(), J = values.SizeJ(), K = values.SizeK();
-    std::cout << "--> printing ["<<I<<" x "<<J<<" x "<<K<<"] dense_tensor \""<<label<<"\"\n";// = " << values << "\n";
+    std::cerr << "--> printing ["<<I<<" x "<<J<<" x "<<K<<"] dense_tensor \""<<label<<"\"" << std::endl;// = " << values << "\n";
 
     for (int k = 0; k < K; ++k) {
     for (int j = 0; j < J; ++j) {
     for (int i = 0; i < I; ++i) {
-        std::cout << label<<"["<<i<<","<<j<<", "<<k<<"] = " << values(i,j,k) <<"\n";
+        std::cerr << label<<"["<<i<<","<<j<<", "<<k<<"] = " << values(i,j,k) << std::endl;
     }}}
 }
 
