@@ -340,7 +340,7 @@ public:
         _mean_dist_to_knn(length, data.data(), knbrs, mean_dists);
 
         std::transform(mean_dists.begin(), mean_dists.end(), is_acceptable,
-                       [&acceptable_error](const TypeValue& v) { return v <= acceptable_error; });
+                       [](const TypeValue& v) { return v <= acceptable_error; });
 #else
 
         for(int i = 0; i < length; i++) {
