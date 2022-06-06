@@ -1,7 +1,15 @@
-mmp-*
-mfem
-build
+#mmp-*
+#mfem
 
-*.DS_Store
+## build directories
+build*
+
+## temporaries
+CMakeLists.txt.user
 Makefile.user
-src/*.autosave
+
+**.autosave
+
+## mac temps
+**.DS_Store
+

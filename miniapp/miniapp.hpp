@@ -8,12 +8,12 @@
 #include "mfem/general/forall.hpp"
 #include "mfem/linalg/dtensor.hpp"
 
-#include "eos.hpp"
-#include "surrogate.hpp"
-#include "hdcache.hpp"
-#include "basedb.hpp"
+#include "app/eos.hpp"
+#include "app/mfem_utils.hpp"
+#include "ml/surrogate.hpp"
+#include "ml/hdcache.hpp"
+#include "wf/basedb.hpp"
 
-#include "mfem_utils.hpp"
 
 // This is usefull to completely remove
 // caliper at compile time.

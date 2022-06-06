@@ -72,7 +72,14 @@ list(APPEND AMS_APP_LIB_DIRS "${MFEM_LIB_DIR}")
 
 
 # ------------------------------------------------------------------------------
-find_package(Umpire REQUIRED PATHS ${UMPIRE_DIR}/share/umpire/cmake)
+if(NOT DEFINED umpire_DIR OR NOT EXISTS ${umpire_DIR}/lib/cmake/umpire/umpire-config.cmake)
+    message(FATAL_ERROR "Missing required 'umpire_DIR' variable pointing to an installed Umpire")
+endif()
+find_package(umpire REQUIRED
+             NO_DEFAULT_PATH
+             PATHS ${umpire_DIR}/lib/cmake/umpire)
+
+#find_package(Umpire REQUIRED PATHS ${UMPIRE_DIR}/share/umpire/cmake)
 list(APPEND AMS_APP_LIBRARIES umpire)
 list(APPEND AMS_APP_INCLUDE ${umpire_INCLUDE_DIR})
 
@@ -129,6 +136,6 @@ endif()
 
 
 # ------------------------------------------------------------------------------
-add_subdirectory(src)
+add_subdirectory(miniapp)
 
 # ------------------------------------------------------------------------------

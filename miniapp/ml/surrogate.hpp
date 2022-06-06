@@ -49,8 +49,8 @@ void DtoHMemcpy(void *dest, void *src, size_t nBytes ){
 }
 #endif
 
-#include "eos.hpp"
-#include "eos_idealgas.hpp"
+#include "app/eos.hpp"
+#include "app/eos_idealgas.hpp"
 
 #ifdef __ENABLE_TORCH__
 //! An implementation for a surrogate model

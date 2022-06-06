@@ -1,18 +1,21 @@
-#include <stdio.h>
-#include <stdlib.h>
-
-#include <umpire/Umpire.hpp>
+#include <cstdio>
+#include <cstdlib>
 #include <vector>
 
-#include "eos.hpp"
-#include "eos_constant_on_host.hpp"
-#include "eos_idealgas.hpp"
-#include "hdcache.hpp"
+#include <umpire/Umpire.hpp>
+
 #include "mfem.hpp"
 #include "mfem/linalg/dtensor.hpp"
-#include "mfem_utils.hpp"
+
+#include "app/eos.hpp"
+#include "app/eos_constant_on_host.hpp"
+#include "app/eos_idealgas.hpp"
+#include "app/mfem_utils.hpp"
+
+#include "ml/hdcache.hpp"
+#include "ml/surrogate.hpp"
+
 #include "miniapp.hpp"
-#include "surrogate.hpp"
 
 const char *host_alloc_name = "mmp-host-quickpool";
 const char *device_alloc_name = "mmp-device-quickpool";
