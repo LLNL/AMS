@@ -79,6 +79,7 @@ list(APPEND AMS_APP_INCLUDE ${umpire_INCLUDE_DIR})
 
 # ------------------------------------------------------------------------------
 # tms (22/05/27) I needed this but others don't?
+# this is likely needed only for clang
 find_package(Threads REQUIRED)
 
 
