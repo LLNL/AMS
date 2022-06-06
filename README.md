@@ -26,6 +26,7 @@ $ source setup_env.sh
 $ mkdir build; cd build
 $  cmake \
   -DMFEM_DIR=$AMS_MFEM_PATH \
+  -DUMPIRE_DIR=$AMS_UMPIRE_PATH \
   -DWITH_CUDA=On \
   -DWITH_CALIPER=On \  
   -DWITH_TORCH=On -DTorch_DIR=$AMS_TORCH_PATH \
