@@ -5,7 +5,7 @@
 #include <unordered_set>
 
 #include "mfem.hpp"
-#include "mmp.hpp"
+#include "miniapp_lib.hpp"
 
 
 double unitrand() { return (double)rand() / RAND_MAX; }
@@ -172,9 +172,9 @@ int main(int argc, char **argv) {
     }
 
     // -------------------------------------------------------------------------
-    mmp_main(args.is_cpu, args.device_name, args.stop_cycle, args.pack_sparse_mats,
-             args.num_mats, args.num_elems, args.num_qpts, args.model_path, args.eos_name,
-             density.data(), energy.data(), indicators);
+    miniapp_lib(args.is_cpu, args.device_name, args.stop_cycle, args.pack_sparse_mats,
+                args.num_mats, args.num_elems, args.num_qpts, args.model_path, args.eos_name,
+                density.data(), energy.data(), indicators);
 
 
     return EXIT_SUCCESS;

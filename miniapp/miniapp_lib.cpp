@@ -22,10 +22,10 @@ const char *device_alloc_name = "mmp-device-quickpool";
 
 //! ----------------------------------------------------------------------------
 //! the main miniapp function that is exposed to the shared lib
-extern "C" void mmp_main(bool is_cpu, const char *device_name, int stop_cycle,
-                         bool pack_sparse_mats, int num_mats, int num_elems, int num_qpts,
-                         const char *model_path, const std::string &eos_name, double *density_in,
-                         double *energy_in, bool *indicators_in) {
+extern "C" void miniapp_lib(bool is_cpu, const char *device_name, int stop_cycle,
+                            bool pack_sparse_mats, int num_mats, int num_elems, int num_qpts,
+                            const char *model_path, const std::string &eos_name, double *density_in,
+                            double *energy_in, bool *indicators_in) {
     // create an object of the miniapp
     MiniApp miniapp(num_mats, num_elems, num_qpts, is_cpu, pack_sparse_mats);
 

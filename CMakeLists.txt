@@ -39,7 +39,7 @@ if (WITH_CUDA)
   # Turn off message of mfem
   set(ENABLE_CUDA True)
   list(APPEND AMS_APP_LIBRARIES ${CUDA_LIBRARIES} cuda)
-  list(APPEND AMS_DEFINES "-D__ENABLE_CUDA__")
+  list(APPEND AMS_APP_DEFINES "-D__ENABLE_CUDA__")
 endif()
 
 
@@ -47,15 +47,15 @@ endif()
 if (WITH_CALIPER)
   find_package(caliper REQUIRED)
 
-  list(APPEND AMS_APP_INCLUDE ${caliper_INCLUDE_DIR})
+  list(APPEND AMS_APP_INCLUDES ${caliper_INCLUDE_DIR})
   list(APPEND AMS_APP_LIBRARIES caliper)
-  list(APPEND AMS_DEFINES "-D__ENABLE_CALIPER__")
+  list(APPEND AMS_APP_DEFINES "-D__ENABLE_CALIPER__")
 endif()
 
 
 # ------------------------------------------------------------------------------
 if (WITH_DB)
-  list(APPEND AMS_DEFINES "-D__ENABLE_DB__")
+  list(APPEND AMS_APP_DEFINES "-D__ENABLE_DB__")
 endif()
 
 
@@ -66,22 +66,21 @@ else()
   find_package(MFEM REQUIRED)  # HINTS ${MFEM_DIR} ${MFEM_DIR}/share/mfem/)
 endif()
 
-list(APPEND AMS_APP_INCLUDE "${MFEM_INCLUDE_DIRS}")
+list(APPEND AMS_APP_INCLUDES "${MFEM_INCLUDE_DIRS}")
 list(APPEND AMS_APP_LIBRARIES "${MFEM_LIBRARIES}")
 list(APPEND AMS_APP_LIB_DIRS "${MFEM_LIB_DIR}")
 
 
 # ------------------------------------------------------------------------------
-if(NOT DEFINED umpire_DIR OR NOT EXISTS ${umpire_DIR}/lib/cmake/umpire/umpire-config.cmake)
+if(NOT DEFINED umpire_DIR) # OR NOT EXISTS ${umpire_DIR}/lib/cmake/umpire/umpire-config.cmake)
     message(FATAL_ERROR "Missing required 'umpire_DIR' variable pointing to an installed Umpire")
 endif()
 find_package(umpire REQUIRED
              NO_DEFAULT_PATH
-             PATHS ${umpire_DIR}/lib/cmake/umpire)
+             PATHS ${umpire_DIR}/lib/cmake/umpire ${umpire_DIR}/share/umpire/cmake)
 
-#find_package(Umpire REQUIRED PATHS ${UMPIRE_DIR}/share/umpire/cmake)
 list(APPEND AMS_APP_LIBRARIES umpire)
-list(APPEND AMS_APP_INCLUDE ${umpire_INCLUDE_DIR})
+list(APPEND AMS_APP_INCLUDES ${umpire_INCLUDE_DIR})
 
 
 # ------------------------------------------------------------------------------
@@ -97,12 +96,12 @@ if (WITH_TORCH)
   message("Torch Includes: ${TORCH_INCLUDE_DIRS}")
   message("Torch Libraries: ${TORCH_LIBRARIES}")
 
-  list(APPEND AMS_APP_INCLUDE "${TORCH_INCLUDE_DIRS}")
+  list(APPEND AMS_APP_INCLUDES "${TORCH_INCLUDE_DIRS}")
   list(APPEND AMS_APP_LIBRARIES "${TORCH_LIBRARIES}")
 
-  list(APPEND AMS_DEFINES "-D__ENABLE_TORCH__")
+  list(APPEND AMS_APP_DEFINES "-D__ENABLE_TORCH__")
   if (WITH_TORCH_DEBUG)
-    list(APPEND AMS_DEFINES "-D__SURROGATE_DEBUG__")
+    list(APPEND AMS_APP_DEFINES "-D__SURROGATE_DEBUG__")
   endif()
 endif()
 
@@ -122,14 +121,14 @@ if (WITH_FAISS)
     message(FATAL_ERROR "Cannot find FAISS. FAISS_DIR is not defined.")
   endif()
 
-  list(APPEND AMS_APP_INCLUDE "${FAISS_INCLUDE_DIRS}")
+  list(APPEND AMS_APP_INCLUDES "${FAISS_INCLUDE_DIRS}")
   list(APPEND AMS_APP_LIB_DIRS "${FAISS_LIB_DIR}")
   list(APPEND AMS_APP_LIBRARIES "${FAISS_LIBRARIES}")
-  list(APPEND AMS_DEFINES "-D__ENABLE_FAISS__")
+  list(APPEND AMS_APP_DEFINES "-D__ENABLE_FAISS__")
 endif()
 
 
-#message("includes: ${AMS_APP_INCLUDE}")
+#message("includes: ${AMS_APP_INCLUDES}")
 #message("libdirs: ${AMS_APP_LIBDIRS}")
 #message("libs: ${AMS_APP_LIBRARIES}")
 #message("defines: ${AMS_DEFINES}")
