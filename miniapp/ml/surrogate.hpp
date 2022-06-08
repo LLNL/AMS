@@ -79,13 +79,15 @@ private:
     if (is_cpu){
       std::cout << "Copying Host Outputs\n";
       for (long j = 0; j < numCols; j++){
-        double *ptr = tensor[j].contiguous().data_ptr<double>();
+        auto tmp = tensor[j].contiguous();
+        double *ptr = tmp.data_ptr<double>();
         HtoHMemcpy(array[j], ptr, sizeof(double)*numRows);
       }
     }else{
       std::cout << "Copying Device Outputs\n";
       for (long j = 0; j < numCols; j++){
-        double *ptr = tensor[j].contiguous().data_ptr<double>();
+        auto tmp = tensor[j].contiguous();
+        double *ptr = tmp.data_ptr<double>();
         DtoDMemcpy(array[j], ptr, sizeof(double)*numRows);
       }
     }
