@@ -14,11 +14,9 @@
 
 #include "ml/hdcache.hpp"
 #include "ml/surrogate.hpp"
+#include "wf/utilities.hpp"
 
 #include "miniapp.hpp"
-
-const char *host_alloc_name = "mmp-host-quickpool";
-const char *device_alloc_name = "mmp-device-quickpool";
 
 //! ----------------------------------------------------------------------------
 //! the main miniapp function that is exposed to the shared lib
@@ -34,12 +32,14 @@ extern "C" void miniapp_lib(bool is_cpu, const char *device_name, int stop_cycle
 
     const bool use_device = device_name != "cpu";
 
-    rm.makeAllocator<umpire::strategy::QuickPool, true>(host_alloc_name, rm.getAllocator("HOST"));
-    mfem::MemoryManager::SetUmpireHostAllocatorName(host_alloc_name);
+    rm.makeAllocator<umpire::strategy::QuickPool, true>(AMS::utilities::getHostAllocatorName(),
+                                                        rm.getAllocator("HOST"));
+    mfem::MemoryManager::SetUmpireHostAllocatorName(AMS::utilities::getHostAllocatorName());
     if (use_device) {
-        rm.makeAllocator<umpire::strategy::QuickPool, true>(device_alloc_name,
-                                                            rm.getAllocator("DEVICE"));
-        mfem::MemoryManager::SetUmpireDevice2AllocatorName(device_alloc_name);
+        rm.makeAllocator<umpire::strategy::QuickPool, true>(
+            AMS::utilities::getDeviceAllocatorName(), rm.getAllocator("DEVICE"));
+        mfem::MemoryManager::SetUmpireDevice2AllocatorName(
+            AMS::utilities::getDeviceAllocatorName());
     }
 
     mfem::Device::SetMemoryTypes(mfem::MemoryType::HOST_UMPIRE, mfem::MemoryType::DEVICE_UMPIRE);
@@ -60,7 +60,8 @@ extern "C" void miniapp_lib(bool is_cpu, const char *device_name, int stop_cycle
             if (eos_name == "ideal_gas") {
                 miniapp.eoses[mat_idx] = new IdealGas(1.6, 1.4);
             } else if (eos_name == "constant_host") {
-                miniapp.eoses[mat_idx] = new ConstantEOSOnHost(host_alloc_name, 1.0);
+                miniapp.eoses[mat_idx] =
+                    new ConstantEOSOnHost(AMS::utilities::getHostAllocatorName(), 1.0);
             } else {
                 std::cerr << "unknown eos `" << eos_name << "'" << std::endl;
                 return;
