@@ -6,9 +6,10 @@
 
 #include "mfem.hpp"
 #include "miniapp_lib.hpp"
+#include "utils.hpp"
 
 
-double unitrand() { return (double)rand() / RAND_MAX; }
+//! ----------------------------------------------------------------------------
 const std::unordered_set<std::string> eos_options { "ideal_gas", "constant_host" };
 
 
@@ -17,7 +18,6 @@ struct MiniAppArgs {
     const char *device_name    = "cpu";
     const char *eos_name       = "ideal_gas";
     const char *model_path     = "";
-    bool is_cpu                = true;
 
     int seed                   = 0;
     double empty_element_ratio = -1;
@@ -33,8 +33,15 @@ struct MiniAppArgs {
 
         mfem::OptionsParser args(argc, argv);
         args.AddOption(&device_name, "-d", "--device", "Device config string");
+
+        // surrogate model
         args.AddOption(&model_path, "-S", "--surrogate", "Path to surrogate model");
+
+        // eos model and length of simulation
+        args.AddOption(&eos_name, "-z", "--eos", "EOS model type");
         args.AddOption(&stop_cycle, "-c", "--stop-cycle", "Stop cycle");
+
+        // data parameters
         args.AddOption(&num_mats, "-m", "--num-mats", "Number of materials");
         args.AddOption(&num_elems, "-e", "--num-elems", "Number of elements");
         args.AddOption(&num_qpts, "-q", "--num-qpts", "Number of quadrature points per element");
@@ -43,6 +50,8 @@ struct MiniAppArgs {
                        "--empty-element-ratio",
                        "Fraction of elements that are empty "
                        "for each material. If -1 use a random value for each. ");
+
+        // random speed and packing
         args.AddOption(&seed, "-s", "--seed", "Seed for rand");
         args.AddOption(&pack_sparse_mats,
                        "-p",
@@ -50,7 +59,6 @@ struct MiniAppArgs {
                        "-np",
                        "--do-not-pack-sparse",
                        "pack sparse material data before evals (cpu only)");
-        args.AddOption(&eos_name, "-z", "--eos", "EOS model type");
 
         args.Parse();
         if (!args.Good())
@@ -59,32 +67,31 @@ struct MiniAppArgs {
            return false;
         }
 
-        if (eos_options.find(eos_name) == eos_options.end()) {
-           std::cerr << "Unsupported eos `" << eos_name << "'" << std::endl << "Available options: " << std::endl;
+        args.PrintOptions(std::cout);
+        std::cout << std::endl;
+
+        // ---------------------------------------------------------------------
+        if (eos_options.find(eos_name) != eos_options.end()) {
+          std::cout << "Using eos = '" << eos_name << "'" << std::endl;
+        }
+        else {
+           std::cerr << "Unsupported eos '" << eos_name << "'" << std::endl << "Available options: " << std::endl;
            for (const auto & s : eos_options)
            {
               std::cerr << " - " << s << std::endl;
            }
            return false;
         }
-        else
-        {
-           std::cout << "Using `" << eos_name << "'" << std::endl;
-        }
 
-        args.PrintOptions(std::cout);
-        std::cout << "Device:" << device_name << std::endl;
-        if (strcmp(device_name, "cuda") == 0){
-            is_cpu = false;
-            std::cout << "IS_CPU:" << is_cpu << std::endl;
-        }
-        std::cout << std::endl;
+        // ---------------------------------------------------------------------
+        std::cout << "Using device = '" << device_name << "'" << std::endl;
 
         // small validation
         assert(stop_cycle > 0);
         assert(num_mats > 0);
         assert(num_elems > 0);
         assert(num_qpts > 0);
+
 #ifdef __ENABLE_TORCH__
         if (model_path == nullptr){
             std::cerr<< "Compiled with Py-Torch enabled. It is mandatory to provide a surrogate model\n";
@@ -119,6 +126,7 @@ int main(int argc, char **argv) {
     // setup indicators
     //  to represent which combinations of materials and elements exist
     // -------------------------------------------------------------------------
+    std::cout << "Setting up indicators" << std::endl;
     bool indicators[args.num_mats * args.num_elems];
 
     for (int mat_idx = 0; mat_idx < args.num_mats; ++mat_idx) {
@@ -128,7 +136,7 @@ int main(int argc, char **argv) {
         const double ratio     = args.empty_element_ratio == -1 ? unitrand() * (1 - min_ratio) + min_ratio
                                                                  : 1 - args.empty_element_ratio;
         const int num_nonzero_elems = ratio * args.num_elems;
-        std::cout << "using " << num_nonzero_elems << "/"<< args.num_elems << " for material " << mat_idx << std::endl;
+        std::cout << "  using " << num_nonzero_elems << "/"<< args.num_elems << " for material " << mat_idx << std::endl;
 
         int nz = 0;
         for (int elem_idx = 0; elem_idx < args.num_elems; ++elem_idx) {
@@ -139,7 +147,6 @@ int main(int argc, char **argv) {
             if (nz < num_nonzero_elems) {
                 if (((num_nonzero_elems - nz) == (args.num_elems - elem_idx)) || unitrand() <= ratio) {
                     indicators[me] = true;
-                    std::cout << " setting (mat = " << mat_idx << ", elem = " << elem_idx << ") = 1\n";
                     nz++;
                 }
             }
@@ -149,6 +156,7 @@ int main(int argc, char **argv) {
     // -------------------------------------------------------------------------
     // initialize inputs
     // -------------------------------------------------------------------------
+    std::cout << "Initializing random data" << std::endl;
     // inputs
     std::vector<double> density (args.num_mats * args.num_elems * args.num_qpts, 0.);
     std::vector<double> energy (args.num_mats * args.num_elems * args.num_qpts, 0.);
@@ -163,8 +171,6 @@ int main(int argc, char **argv) {
                 continue;
 
             for (int qpt_idx = 0; qpt_idx < args.num_qpts; ++qpt_idx) {
-                //density[qpt_idx + me*args.num_qpts] = 100*mat_idx + 10*elem_idx + qpt_idx;
-                //energy[qpt_idx + me*args.num_qpts] = 100*mat_idx + 10*elem_idx + qpt_idx;
                 density[qpt_idx + me*args.num_qpts] = .1 + unitrand();
                 energy[qpt_idx + me*args.num_qpts] = .1 + unitrand();
             }
@@ -172,10 +178,11 @@ int main(int argc, char **argv) {
     }
 
     // -------------------------------------------------------------------------
-    miniapp_lib(args.is_cpu, args.device_name, args.stop_cycle, args.pack_sparse_mats,
-                args.num_mats, args.num_elems, args.num_qpts, args.model_path, args.eos_name,
+    std::cout << "Launching the miniapp" << std::endl;
+    miniapp_lib(args.device_name, args.eos_name, args.model_path,
+                args.stop_cycle, args.pack_sparse_mats,
+                args.num_mats, args.num_elems, args.num_qpts,
                 density.data(), energy.data(), indicators);
-
 
     return EXIT_SUCCESS;
 }
