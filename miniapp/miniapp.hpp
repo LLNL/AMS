@@ -8,6 +8,8 @@
 #include "mfem/general/forall.hpp"
 #include "mfem/linalg/dtensor.hpp"
 
+using mfem::ForallWrap;
+
 #include "app/eos.hpp"
 #include "app/mfem_utils.hpp"
 #include "ml/hdcache.hpp"
@@ -48,7 +50,7 @@ class MiniApp {
 
     // Added to include an offline DB
     // (currently implemented as a file)
-    BaseDB *DB;
+    BaseDB *DB = nullptr;
 
     // -------------------------------------------------------------------------
     // constructor and destructor
@@ -61,10 +63,12 @@ class MiniApp {
         num_qpts = _num_qpts;
         pack_sparse_mats = _pack_sparse_mats;
 
+#ifdef __ENABLE_DB__
         DB = new BaseDB("miniApp_data.txt");
         if (!DB) {
             std::cout << "Cannot create static database\n";
         }
+#endif
 
         // setup eos
         eoses.resize(num_mats, nullptr);
@@ -75,12 +79,12 @@ class MiniApp {
     void start() { CALIPER(mgr.start();) }
 
     ~MiniApp() {
+        CALIPER(mgr.flush());
         for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
             delete eoses[mat_idx];
             delete hdcaches[mat_idx];
             delete surrogates[mat_idx];
         }
-        CALIPER(mgr.flush());
         delete DB;
     }
 
@@ -106,8 +110,30 @@ class MiniApp {
         const auto d_bulkmod = RESHAPE_TENSOR(bulkmod, Write);
         const auto d_temperature = RESHAPE_TENSOR(temperature, Write);
 
+        // ---------------------------------------------------------------------
+        // create a static list of sparse indices!
+        static std::vector<std::vector<int>> sparse_indices_for_mats;
+
+        if (sparse_indices_for_mats.empty()) {
+
+            sparse_indices_for_mats.resize(num_mats);
+            for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
+
+                sparse_indices_for_mats[mat_idx].reserve(num_elems);
+                for (int elem_idx = 0; elem_idx < num_elems; ++elem_idx) {
+
+                    if (indicators[elem_idx + num_elems*mat_idx]) {
+                      sparse_indices_for_mats[mat_idx].push_back(elem_idx);
+                    }
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // for each material
         for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
 
+#if 0
             // TODO: this is repeated computation in each cycle
             // cant think of any reason we should do this
             // we perhaps dont even need indicators on the device
@@ -116,11 +142,15 @@ class MiniApp {
                 // num_elems_for_mat += indicators(elem_idx, mat_idx);
                 num_elems_for_mat += indicators[elem_idx + num_elems * mat_idx];
             }
+#else
+            const size_t &num_elems_for_mat = sparse_indices_for_mats[mat_idx].size();
+#endif
 
             if (num_elems_for_mat == 0) {
                 continue;
             }
 
+            // -----------------------------------------------------------------
             // NOTE: we've found it's faster to do sparse lookups on GPUs but on CPUs the dense
             // packing->looked->unpacking is better if we're using expensive eoses. in the future
             // we may just use dense representations everywhere but for now we use sparse ones.
@@ -129,72 +159,74 @@ class MiniApp {
                 std::cout << " material " << mat_idx << ": using sparse packing for "
                           << num_elems_for_mat << " elems\n";
 
+#if 0
+                // -------------------------------------------------------------
                 // compute sparse indices
-                using mfem::ForallWrap;
                 mfem::Array<int> sparse_index(num_elems_for_mat);
                 for (int elem_idx = 0, nz = 0; elem_idx < num_elems; ++elem_idx) {
                     if (indicators[elem_idx + num_elems * mat_idx]) {
                         sparse_index[nz++] = elem_idx;
                     }
                 }
-
                 const auto *d_sparse_index = sparse_index.Read();
+#else
+                const auto d_sparse_index = sparse_indices_for_mats[mat_idx].data();
+#endif
 
-                mfem::Array<double> dense_density(num_elems_for_mat * num_qpts);
-                mfem::Array<double> dense_energy(num_elems_for_mat * num_qpts);
-
-                auto d_dense_density =
-                    mfem::Reshape(dense_density.Write(), num_qpts, num_elems_for_mat);
-                auto d_dense_energy =
-                    mfem::Reshape(dense_energy.Write(), num_qpts, num_elems_for_mat);
-
-                // sparse -> dense
-                CALIPER(CALI_MARK_BEGIN("SPARSE_TO_DENSE");)
-                MFEM_FORALL(elem_idx, num_elems_for_mat, {
-                    const int sparse_elem_idx = d_sparse_index[elem_idx];
-                    for (int qpt_idx = 0; qpt_idx < num_qpts; ++qpt_idx) {
-                        d_dense_density(qpt_idx, elem_idx) =
-                            d_density(qpt_idx, sparse_elem_idx, mat_idx);
-                        d_dense_energy(qpt_idx, elem_idx) =
-                            d_energy(qpt_idx, sparse_elem_idx, mat_idx);
-                    }
-                });
-                CALIPER(CALI_MARK_END("SPARSE_TO_DENSE");)
-
+                // -------------------------------------------------------------
                 // TODO: I think Tom mentiond we can allocate these outside the loop
                 // check again
+                mfem::Array<double> dense_density(num_elems_for_mat * num_qpts);
+                mfem::Array<double> dense_energy(num_elems_for_mat * num_qpts);
                 mfem::Array<double> dense_pressure(num_elems_for_mat * num_qpts);
                 mfem::Array<double> dense_soundspeed2(num_elems_for_mat * num_qpts);
                 mfem::Array<double> dense_bulkmod(num_elems_for_mat * num_qpts);
                 mfem::Array<double> dense_temperature(num_elems_for_mat * num_qpts);
 
-                auto d_dense_pressure =
-                    mfem::Reshape(dense_pressure.Write(), num_qpts, num_elems_for_mat);
-                auto d_dense_soundspeed2 =
-                    mfem::Reshape(dense_soundspeed2.Write(), num_qpts, num_elems_for_mat);
-                auto d_dense_bulkmod =
-                    mfem::Reshape(dense_bulkmod.Write(), num_qpts, num_elems_for_mat);
-                auto d_dense_temperature =
-                    mfem::Reshape(dense_temperature.Write(), num_qpts, num_elems_for_mat);
+                // these are device tensors!
+                auto d_dense_density = mfem::Reshape(dense_density.Write(), num_qpts, num_elems_for_mat);
+                auto d_dense_energy = mfem::Reshape(dense_energy.Write(), num_qpts, num_elems_for_mat);
+                auto d_dense_pressure = mfem::Reshape(dense_pressure.Write(), num_qpts, num_elems_for_mat);
+                auto d_dense_soundspeed2 = mfem::Reshape(dense_soundspeed2.Write(), num_qpts, num_elems_for_mat);
+                auto d_dense_bulkmod = mfem::Reshape(dense_bulkmod.Write(), num_qpts, num_elems_for_mat);
+                auto d_dense_temperature = mfem::Reshape(dense_temperature.Write(), num_qpts, num_elems_for_mat);
 
+                // -------------------------------------------------------------
+                // sparse -> dense
+                CALIPER(CALI_MARK_BEGIN("SPARSE_TO_DENSE");)
+                MFEM_FORALL(elem_idx, num_elems_for_mat, {
+                    const int sparse_elem_idx = d_sparse_index[elem_idx];
+                    for (int qpt_idx = 0; qpt_idx < num_qpts; ++qpt_idx) {
+                        d_dense_density(qpt_idx, elem_idx) = d_density(qpt_idx, sparse_elem_idx, mat_idx);
+                        d_dense_energy(qpt_idx, elem_idx)  = d_energy(qpt_idx, sparse_elem_idx, mat_idx);
+                    }
+                });
+                CALIPER(CALI_MARK_END("SPARSE_TO_DENSE");)
+
+                // -------------------------------------------------------------
                 // create for uq flags
                 // ask Tom about the memory management for this
                 // should we create this memory again and again?
-                mfem::Array<bool> dense_uq(num_elems_for_mat * num_qpts);
-                dense_uq = false;
-                auto d_dense_uq = mfem::Reshape(dense_uq.Write(), num_qpts, num_elems_for_mat);
+                mfem::Array<bool> dense_ml_acceptable(num_elems_for_mat * num_qpts);
+                dense_ml_acceptable = false;
+                auto d_dense_ml_acceptable = mfem::Reshape(dense_ml_acceptable.Write(), num_qpts, num_elems_for_mat);
 
                 // Let's start working with pointers.
                 double *pDensity = &d_dense_density(0, 0);
                 double *pEnergy = &d_dense_energy(0, 0);
 
-                bool *pUQ = &d_dense_uq(0, 0);
+                bool *pUQ = &dense_ml_acceptable(0, 0);
 
                 double *pPressure = &d_dense_pressure(0, 0);
                 double *pSoundSpeed2 = &d_dense_soundspeed2(0, 0);
                 double *pBulkmod = &d_dense_bulkmod(0, 0);
                 double *pTemperature = &d_dense_temperature(0, 0);
 
+                // -------------------------------------------------------------
+                // STEP 1: call the hdcache to look at input uncertainties
+                // to decide if making a ML inference makes sense
+
+                // ideally, we should do step 1 and step 2 async!
                 if (hdcaches[mat_idx] != nullptr) {
                     CALIPER(CALI_MARK_BEGIN("UQ_MODULE");)
                     // STEP 1:
@@ -204,6 +236,10 @@ class MiniApp {
                     CALIPER(CALI_MARK_END("UQ_MODULE");)
                 }
 
+                // -------------------------------------------------------------
+                // STEP 2: let's call surrogate for everything
+
+                // ideally, we should do step 1 and step 2 async!
                 /*
                  At this point I am puzzled with how allocations should be done
                  in regards to packing. The worst case scenario and simlest policy
@@ -285,8 +321,8 @@ class MiniApp {
                     std::cout << "Physis Computed elements / Surrogate computed elements ["
                               << packedElements << "/" << elements - packedElements << "]\n";
 
-                    // STEP 3:
-                    // let's call physics module only where the d_dense_uq = flags are true
+                    // -------------------------------------------------------------
+                    // STEP 3: call physics module only where d_dense_need_phys = true
                     CALIPER(CALI_MARK_BEGIN("PHYSICS MODULE");)
                     eoses[mat_idx]->Eval(packedElements, packed_energy, packed_density,
                                          packed_pressure, packed_soundspeed2, packed_bulkmod,
