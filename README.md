@@ -37,7 +37,7 @@ $ make -j6
 
 4. Running.
 ```
-$ ./build/src/mmp
+$ ./build/miniapp/miniapp -S /usr/workspace/AMS/miniapp_resources/trained_models/debug_model.pt
 ```
   **TODO:** add instructions on command line options!
 
@@ -148,7 +148,7 @@ make
 ## running
 To run the proxy application please issue the following command inside the build directory:
 ```bash
-./src/mmp -S ../trained_models/debug_model.pt
+./build/miniapp/miniapp -S /usr/workspace/AMS/miniapp_resources/trained_models/debug_model.pt
 ```
 
 By default the evals will be on the cpu, if you want to run on the gpu add the option: ` -d cuda`
