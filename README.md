@@ -17,7 +17,7 @@ $ CODE_ROOT=`pwd`/marbl-matprops-miniapp
 2. Setup the environment -- the following script will load all dependencies and
 setup some relevant paths.
 ```
-$ cd $CODE_ROOT
+$ cd $CODE_ROOT/setup
 $ source setup_env.sh
 ```
 
