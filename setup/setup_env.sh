@@ -2,8 +2,8 @@
 
 
 ## need to know the code root
-miniapp_code_root="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-echo "miniapp_code_root = $miniapp_code_root"
+#miniapp_code_root="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+#echo "miniapp_code_root = $miniapp_code_root"
 
 
 ## load relevant modules on lassen
