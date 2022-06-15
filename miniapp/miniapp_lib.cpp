@@ -113,12 +113,31 @@ extern "C" void miniapp_lib(const std::string &device_name,
     mfem::DenseTensor temperature(num_qpts, num_elems, num_mats);
 
     // -------------------------------------------------------------------------
+    // need a way to store indices of active elements for each material
+    // will use a linearized array for this
+    // first num_mat elements will store the total count of all elements thus far
+    //                                                    (actually, + num_mats)
+    // after that, store the indices of those elements in order
+    mfem::Array<int> sparse_elem_indices;
+    sparse_elem_indices.SetSize(num_mats);
+    sparse_elem_indices.Reserve(num_mats*num_elems);
+
+    for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
+
+        for (int elem_idx = 0; elem_idx < num_elems; ++elem_idx) {
+            if (indicators_in[elem_idx + num_elems*mat_idx]) {
+                sparse_elem_indices.Append(elem_idx);
+            }
+        }
+        sparse_elem_indices[mat_idx] = sparse_elem_indices.Size();
+    }
+
+    // -------------------------------------------------------------------------
     // run through the cycles (time-steps)
-    printf("\n");
     miniapp.start();
     for (int c = 0; c <= stop_cycle; ++c) {
-        std::cout << "--> cycle " << c << std::endl;
-        miniapp.evaluate(density, energy, indicators_in,
+        std::cout << "\n--> cycle " << c << std::endl;
+        miniapp.evaluate(density, energy, sparse_elem_indices,
                          pressure, soundspeed2, bulkmod, temperature);
         // break;
     }

@@ -91,10 +91,12 @@ class MiniApp {
     // -------------------------------------------------------------------------
     // the main loop
     // -------------------------------------------------------------------------
-    void evaluate(mfem::DenseTensor &density, mfem::DenseTensor &energy,
-                  // mfem::DeviceTensor<2, bool>& indicators,
-                  const bool *indicators, mfem::DenseTensor &pressure,
-                  mfem::DenseTensor &soundspeed2, mfem::DenseTensor &bulkmod,
+    void evaluate(mfem::DenseTensor &density,
+                  mfem::DenseTensor &energy,
+                  mfem::Array<int> &sparse_elem_indices,
+                  mfem::DenseTensor &pressure,
+                  mfem::DenseTensor &soundspeed2,
+                  mfem::DenseTensor &bulkmod,
                   mfem::DenseTensor &temperature) {
 
         auto &rm = umpire::ResourceManager::getInstance();
@@ -110,42 +112,17 @@ class MiniApp {
         const auto d_bulkmod = RESHAPE_TENSOR(bulkmod, Write);
         const auto d_temperature = RESHAPE_TENSOR(temperature, Write);
 
-        // ---------------------------------------------------------------------
-        // create a static list of sparse indices!
-        static std::vector<std::vector<int>> sparse_indices_for_mats;
-
-        if (sparse_indices_for_mats.empty()) {
-
-            sparse_indices_for_mats.resize(num_mats);
-            for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
-
-                sparse_indices_for_mats[mat_idx].reserve(num_elems);
-                for (int elem_idx = 0; elem_idx < num_elems; ++elem_idx) {
-
-                    if (indicators[elem_idx + num_elems*mat_idx]) {
-                      sparse_indices_for_mats[mat_idx].push_back(elem_idx);
-                    }
-                }
-            }
-        }
+        const auto d_sparse_elem_indices = mfem::Reshape(sparse_elem_indices.Write(),
+                                                         sparse_elem_indices.Size());
 
         // ---------------------------------------------------------------------
         // for each material
         for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
 
-#if 0
-            // TODO: this is repeated computation in each cycle
-            // cant think of any reason we should do this
-            // we perhaps dont even need indicators on the device
-            int num_elems_for_mat = 0;
-            for (int elem_idx = 0; elem_idx < num_elems; ++elem_idx) {
-                // num_elems_for_mat += indicators(elem_idx, mat_idx);
-                num_elems_for_mat += indicators[elem_idx + num_elems * mat_idx];
-            }
-#else
-            const size_t &num_elems_for_mat = sparse_indices_for_mats[mat_idx].size();
-#endif
+            const int offset_curr = mat_idx == 0 ? num_mats : sparse_elem_indices[mat_idx-1];
+            const int offset_next = sparse_elem_indices[mat_idx];
 
+            const int num_elems_for_mat = offset_next - offset_curr;
             if (num_elems_for_mat == 0) {
                 continue;
             }
@@ -154,24 +131,9 @@ class MiniApp {
             // NOTE: we've found it's faster to do sparse lookups on GPUs but on CPUs the dense
             // packing->looked->unpacking is better if we're using expensive eoses. in the future
             // we may just use dense representations everywhere but for now we use sparse ones.
-            else if (is_cpu && pack_sparse_mats && num_elems_for_mat < num_elems) {
+            if (is_cpu && pack_sparse_mats && num_elems_for_mat < num_elems) {
 
-                std::cout << " material " << mat_idx << ": using sparse packing for "
-                          << num_elems_for_mat << " elems\n";
-
-#if 0
-                // -------------------------------------------------------------
-                // compute sparse indices
-                mfem::Array<int> sparse_index(num_elems_for_mat);
-                for (int elem_idx = 0, nz = 0; elem_idx < num_elems; ++elem_idx) {
-                    if (indicators[elem_idx + num_elems * mat_idx]) {
-                        sparse_index[nz++] = elem_idx;
-                    }
-                }
-                const auto *d_sparse_index = sparse_index.Read();
-#else
-                const auto d_sparse_index = sparse_indices_for_mats[mat_idx].data();
-#endif
+                std::cout << " material " << mat_idx << ": using sparse packing for " << num_elems_for_mat << " elems\n";
 
                 // -------------------------------------------------------------
                 // TODO: I think Tom mentiond we can allocate these outside the loop
@@ -195,7 +157,7 @@ class MiniApp {
                 // sparse -> dense
                 CALIPER(CALI_MARK_BEGIN("SPARSE_TO_DENSE");)
                 MFEM_FORALL(elem_idx, num_elems_for_mat, {
-                    const int sparse_elem_idx = d_sparse_index[elem_idx];
+                    const int sparse_elem_idx = d_sparse_elem_indices[offset_curr + elem_idx];
                     for (int qpt_idx = 0; qpt_idx < num_qpts; ++qpt_idx) {
                         d_dense_density(qpt_idx, elem_idx) = d_density(qpt_idx, sparse_elem_idx, mat_idx);
                         d_dense_energy(qpt_idx, elem_idx)  = d_energy(qpt_idx, sparse_elem_idx, mat_idx);
@@ -229,9 +191,6 @@ class MiniApp {
                 // ideally, we should do step 1 and step 2 async!
                 if (hdcaches[mat_idx] != nullptr) {
                     CALIPER(CALI_MARK_BEGIN("UQ_MODULE");)
-                    // STEP 1:
-                    // call the hdcache to look at input uncertainties
-                    // to decide if making a ML inference makes sense
                     hdcaches[mat_idx]->Eval(num_elems_for_mat * num_qpts, pDensity, pEnergy, pUQ);
                     CALIPER(CALI_MARK_END("UQ_MODULE");)
                 }
