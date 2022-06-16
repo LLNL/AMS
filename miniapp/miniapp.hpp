@@ -153,6 +153,11 @@ class MiniApp {
                 auto d_dense_bulkmod = mfem::Reshape(dense_bulkmod.Write(), num_qpts, num_elems_for_mat);
                 auto d_dense_temperature = mfem::Reshape(dense_temperature.Write(), num_qpts, num_elems_for_mat);
 
+
+                mfem::Array<bool> dense_ml_acceptable(num_elems_for_mat * num_qpts);
+                dense_ml_acceptable = false;
+                auto d_dense_ml_acceptable = mfem::Reshape(dense_ml_acceptable.Write(), num_qpts, num_elems_for_mat);
+
                 // -------------------------------------------------------------
                 // sparse -> dense
                 CALIPER(CALI_MARK_BEGIN("SPARSE_TO_DENSE");)
@@ -169,15 +174,12 @@ class MiniApp {
                 // create for uq flags
                 // ask Tom about the memory management for this
                 // should we create this memory again and again?
-                mfem::Array<bool> dense_ml_acceptable(num_elems_for_mat * num_qpts);
-                dense_ml_acceptable = false;
-                auto d_dense_ml_acceptable = mfem::Reshape(dense_ml_acceptable.Write(), num_qpts, num_elems_for_mat);
 
                 // Let's start working with pointers.
                 double *pDensity = &d_dense_density(0, 0);
                 double *pEnergy = &d_dense_energy(0, 0);
 
-                bool *pUQ = &dense_ml_acceptable(0, 0);
+                bool *pMl_acceptable = &d_dense_ml_acceptable(0, 0);
 
                 double *pPressure = &d_dense_pressure(0, 0);
                 double *pSoundSpeed2 = &d_dense_soundspeed2(0, 0);
@@ -191,7 +193,7 @@ class MiniApp {
                 // ideally, we should do step 1 and step 2 async!
                 if (hdcaches[mat_idx] != nullptr) {
                     CALIPER(CALI_MARK_BEGIN("UQ_MODULE");)
-                    hdcaches[mat_idx]->Eval(num_elems_for_mat * num_qpts, pDensity, pEnergy, pUQ);
+                    hdcaches[mat_idx]->Eval(num_elems_for_mat * num_qpts, pDensity, pEnergy, pMl_acceptable);
                     CALIPER(CALI_MARK_END("UQ_MODULE");)
                 }
 
@@ -270,7 +272,7 @@ class MiniApp {
                     // Here we pack. ""
                     long packedElements = 0;
                     for (long p = 0; p < elements; p++) {
-                        if (pUQ[pId + p]) {
+                        if (pMl_acceptable[pId + p]) {
                             packed_density[packedElements] = pDensity[pId + p];
                             packed_energy[packedElements] = pEnergy[pId + p];
                             reIndex[packedElements] = pId + p;
@@ -310,7 +312,8 @@ class MiniApp {
                     // STEP 4: convert dense -> sparse
                     CALIPER(CALI_MARK_BEGIN("DENSE_TO_SPARSE");)
                     MFEM_FORALL(elem_idx, num_elems_for_mat, {
-                        const int sparse_elem_idx = d_sparse_index[elem_idx];
+                        const int sparse_elem_idx = d_sparse_elem_indices[offset_curr + elem_idx];
+
                         for (int qpt_idx = 0; qpt_idx < num_qpts; ++qpt_idx) {
                             d_pressure(qpt_idx, sparse_elem_idx, mat_idx) =
                                 d_dense_pressure(qpt_idx, elem_idx);
