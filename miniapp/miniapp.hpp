@@ -34,6 +34,8 @@ using mfem::ForallWrap;
 //! ----------------------------------------------------------------------------
 class MiniApp {
 
+   using TypeValue = double;
+
   public:
     bool is_cpu = true;
     bool pack_sparse_mats = true;
@@ -45,7 +47,7 @@ class MiniApp {
     std::vector<EOS *> eoses;
 
     // added to include ML
-    std::vector<HDCache *> hdcaches;
+    std::vector<HDCache<TypeValue> *> hdcaches;
     std::vector<SurrogateModel *> surrogates;
 
     // Added to include an offline DB
@@ -193,7 +195,7 @@ class MiniApp {
                 // ideally, we should do step 1 and step 2 async!
                 if (hdcaches[mat_idx] != nullptr) {
                     CALIPER(CALI_MARK_BEGIN("UQ_MODULE");)
-                    hdcaches[mat_idx]->Eval(num_elems_for_mat * num_qpts, pDensity, pEnergy, pMl_acceptable);
+                    hdcaches[mat_idx]->evaluate(num_elems_for_mat * num_qpts, {pDensity, pEnergy}, pMl_acceptable);
                     CALIPER(CALI_MARK_END("UQ_MODULE");)
                 }
 
