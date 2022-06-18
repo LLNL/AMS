@@ -7,6 +7,7 @@
 #include "mfem.hpp"
 #include "mfem/general/forall.hpp"
 #include "mfem/linalg/dtensor.hpp"
+#include "umpire/ResourceManager.hpp"
 
 using mfem::ForallWrap;
 
@@ -29,12 +30,16 @@ using mfem::ForallWrap;
 #define CALIPER(stmt)
 #endif
 
+
+#define NEW_PACKING
+
 //! ----------------------------------------------------------------------------
 //! mini app class
 //! ----------------------------------------------------------------------------
 class MiniApp {
 
    using TypeValue = double;
+   using data_handler = DataHandler<TypeValue>;
 
   public:
     bool is_cpu = true;
@@ -163,6 +168,13 @@ class MiniApp {
                 // -------------------------------------------------------------
                 // sparse -> dense
                 CALIPER(CALI_MARK_BEGIN("SPARSE_TO_DENSE");)
+#ifdef NEW_PACKING
+                data_handler::pack_ij(mat_idx, num_qpts, num_elems_for_mat, offset_curr,
+                                      d_sparse_elem_indices,
+                                      d_density, d_dense_density,
+                                      d_energy, d_dense_energy);
+
+#else
                 MFEM_FORALL(elem_idx, num_elems_for_mat, {
                     const int sparse_elem_idx = d_sparse_elem_indices[offset_curr + elem_idx];
                     for (int qpt_idx = 0; qpt_idx < num_qpts; ++qpt_idx) {
@@ -170,6 +182,7 @@ class MiniApp {
                         d_dense_energy(qpt_idx, elem_idx)  = d_energy(qpt_idx, sparse_elem_idx, mat_idx);
                     }
                 });
+#endif
                 CALIPER(CALI_MARK_END("SPARSE_TO_DENSE");)
 
                 // -------------------------------------------------------------
@@ -272,6 +285,13 @@ class MiniApp {
 #endif
                     }
                     // Here we pack. ""
+#ifdef NEW_PACKING
+                    long packedElements =
+                            data_handler::pack(pMl_acceptable, pId, elements,
+                                               reIndex,
+                                               pDensity, packed_density,
+                                               pEnergy, packed_energy);
+#else
                     long packedElements = 0;
                     for (long p = 0; p < elements; p++) {
                         if (pMl_acceptable[pId + p]) {
@@ -281,6 +301,7 @@ class MiniApp {
                             packedElements++;
                         }
                     }
+#endif
                     std::cout << "Physis Computed elements / Surrogate computed elements ["
                               << packedElements << "/" << elements - packedElements << "]\n";
 
@@ -303,6 +324,13 @@ class MiniApp {
                     CALIPER(CALI_MARK_END("DBSTORE");)
 #endif
 
+#ifdef NEW_PACKING
+                    data_handler::unpack(reIndex, packedElements,
+                                         packed_pressure,  pPressure,
+                                         packed_soundspeed2, pSoundSpeed2,
+                                         packed_bulkmod, pBulkmod,
+                                         packed_temperature, pTemperature);
+#else
                     for (int p = 0; p < packedElements; p++) {
                         int index = reIndex[p];
                         pPressure[index] = packed_pressure[p];
@@ -310,9 +338,18 @@ class MiniApp {
                         pBulkmod[index] = packed_bulkmod[p];
                         pTemperature[index] = packed_temperature[p];
                     }
-
+#endif
                     // STEP 4: convert dense -> sparse
                     CALIPER(CALI_MARK_BEGIN("DENSE_TO_SPARSE");)
+#ifdef NEW_PACKING
+                    data_handler::unpack_ij(mat_idx, num_qpts, num_elems_for_mat, offset_curr,
+                                            d_sparse_elem_indices,
+                                            d_dense_pressure, d_pressure,
+                                            d_dense_soundspeed2, d_soundspeed2,
+                                            d_dense_bulkmod, d_bulkmod,
+                                            d_dense_temperature, d_temperature);
+
+#else
                     MFEM_FORALL(elem_idx, num_elems_for_mat, {
                         const int sparse_elem_idx = d_sparse_elem_indices[offset_curr + elem_idx];
 
@@ -327,6 +364,7 @@ class MiniApp {
                                 d_dense_temperature(qpt_idx, elem_idx);
                         }
                     });
+#endif
                     CALIPER(CALI_MARK_END("DENSE_TO_SPARSE");)
                     // Deallocate temporal data
                     hAllocator.deallocate(packed_density);

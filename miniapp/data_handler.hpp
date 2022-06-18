@@ -4,6 +4,10 @@
 #include <vector>
 #include <algorithm>
 
+#include "mfem.hpp"
+#include "mfem/general/forall.hpp"
+#include "mfem/linalg/dtensor.hpp"
+using mfem::ForallWrap;
 
 #if __cplusplus < 201402L
   template <bool B, typename T = void>
@@ -60,7 +64,101 @@ public:
         return ldata;
     }
 
+
     //! -----------------------------------------------------------------------
+    //! packing code for mfem tensors (i,j,k)
+    //! -----------------------------------------------------------------------
+    //! for us, index j is sparse wrt k
+    //!     i.e., for a given k, certain j are inactive
+    //! so we pack a sparse (i,j,k) tensor into a dense (i,j*) tensor
+    //!     for a given k
+    //!     where j* is the linearized "dense" index of all sparse indices "j"
+
+    template<typename T> using dt1 = mfem::DeviceTensor<1, T>;
+    template<typename T> using dt2 = mfem::DeviceTensor<2, T>;
+    template<typename T> using dt3 = mfem::DeviceTensor<3, T>;
+
+    template<typename Tin, typename Tout>
+    static inline
+    void
+    pack_ij(const int k, const int sz_i,
+            const int sz_sparse_j, const int offset_sparse_j,
+            const dt1<int> &sparse_j_indices,
+            const dt3<Tin> &a3, const dt2<Tout> &a2,
+            const dt3<Tin> &b3, const dt2<Tout> &b2) {
+
+        MFEM_FORALL(j, sz_sparse_j, {
+              const int sparse_j = sparse_j_indices[offset_sparse_j + j];
+              for (int i = 0; i < sz_i; ++i) {
+                a2(i, j) = a3(i, sparse_j, k);
+                b2(i, j) = b3(i, sparse_j, k);
+              }
+        });
+    }
+
+    template<typename Tin, typename Tout>
+    static inline
+    void
+    unpack_ij(const int k, const int sz_i,
+              const int sz_sparse_j, const int offset_sparse_j,
+              const dt1<int> &sparse_j_indices,
+              const dt2<Tin> &a2, const dt3<Tout> &a3,
+              const dt2<Tin> &b2, const dt3<Tout> &b3,
+              const dt2<Tin> &c2, const dt3<Tout> &c3,
+              const dt2<Tin> &d2, const dt3<Tout> &d3) {
+
+        MFEM_FORALL(j, sz_sparse_j, {
+            const int sparse_j = sparse_j_indices[offset_sparse_j + j];
+            for (int i = 0; i < sz_i; ++i) {
+                a3(i, sparse_j, k) = a2(i, j);
+                b3(i, sparse_j, k) = b2(i, j);
+                c3(i, sparse_j, k) = c2(i, j);
+                d3(i, sparse_j, k) = d2(i, j);
+            }
+        });
+    }
+
+
+    //! -----------------------------------------------------------------------
+    //! packing code for pointers based on boolean predicates
+    //! -----------------------------------------------------------------------
+    //! since boolean predicate is likely to be sparse
+    //! we pack the data based on the predicate
+    //! to allow chunking, pack n elements from a given offset
+    static inline
+    size_t
+    pack(const bool *predicate, const size_t offset, const size_t n,
+         int *sparse_indices,
+         const TypeValue *a, TypeValue *pa,
+         const TypeValue *b, TypeValue *pb) {
+
+        size_t npacked = 0;
+        for (size_t i = 0; i < n; i++) {
+            if (predicate[offset + i]) {
+                pa[npacked] = a[offset + i];
+                pb[npacked] = b[offset + i];
+                sparse_indices[npacked++] = offset + i;
+            }
+        }
+        return npacked;
+    }
+
+    static inline
+    void
+    unpack(const int *sparse_indices, const size_t n,
+         const TypeValue *pa, TypeValue *a,
+         const TypeValue *pb, TypeValue *b,
+         const TypeValue *pc, TypeValue *c,
+         const TypeValue *pd, TypeValue *d) {
+
+        for (size_t i = 0; i < n; i++) {
+            auto sidx = sparse_indices[i];
+            a[sidx] = pa[i];
+            b[sidx] = pb[i];
+            c[sidx] = pc[i];
+            d[sidx] = pd[i];
+        }
+    }
 };
 
 
