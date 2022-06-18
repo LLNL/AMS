@@ -12,11 +12,13 @@
 using mfem::ForallWrap;
 
 #include "app/eos.hpp"
-#include "app/mfem_utils.hpp"
 #include "ml/hdcache.hpp"
 #include "ml/surrogate.hpp"
 #include "wf/basedb.hpp"
 #include "wf/utilities.hpp"
+
+#include "utils/mfem_utils.hpp"
+#include "utils/data_handler.hpp"
 
 #define PSIZE (1 << 24)
 

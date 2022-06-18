@@ -17,7 +17,7 @@
 #include "faiss/IndexFlat.h"
 #endif
 
-#include "data_handler.hpp"
+#include "utils/data_handler.hpp"
 
 #if __cplusplus < 201402L
   template <bool B, typename T = void>

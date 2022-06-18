@@ -10,11 +10,10 @@
 #include "app/eos.hpp"
 #include "app/eos_constant_on_host.hpp"
 #include "app/eos_idealgas.hpp"
-#include "app/mfem_utils.hpp"
-
 #include "ml/hdcache.hpp"
 #include "ml/surrogate.hpp"
 #include "wf/utilities.hpp"
+#include "utils/mfem_utils.hpp"
 
 #include "miniapp.hpp"
 
