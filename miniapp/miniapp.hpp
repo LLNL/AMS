@@ -261,17 +261,16 @@ class MiniApp {
                 pTemperature[index] = packed_temperature[p];
             }
 #endif
-        }
 
-
-        /*// Deallocate temporal data
+        // Deallocate temporal data
         hAllocator.deallocate(packed_density);
         hAllocator.deallocate(packed_energy);
         hAllocator.deallocate(packed_pressure);
         hAllocator.deallocate(packed_soundspeed2);
         hAllocator.deallocate(packed_bulkmod);
         hAllocator.deallocate(packed_temperature);
-        hAllocator.deallocate(reIndex);*/
+        hAllocator.deallocate(reIndex);
+      }
     }
 
 
