@@ -102,18 +102,17 @@ class MiniApp {
     // -------------------------------------------------------------------------
     void evaluate_inner(const int mat_idx, const int num_data,
                         double *pDensity, double *pEnergy,
-                        bool *p_ml_acceptable,
                         double *pPressure, double *pSoundSpeed2,
                         double *pBulkmod, double *pTemperature) {
 
-
         auto &rm = umpire::ResourceManager::getInstance();
+
+        auto hAllocator = rm.getAllocator(AMS::utilities::getHostAllocatorName());
+        bool *p_ml_acceptable = static_cast<bool*> (hAllocator.allocate(num_data* sizeof(bool)));
 
         // ---------------------------------------------------------------------
         // operate directly on pointers
         // ---------------------------------------------------------------------
-
-
 
         // -------------------------------------------------------------
         // STEP 1: call the hdcache to look at input uncertainties
@@ -127,11 +126,14 @@ class MiniApp {
             CALIPER(CALI_MARK_END("UQ_MODULE");)
         }
 
-
+        /*-------------------------------------------------------------
         // -------------------------------------------------------------
-        // STEP 2: let's call surrogate for everything
+         STEP 2: let's call surrogate for everything
+         ideally, we should do step 1 and step 2 async!
+        // -------------------------------------------------------------
+        */
 
-        // ideally, we should do step 1 and step 2 async!
+
         /*
          At this point I am puzzled with how allocations should be done
          in regards to packing. The worst case scenario and simlest policy
@@ -143,7 +145,6 @@ class MiniApp {
         */
         // We have 6 elements + a vector holding the index values
         int partitionElements = PSIZE / (6 * sizeof(double) + sizeof(int));
-        auto hAllocator = rm.getAllocator(AMS::utilities::getHostAllocatorName());
 
         /*
             The way partioning is working now we can have "inbalance" across iterations.
@@ -271,6 +272,9 @@ class MiniApp {
         hAllocator.deallocate(packed_temperature);
         hAllocator.deallocate(reIndex);
       }
+
+      hAllocator.deallocate(p_ml_acceptable);
+
     }
 
 
@@ -336,10 +340,6 @@ class MiniApp {
                 auto d_dense_temperature = mfem::Reshape(dense_temperature.Write(), num_qpts, num_elems_for_mat);
 
 
-                mfem::Array<bool> dense_ml_acceptable(num_elems_for_mat * num_qpts);
-                dense_ml_acceptable = false;
-                auto d_dense_ml_acceptable = mfem::Reshape(dense_ml_acceptable.Write(), num_qpts, num_elems_for_mat);
-
                 // -------------------------------------------------------------
                 // sparse -> dense
                 CALIPER(CALI_MARK_BEGIN("SPARSE_TO_DENSE");)
@@ -353,7 +353,6 @@ class MiniApp {
                 evaluate_inner(mat_idx, num_elems_for_mat*num_qpts,
                                &d_dense_density(0, 0),
                                &d_dense_energy(0, 0),
-                               &d_dense_ml_acceptable(0, 0),
                                &d_dense_pressure(0, 0),
                                &d_dense_soundspeed2(0, 0),
                                &d_dense_bulkmod(0, 0),
@@ -373,14 +372,9 @@ class MiniApp {
 
             } else {
 
-                mfem::Array<bool> dense_ml_acceptable(num_elems * num_qpts);
-                dense_ml_acceptable = false;
-                auto d_dense_ml_acceptable = mfem::Reshape(dense_ml_acceptable.Write(), num_qpts, num_elems);
-
                 evaluate_inner(mat_idx, num_elems*num_qpts,
                                const_cast<double *>(&d_density(0, 0, mat_idx)),
                                const_cast<double *>(&d_energy(0, 0, mat_idx)),
-                               &d_dense_ml_acceptable(0, 0),
                                &d_pressure(0, 0, mat_idx),
                                &d_soundspeed2(0, 0, mat_idx),
                                &d_bulkmod(0, 0, mat_idx),
