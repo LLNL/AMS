@@ -281,7 +281,8 @@ public:
         _evaluate(ndata, data, is_acceptable);
         std::cout << "Successfully evaluated " << ndata << " " << d << "-dim points!\n";
 #else
-        for(int i = 0; i < length; i++) {
+        static const TypeInValue acceptable_error = 0.5;
+        for(int i = 0; i < ndata; i++) {
           is_acceptable[i] = ((TypeInValue)rand() / RAND_MAX) <= acceptable_error;
         }
 #endif
@@ -302,7 +303,8 @@ public:
         data.clear();
         std::cout << "Successfully evaluated " << ndata << " " << inputs.size() << "-dim points!\n";
 #else
-        for(int i = 0; i < length; i++) {
+        static const TypeInValue acceptable_error = 0.5;
+        for(int i = 0; i < ndata; i++) {
           is_acceptable[i] = ((TypeInValue)rand() / RAND_MAX) <= acceptable_error;
         }
 #endif
