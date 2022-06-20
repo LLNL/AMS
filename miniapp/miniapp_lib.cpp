@@ -47,6 +47,7 @@ extern "C" void miniapp_lib(const std::string &device_name,
     if (use_device) {
         rm.makeAllocator<umpire::strategy::QuickPool, true>(device_alloc_name, rm.getAllocator("DEVICE"));
         mfem::MemoryManager::SetUmpireDevice2AllocatorName(device_alloc_name);
+        AMS::utilities::setDefaultDataAllocator(AMS::utilities::dLocation::DEVICE);
     }
 
     mfem::Device::SetMemoryTypes(mfem::MemoryType::HOST_UMPIRE, mfem::MemoryType::DEVICE_UMPIRE);

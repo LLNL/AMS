@@ -3,9 +3,16 @@
 
 namespace AMS {
 namespace utilities {
-const char *getDeviceAllocatorName() { return "mmp-device-quickpool"; }
+typedef enum d_location { CPU = 0, DEVICE } dLocation;
 
-const char *getHostAllocatorName() { return "mmp-host-quickpool"; }
+void setDefaultDataAllocator(dLocation location);
+
+const char *getDeviceAllocatorName();
+
+const char *getHostAllocatorName();
+
+const char *getDefaultAllocatorName();
+
 } // namespace utilities
 } // namespace AMS
 

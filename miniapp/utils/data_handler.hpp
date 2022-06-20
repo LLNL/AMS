@@ -7,6 +7,9 @@
 #include "mfem.hpp"
 #include "mfem/general/forall.hpp"
 #include "mfem/linalg/dtensor.hpp"
+
+const int partitionSize = 1 << 24;
+
 using mfem::ForallWrap;
 
 #if __cplusplus < 201402L
@@ -159,6 +162,15 @@ public:
             d[sidx] = pd[i];
         }
     }
+
+static inline int computePartitionSize(int numIFeatures, int numOFeatures, bool includeReIndex = true, const int pSize = partitionSize){
+    int singleElementBytes = sizeof(TypeValue) * (numIFeatures + numOFeatures);
+    // We require the re-index vector
+    if (includeReIndex )
+        return pSize / ( singleElementBytes + sizeof(int));
+    else
+        return pSize / ( singleElementBytes);
+}
 };
 
 

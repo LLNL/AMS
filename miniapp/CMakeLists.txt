@@ -2,7 +2,7 @@
 # handle sources and headers
 file(GLOB_RECURSE MINIAPP_INCLUDES "*.hpp")
 
-set(AMS_LIB_SRC ${MINIAPP_INCLUDES} miniapp_lib.cpp)
+set(AMS_LIB_SRC ${MINIAPP_INCLUDES} miniapp_lib.cpp wf/utilities.cpp)
 set(AMS_EXE_SRC ${MINIAPP_INCLUDES} miniapp_exe.cpp)
 
 # two targets: a shared lib and an exec
@@ -14,8 +14,8 @@ add_executable(miniapp_bin ${AMS_EXE_SRC} ${MINIAPP_INCLUDES})
 if (WITH_CUDA)
     set_source_files_properties(miniapp_lib.cpp PROPERTIES LANGUAGE CUDA)
     set_source_files_properties(miniapp_exe.cpp PROPERTIES LANGUAGE CUDA)
-    target_compile_options(miniapp PUBLIC "--expt-extended-lambda")
-    target_compile_options(miniapp_bin PUBLIC "--expt-extended-lambda")
+    set_source_files_properties(miniapp_lib.cpp PROPERTIES COMPILE_FLAGS "--expt-extended-lambda")
+    set_source_files_properties(miniapp_exe.cpp PROPERTIES COMPILER_FLAGS "--expt-extended-lambda")
 endif()
 
 #link_directories(${CMAKE_CURRENT_BINARY_DIR})

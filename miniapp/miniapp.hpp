@@ -20,7 +20,6 @@ using mfem::ForallWrap;
 #include "utils/mfem_utils.hpp"
 #include "utils/data_handler.hpp"
 
-#define PSIZE (1 << 24)
 
 // This is usefull to completely remove
 // caliper at compile time.
@@ -107,8 +106,8 @@ class MiniApp {
 
         auto &rm = umpire::ResourceManager::getInstance();
 
-        auto hAllocator = rm.getAllocator(AMS::utilities::getHostAllocatorName());
-        bool *p_ml_acceptable = static_cast<bool*> (hAllocator.allocate(num_data* sizeof(bool)));
+        auto dataAllocator = rm.getAllocator(AMS::utilities::getDefaultAllocatorName());
+        bool *p_ml_acceptable = static_cast<bool*> (dataAllocator.allocate(num_data* sizeof(bool)));
 
         // ---------------------------------------------------------------------
         // operate directly on pointers
@@ -143,8 +142,8 @@ class MiniApp {
          usage to a user defined size "PARTITION_SIZE". Setting the size to length
          should operate as the worst case scenario.
         */
-        // We have 6 elements + a vector holding the index values
-        int partitionElements = PSIZE / (6 * sizeof(double) + sizeof(int));
+
+        int partitionElements = data_handler::computePartitionSize(2, 4);
 
         /*
             The way partioning is working now we can have "inbalance" across iterations.
@@ -155,26 +154,24 @@ class MiniApp {
         for (int pId = 0; pId < num_data; pId += partitionElements) {
             // Pointer values which store data values
             // to be computed using the eos function.
-            int elements = partitionElements;
-            if ((num_data - pId) < elements)
-                elements = (num_data - pId);
+            int elements = std::min(partitionElements, num_data-pId);
 
             double *packed_density, *packed_energy, *packed_pressure, *packed_soundspeed2,
                 *packed_bulkmod, *packed_temperature;
 
-            int *reIndex = static_cast<int *>(hAllocator.allocate(elements * sizeof(int)));
+            int *reIndex = static_cast<int *>(dataAllocator.allocate(elements * sizeof(int)));
             packed_density =
-                static_cast<double *>(hAllocator.allocate(elements * sizeof(double)));
+                static_cast<double *>(dataAllocator.allocate(elements * sizeof(double)));
             packed_energy =
-                static_cast<double *>(hAllocator.allocate(elements * sizeof(double)));
+                static_cast<double *>(dataAllocator.allocate(elements * sizeof(double)));
             packed_pressure =
-                static_cast<double *>(hAllocator.allocate(elements * sizeof(double)));
+                static_cast<double *>(dataAllocator.allocate(elements * sizeof(double)));
             packed_soundspeed2 =
-                static_cast<double *>(hAllocator.allocate(elements * sizeof(double)));
+                static_cast<double *>(dataAllocator.allocate(elements * sizeof(double)));
             packed_bulkmod =
-                static_cast<double *>(hAllocator.allocate(elements * sizeof(double)));
+                static_cast<double *>(dataAllocator.allocate(elements * sizeof(double)));
             packed_temperature =
-                static_cast<double *>(hAllocator.allocate(elements * sizeof(double)));
+                static_cast<double *>(dataAllocator.allocate(elements * sizeof(double)));
 
             if (surrogates[mat_idx] != nullptr) {
 
@@ -264,16 +261,16 @@ class MiniApp {
 #endif
 
         // Deallocate temporal data
-        hAllocator.deallocate(packed_density);
-        hAllocator.deallocate(packed_energy);
-        hAllocator.deallocate(packed_pressure);
-        hAllocator.deallocate(packed_soundspeed2);
-        hAllocator.deallocate(packed_bulkmod);
-        hAllocator.deallocate(packed_temperature);
-        hAllocator.deallocate(reIndex);
+        dataAllocator.deallocate(packed_density);
+        dataAllocator.deallocate(packed_energy);
+        dataAllocator.deallocate(packed_pressure);
+        dataAllocator.deallocate(packed_soundspeed2);
+        dataAllocator.deallocate(packed_bulkmod);
+        dataAllocator.deallocate(packed_temperature);
+        dataAllocator.deallocate(reIndex);
       }
 
-      hAllocator.deallocate(p_ml_acceptable);
+      dataAllocator.deallocate(p_ml_acceptable);
 
     }
 
@@ -515,8 +512,8 @@ class MiniApp {
                  should operate as the worst case scenario.
                 */
                 // We have 6 elements + a vector holding the index values
-                int partitionElements = PSIZE / (6 * sizeof(double) + sizeof(int));
-                auto hAllocator = rm.getAllocator(AMS::utilities::getHostAllocatorName());
+                int partitionElements = data_handler::computePartitionSize(2, 4);
+                auto dataAllocator = rm.getAllocator(AMS::utilities::getHostAllocatorName());
 
                 /*
                     The way partioning is working now we can have "inbalance" across iterations.
@@ -527,26 +524,25 @@ class MiniApp {
                 for (int pId = 0; pId < num_elems_for_mat * num_qpts; pId += partitionElements) {
                     // Pointer values which store data values
                     // to be computed using the eos function.
+                    int elements = std::min(partitionElements, num_data-pId);
                     int elements = partitionElements;
-                    if ((num_elems_for_mat * num_qpts - pId) < elements)
-                        elements = (num_elems_for_mat * num_qpts - pId);
 
                     double *packed_density, *packed_energy, *packed_pressure, *packed_soundspeed2,
                         *packed_bulkmod, *packed_temperature;
 
-                    int *reIndex = static_cast<int *>(hAllocator.allocate(elements * sizeof(int)));
+                    int *reIndex = static_cast<int *>(dataAllocator.allocate(elements * sizeof(int)));
                     packed_density =
-                        static_cast<double *>(hAllocator.allocate(elements * sizeof(double)));
+                        static_cast<double *>(dataAllocator.allocate(elements * sizeof(double)));
                     packed_energy =
-                        static_cast<double *>(hAllocator.allocate(elements * sizeof(double)));
+                        static_cast<double *>(dataAllocator.allocate(elements * sizeof(double)));
                     packed_pressure =
-                        static_cast<double *>(hAllocator.allocate(elements * sizeof(double)));
+                        static_cast<double *>(dataAllocator.allocate(elements * sizeof(double)));
                     packed_soundspeed2 =
-                        static_cast<double *>(hAllocator.allocate(elements * sizeof(double)));
+                        static_cast<double *>(dataAllocator.allocate(elements * sizeof(double)));
                     packed_bulkmod =
-                        static_cast<double *>(hAllocator.allocate(elements * sizeof(double)));
+                        static_cast<double *>(dataAllocator.allocate(elements * sizeof(double)));
                     packed_temperature =
-                        static_cast<double *>(hAllocator.allocate(elements * sizeof(double)));
+                        static_cast<double *>(dataAllocator.allocate(elements * sizeof(double)));
 
                     if (surrogates[mat_idx] != nullptr) {
                         // STEP 2:
@@ -656,13 +652,13 @@ class MiniApp {
 #endif
                     CALIPER(CALI_MARK_END("DENSE_TO_SPARSE");)
                     // Deallocate temporal data
-                    hAllocator.deallocate(packed_density);
-                    hAllocator.deallocate(packed_energy);
-                    hAllocator.deallocate(packed_pressure);
-                    hAllocator.deallocate(packed_soundspeed2);
-                    hAllocator.deallocate(packed_bulkmod);
-                    hAllocator.deallocate(packed_temperature);
-                    hAllocator.deallocate(reIndex);
+                    dataAllocator.deallocate(packed_density);
+                    dataAllocator.deallocate(packed_energy);
+                    dataAllocator.deallocate(packed_pressure);
+                    dataAllocator.deallocate(packed_soundspeed2);
+                    dataAllocator.deallocate(packed_bulkmod);
+                    dataAllocator.deallocate(packed_temperature);
+                    dataAllocator.deallocate(reIndex);
                 }
             } else {
                 if (surrogates[mat_idx] != nullptr) {
