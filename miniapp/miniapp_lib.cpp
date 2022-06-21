@@ -19,10 +19,10 @@
 
 //! ----------------------------------------------------------------------------
 //! the main miniapp function that is exposed to the shared lib
-extern "C" void miniapp_lib(const std::string &device_name, const std::string &eos_name,
-                            const std::string &model_path, int stop_cycle, bool pack_sparse_mats,
-                            int num_mats, int num_elems, int num_qpts, double *density_in,
-                            double *energy_in, bool *indicators_in) {
+extern "C" void miniapp_lib(const std::string& device_name, const std::string& eos_name,
+                            const std::string& model_path, int stop_cycle, bool pack_sparse_mats,
+                            int num_mats, int num_elems, int num_qpts, double* density_in,
+                            double* energy_in, bool* indicators_in) {
 
     // dimensions of input data is assumed to be (num_mats, num_elems, num_qpts)
     if (0) {
@@ -35,7 +35,7 @@ extern "C" void miniapp_lib(const std::string &device_name, const std::string &e
 
     // -------------------------------------------------------------------------
     // setup device
-    auto &rm = umpire::ResourceManager::getInstance();
+    auto& rm = umpire::ResourceManager::getInstance();
 
     auto host_alloc_name = AMS::utilities::getHostAllocatorName();
     auto device_alloc_name = AMS::utilities::getDeviceAllocatorName();
@@ -81,7 +81,7 @@ extern "C" void miniapp_lib(const std::string &device_name, const std::string &e
             miniapp.surrogates[mat_idx] =
                 new SurrogateModel<double>(model_path.c_str(), !use_device);
             miniapp.hdcaches[mat_idx] =
-                new HDCache<double>(cache_dim); // TODO: should use TypeValue
+                new HDCache<double>(cache_dim);  // TODO: should use TypeValue
         } else {
             miniapp.surrogates[mat_idx] = nullptr;
             miniapp.hdcaches[mat_idx] = nullptr;

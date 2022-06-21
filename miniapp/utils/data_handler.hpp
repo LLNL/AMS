@@ -13,43 +13,45 @@ const int partitionSize = 1 << 24;
 using mfem::ForallWrap;
 
 #if __cplusplus < 201402L
-template <bool B, typename T = void> using enable_if_t = typename std::enable_if<B, T>::type;
+template <bool B, typename T = void>
+using enable_if_t = typename std::enable_if<B, T>::type;
 #else
 
 #endif
 
-template <typename TypeValue> class DataHandler {
+template <typename TypeValue>
+class DataHandler {
 
-  public:
+   public:
     //! -----------------------------------------------------------------------
     //! cast an array into TypeValue
     //! -----------------------------------------------------------------------
 
     //! when  (data type = TypeValue)
-    template <class T, std::enable_if_t<std::is_same<TypeValue, T>::value> * = nullptr>
-    static inline TypeValue *cast_to_typevalue(const size_t n, T *data) {
+    template <class T, std::enable_if_t<std::is_same<TypeValue, T>::value>* = nullptr>
+    static inline TypeValue* cast_to_typevalue(const size_t n, T* data) {
         return data;
     }
 
     //! when  (data type != TypeValue)
-    template <typename T, std::enable_if_t<!std::is_same<TypeValue, T>::value> * = nullptr>
-    static inline TypeValue *cast_to_typevalue(const size_t n, T *data) {
-        TypeValue *fdata = new TypeValue[n];
+    template <typename T, std::enable_if_t<!std::is_same<TypeValue, T>::value>* = nullptr>
+    static inline TypeValue* cast_to_typevalue(const size_t n, T* data) {
+        TypeValue* fdata = new TypeValue[n];
         std::transform(data, data + n, fdata,
-                       [&](const T &v) { return static_cast<TypeValue>(v); });
+                       [&](const T& v) { return static_cast<TypeValue>(v); });
         return fdata;
     }
 
     //! when  (data type == TypeValue)
-    template <typename T, std::enable_if_t<std::is_same<TypeValue, T>::value> * = nullptr>
-    static inline void cast_from_typevalue(const size_t n, T *dest, TypeValue *src) {
-        std::transform(src, src + n, dest, [&](const T &v) { return v; });
+    template <typename T, std::enable_if_t<std::is_same<TypeValue, T>::value>* = nullptr>
+    static inline void cast_from_typevalue(const size_t n, T* dest, TypeValue* src) {
+        std::transform(src, src + n, dest, [&](const T& v) { return v; });
     }
 
     //! when  (data type != TypeValue)
-    template <typename T, std::enable_if_t<!std::is_same<TypeValue, T>::value> * = nullptr>
-    static inline void cast_from_typevalue(const size_t n, T *dest, TypeValue *src) {
-        std::transform(src, src + n, dest, [&](const T &v) { return static_cast<T>(v); });
+    template <typename T, std::enable_if_t<!std::is_same<TypeValue, T>::value>* = nullptr>
+    static inline void cast_from_typevalue(const size_t n, T* dest, TypeValue* src) {
+        std::transform(src, src + n, dest, [&](const T& v) { return static_cast<T>(v); });
     }
 
     //! -----------------------------------------------------------------------
@@ -58,7 +60,7 @@ template <typename TypeValue> class DataHandler {
 
     template <typename T>
     static inline std::vector<TypeValue> linearize_features(const size_t ndata,
-                                                            const std::vector<T *> &features) {
+                                                            const std::vector<T*>& features) {
 
         const size_t nfeatures = features.size();
         std::vector<TypeValue> ldata(ndata * nfeatures);
@@ -80,15 +82,18 @@ template <typename TypeValue> class DataHandler {
     //!     for a given k
     //!     where j* is the linearized "dense" index of all sparse indices "j"
 
-    template <typename T> using dt1 = mfem::DeviceTensor<1, T>;
-    template <typename T> using dt2 = mfem::DeviceTensor<2, T>;
-    template <typename T> using dt3 = mfem::DeviceTensor<3, T>;
+    template <typename T>
+    using dt1 = mfem::DeviceTensor<1, T>;
+    template <typename T>
+    using dt2 = mfem::DeviceTensor<2, T>;
+    template <typename T>
+    using dt3 = mfem::DeviceTensor<3, T>;
 
     template <typename Tin, typename Tout>
     static inline void pack_ij(const int k, const int sz_i, const int sz_sparse_j,
-                               const int offset_sparse_j, const dt1<int> &sparse_j_indices,
-                               const dt3<Tin> &a3, const dt2<Tout> &a2, const dt3<Tin> &b3,
-                               const dt2<Tout> &b2) {
+                               const int offset_sparse_j, const dt1<int>& sparse_j_indices,
+                               const dt3<Tin>& a3, const dt2<Tout>& a2, const dt3<Tin>& b3,
+                               const dt2<Tout>& b2) {
 
         MFEM_FORALL(j, sz_sparse_j, {
             const int sparse_j = sparse_j_indices[offset_sparse_j + j];
@@ -101,10 +106,10 @@ template <typename TypeValue> class DataHandler {
 
     template <typename Tin, typename Tout>
     static inline void unpack_ij(const int k, const int sz_i, const int sz_sparse_j,
-                                 const int offset_sparse_j, const dt1<int> &sparse_j_indices,
-                                 const dt2<Tin> &a2, const dt3<Tout> &a3, const dt2<Tin> &b2,
-                                 const dt3<Tout> &b3, const dt2<Tin> &c2, const dt3<Tout> &c3,
-                                 const dt2<Tin> &d2, const dt3<Tout> &d3) {
+                                 const int offset_sparse_j, const dt1<int>& sparse_j_indices,
+                                 const dt2<Tin>& a2, const dt3<Tout>& a3, const dt2<Tin>& b2,
+                                 const dt3<Tout>& b3, const dt2<Tin>& c2, const dt3<Tout>& c3,
+                                 const dt2<Tin>& d2, const dt3<Tout>& d3) {
 
         MFEM_FORALL(j, sz_sparse_j, {
             const int sparse_j = sparse_j_indices[offset_sparse_j + j];
@@ -121,34 +126,93 @@ template <typename TypeValue> class DataHandler {
     //! packing code for pointers based on boolean predicates
     //! -----------------------------------------------------------------------
     //! since boolean predicate is likely to be sparse
-    //! we pack the data based on the predicate
-    //! to allow chunking, pack n elements from a given offset
-    static inline size_t pack(const bool *predicate, const size_t offset, const size_t n,
-                              int *sparse_indices, const TypeValue *a, TypeValue *pa,
-                              const TypeValue *b, TypeValue *pb) {
+    //! we pack the data based on the predicate value
+    static inline size_t pack(const bool* predicate, const size_t n,
+                              std::vector<TypeValue*>& sparse, std::vector<TypeValue*>& dense,
+                              bool denseVal = true) {
+        if (sparse.size() != dense.size())
+            throw std::invalid_argument("Packing arrays size mismatch");
 
         size_t npacked = 0;
+        size_t dims = sparse.size();
         for (size_t i = 0; i < n; i++) {
-            if (predicate[offset + i]) {
-                pa[npacked] = a[offset + i];
-                pb[npacked] = b[offset + i];
-                sparse_indices[npacked++] = offset + i;
+            if (predicate[i] == denseVal) {
+                for (size_t j = 0; j < dims; j++)
+                    dense[j][npacked] = sparse[j][i];
+                npacked++;
             }
         }
         return npacked;
     }
 
-    static inline void unpack(const int *sparse_indices, const size_t n, const TypeValue *pa,
-                              TypeValue *a, const TypeValue *pb, TypeValue *b, const TypeValue *pc,
-                              TypeValue *c, const TypeValue *pd, TypeValue *d) {
+    //! -----------------------------------------------------------------------
+    //! unpacking code for pointers based on boolean predicates
+    //! -----------------------------------------------------------------------
+    //! Reverse packing. From the dense representation we copy data
+    //! back to the sparse one based on the value of the predeicate.
+    static inline void unpack(const bool* predicate, const size_t n, std::vector<TypeValue*>& dense,
+                              std::vector<TypeValue*>& sparse, bool denseVal = true) {
 
+        if (sparse.size() != dense.size())
+            throw std::invalid_argument("Packing arrays size mismatch");
+
+        size_t npacked = 0;
+        size_t dims = sparse.size();
         for (size_t i = 0; i < n; i++) {
-            auto sidx = sparse_indices[i];
-            a[sidx] = pa[i];
-            b[sidx] = pb[i];
-            c[sidx] = pc[i];
-            d[sidx] = pd[i];
+            if (predicate[i] == denseVal) {
+                for (size_t j = 0; j < dims; j++)
+                    sparse[j][i] = dense[j][npacked];
+                npacked++;
+            }
         }
+        return;
+    }
+
+    //! -----------------------------------------------------------------------
+    //! packing code for pointers based on boolean predicates
+    //! -----------------------------------------------------------------------
+    //! since boolean predicate is likely to be sparse
+    //! we pack the data based on the predicate
+    //! to allow chunking, pack n elements and store
+    //! reverse mapping into sparse_indices pointer.
+    static inline size_t pack(const bool* predicate, int* sparse_indices, const size_t n,
+                              std::vector<TypeValue*>& sparse, std::vector<TypeValue*>& dense,
+                              bool denseVal = true) {
+
+        if (sparse.size() != dense.size())
+            throw std::invalid_argument("Packing arrays size mismatch");
+
+        size_t npacked = 0;
+        size_t dims = sparse.size();
+        for (size_t i = 0; i < n; i++) {
+            if (predicate[i] == denseVal) {
+                for (size_t j = 0; j < dims; j++)
+                    dense[j][npacked] = sparse[j][i];
+                sparse_indices[npacked++] = i;
+            }
+        }
+        return npacked;
+    }
+
+    //! -----------------------------------------------------------------------
+    //! unpacking code for pointers based on pre-computed sparse reverse indices
+    //! -----------------------------------------------------------------------
+    //! We unpack data values from a dense (packed) representation to an
+    //! sparse representation. We use "sparse_indices" to map indices from the
+    //! dense representation to the sparse one
+    static inline void unpack(int* sparse_indeces, const size_t nPacked,
+                              std::vector<TypeValue*>& dense, std::vector<TypeValue*>& sparse,
+                              bool denseVal = true) {
+
+        if (sparse.size() != dense.size())
+            throw std::invalid_argument("Packing arrays size mismatch");
+
+        size_t dims = sparse.size();
+        for (size_t i = 0; i < nPacked; i++)
+            for (size_t j = 0; j < dims; j++)
+                sparse[j][sparse_indeces[i]] = dense[j][i];
+
+        return;
     }
 
     static inline int computePartitionSize(int numIFeatures, int numOFeatures,

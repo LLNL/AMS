@@ -14,11 +14,10 @@ using mfem::ForallWrap;
 #include "app/eos.hpp"
 #include "ml/hdcache.hpp"
 #include "ml/surrogate.hpp"
-#include "wf/basedb.hpp"
-#include "wf/utilities.hpp"
-
 #include "utils/data_handler.hpp"
 #include "utils/mfem_utils.hpp"
+#include "wf/basedb.hpp"
+#include "wf/utilities.hpp"
 
 // This is usefull to completely remove
 // caliper at compile time.
@@ -36,11 +35,10 @@ using mfem::ForallWrap;
 //! mini app class
 //! ----------------------------------------------------------------------------
 class MiniApp {
-
     using TypeValue = double;
     using data_handler = DataHandler<TypeValue>;
 
-  public:
+   public:
     bool is_cpu = true;
     bool pack_sparse_mats = true;
     int num_mats = 5;
@@ -48,21 +46,20 @@ class MiniApp {
     int num_qpts = 64;
     CALIPER(cali::ConfigManager mgr;)
 
-    std::vector<EOS *> eoses;
+    std::vector<EOS*> eoses;
 
     // added to include ML
-    std::vector<HDCache<TypeValue> *> hdcaches;
-    std::vector<SurrogateModel<TypeValue> *> surrogates;
+    std::vector<HDCache<TypeValue>*> hdcaches;
+    std::vector<SurrogateModel<TypeValue>*> surrogates;
 
     // Added to include an offline DB
     // (currently implemented as a file)
-    BaseDB *DB = nullptr;
+    BaseDB* DB = nullptr;
 
     // -------------------------------------------------------------------------
     // constructor and destructor
     // -------------------------------------------------------------------------
     MiniApp(int _num_mats, int _num_elems, int _num_qpts, bool _is_cpu, bool _pack_sparse_mats) {
-
         is_cpu = _is_cpu;
         num_mats = _num_mats;
         num_elems = _num_elems;
@@ -97,15 +94,13 @@ class MiniApp {
     // -------------------------------------------------------------------------
     // the main loop
     // -------------------------------------------------------------------------
-    void evaluate_inner(const int mat_idx, const int num_data, double *pDensity, double *pEnergy,
-                        double *pPressure, double *pSoundSpeed2, double *pBulkmod,
-                        double *pTemperature) {
-
-        auto &rm = umpire::ResourceManager::getInstance();
+    void evaluate_inner(const int mat_idx, const int num_data, double* pDensity, double* pEnergy,
+                        double* pPressure, double* pSoundSpeed2, double* pBulkmod,
+                        double* pTemperature) {
+        auto& rm = umpire::ResourceManager::getInstance();
 
         auto dataAllocator = rm.getAllocator(AMS::utilities::getDefaultAllocatorName());
-        bool *p_ml_acceptable =
-            static_cast<bool *>(dataAllocator.allocate(num_data * sizeof(bool)));
+        bool* p_ml_acceptable = static_cast<bool*>(dataAllocator.allocate(num_data * sizeof(bool)));
 
         // ---------------------------------------------------------------------
         // operate directly on pointers
@@ -124,30 +119,30 @@ class MiniApp {
         }
 
         /*-------------------------------------------------------------
-        // -------------------------------------------------------------
-         STEP 2: let's call surrogate for everything
-         ideally, we should do step 1 and step 2 async!
-        // -------------------------------------------------------------
-        */
+    // -------------------------------------------------------------
+     STEP 2: let's call surrogate for everything
+     ideally, we should do step 1 and step 2 async!
+    // -------------------------------------------------------------
+    */
 
         /*
-         At this point I am puzzled with how allocations should be done
-         in regards to packing. The worst case scenario and simlest policy
-         would require "length" *("Num Input Vectors" + "Num Output Vectors" + 1).
-         This can be fine in the case of CPU execution. It is definetely too high
-         for GPU execution. I will start a partioning scheme that limits the memory
-         usage to a user defined size "PARTITION_SIZE". Setting the size to length
-         should operate as the worst case scenario.
-        */
+     At this point I am puzzled with how allocations should be done
+     in regards to packing. The worst case scenario and simlest policy
+     would require "length" *("Num Input Vectors" + "Num Output Vectors" + 1).
+     This can be fine in the case of CPU execution. It is definetely too high
+     for GPU execution. I will start a partioning scheme that limits the memory
+     usage to a user defined size "PARTITION_SIZE". Setting the size to length
+     should operate as the worst case scenario.
+    */
 
         int partitionElements = data_handler::computePartitionSize(2, 4);
 
         /*
-            The way partioning is working now we can have "inbalance" across iterations.
-            As we only check the "uq" vector for the next partionElements. Thus, the
-            vectors will be filled in up to that size. However, most times the vector will
-            be half-empty.
-        */
+        The way partioning is working now we can have "inbalance" across
+       iterations. As we only check the "uq" vector for the next
+       partionElements. Thus, the vectors will be filled in up to that size.
+       However, most times the vector will be half-empty.
+    */
         for (int pId = 0; pId < num_data; pId += partitionElements) {
             // Pointer values which store data values
             // to be computed using the eos function.
@@ -156,35 +151,38 @@ class MiniApp {
             double *packed_density, *packed_energy, *packed_pressure, *packed_soundspeed2,
                 *packed_bulkmod, *packed_temperature;
 
-            int *reIndex = static_cast<int *>(dataAllocator.allocate(elements * sizeof(int)));
             packed_density =
-                static_cast<double *>(dataAllocator.allocate(elements * sizeof(double)));
-            packed_energy =
-                static_cast<double *>(dataAllocator.allocate(elements * sizeof(double)));
+                static_cast<double*>(dataAllocator.allocate(elements * sizeof(double)));
+            packed_energy = static_cast<double*>(dataAllocator.allocate(elements * sizeof(double)));
             packed_pressure =
-                static_cast<double *>(dataAllocator.allocate(elements * sizeof(double)));
+                static_cast<double*>(dataAllocator.allocate(elements * sizeof(double)));
             packed_soundspeed2 =
-                static_cast<double *>(dataAllocator.allocate(elements * sizeof(double)));
+                static_cast<double*>(dataAllocator.allocate(elements * sizeof(double)));
             packed_bulkmod =
-                static_cast<double *>(dataAllocator.allocate(elements * sizeof(double)));
+                static_cast<double*>(dataAllocator.allocate(elements * sizeof(double)));
             packed_temperature =
-                static_cast<double *>(dataAllocator.allocate(elements * sizeof(double)));
+                static_cast<double*>(dataAllocator.allocate(elements * sizeof(double)));
+
+            std::vector<double*> sparse_inputs({&pDensity[pId], &pEnergy[pId]});
+            std::vector<double*> sparse_outputs(
+                {&pPressure[pId], &pSoundSpeed2[pId], &pBulkmod[pId], &pTemperature[pId]});
+
+            std::vector<double*> packed_inputs({packed_density, packed_energy});
+            std::vector<double*> packed_outputs(
+                {packed_pressure, packed_soundspeed2, packed_bulkmod, packed_temperature});
+
+            bool* predicate = &p_ml_acceptable[pId];
 
             if (surrogates[mat_idx] != nullptr) {
-
-                std::vector<double *> inputs({&pDensity[pId], &pEnergy[pId]});
-                std::vector<double *> outputs(
-                    {&pPressure[pId], &pSoundSpeed2[pId], &pBulkmod[pId], &pTemperature[pId]});
-
                 // STEP 2:
                 // let's call surrogate for everything
                 /*
-                 One of the benefits of the packing is that we indirectly limit the size of
-                 the model. As it will perform inference on up to "elements" points. Thus,
-                 we indirectly control the maximum memory of the model.
-                 */
+         One of the benefits of the packing is that we indirectly limit the size
+         of the model. As it will perform inference on up to "elements" points.
+         Thus, we indirectly control the maximum memory of the model.
+         */
                 CALIPER(CALI_MARK_BEGIN("SURROGATE");)
-                surrogates[mat_idx]->Eval(elements, inputs, outputs);
+                surrogates[mat_idx]->Eval(elements, sparse_inputs, sparse_outputs);
                 CALIPER(CALI_MARK_END("SURROGATE");)
 
 #ifdef __SURROGATE_DEBUG__
@@ -198,23 +196,15 @@ class MiniApp {
             }
 
             // Here we pack. ""
-#ifdef NEW_PACKING
             long packedElements =
-                data_handler::pack(p_ml_acceptable, pId, elements, reIndex, pDensity,
-                                   packed_density, pEnergy, packed_energy);
-#else
-            long packedElements = 0;
-            for (long p = 0; p < elements; p++) {
-                if (pMl_acceptable[pId + p]) {
-                    packed_density[packedElements] = pDensity[pId + p];
-                    packed_energy[packedElements] = pEnergy[pId + p];
-                    reIndex[packedElements] = pId + p;
-                    packedElements++;
-                }
-            }
-#endif
-            std::cout << "Physis Computed elements / Surrogate computed elements ["
-                      << packedElements << "/" << elements - packedElements << "]\n";
+                data_handler::pack(predicate, elements, sparse_inputs, packed_inputs);
+
+            std::cout << std::setprecision(2)
+                      << "Physis Computed elements / Surrogate computed elements "
+                         "(Fraction) ["
+                      << packedElements << "/" << elements - packedElements << " ("
+                      << static_cast<double>(packedElements) / static_cast<double>(elements)
+                      << ")]\n";
 
             // -------------------------------------------------------------
             // STEP 3: call physics module only where d_dense_need_phys = true
@@ -233,19 +223,7 @@ class MiniApp {
             CALIPER(CALI_MARK_END("DBSTORE");)
 #endif
 
-#ifdef NEW_PACKING
-            data_handler::unpack(reIndex, packedElements, packed_pressure, pPressure,
-                                 packed_soundspeed2, pSoundSpeed2, packed_bulkmod, pBulkmod,
-                                 packed_temperature, pTemperature);
-#else
-            for (int p = 0; p < packedElements; p++) {
-                int index = reIndex[p];
-                pPressure[index] = packed_pressure[p];
-                pSoundSpeed2[index] = packed_soundspeed2[p];
-                pBulkmod[index] = packed_bulkmod[p];
-                pTemperature[index] = packed_temperature[p];
-            }
-#endif
+            data_handler::unpack(predicate, elements, packed_outputs, sparse_outputs);
 
             // Deallocate temporal data
             dataAllocator.deallocate(packed_density);
@@ -254,17 +232,15 @@ class MiniApp {
             dataAllocator.deallocate(packed_soundspeed2);
             dataAllocator.deallocate(packed_bulkmod);
             dataAllocator.deallocate(packed_temperature);
-            dataAllocator.deallocate(reIndex);
         }
 
         dataAllocator.deallocate(p_ml_acceptable);
     }
 
-    void evaluate(mfem::DenseTensor &density, mfem::DenseTensor &energy,
-                  mfem::Array<int> &sparse_elem_indices, mfem::DenseTensor &pressure,
-                  mfem::DenseTensor &soundspeed2, mfem::DenseTensor &bulkmod,
-                  mfem::DenseTensor &temperature) {
-
+    void evaluate(mfem::DenseTensor& density, mfem::DenseTensor& energy,
+                  mfem::Array<int>& sparse_elem_indices, mfem::DenseTensor& pressure,
+                  mfem::DenseTensor& soundspeed2, mfem::DenseTensor& bulkmod,
+                  mfem::DenseTensor& temperature) {
         CALIPER(CALI_MARK_FUNCTION_BEGIN;)
 
         // move/allocate data on the device.
@@ -282,7 +258,6 @@ class MiniApp {
         // ---------------------------------------------------------------------
         // for each material
         for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
-
             const int offset_curr = mat_idx == 0 ? num_mats : sparse_elem_indices[mat_idx - 1];
             const int offset_next = sparse_elem_indices[mat_idx];
 
@@ -292,11 +267,11 @@ class MiniApp {
             }
 
             // -----------------------------------------------------------------
-            // NOTE: we've found it's faster to do sparse lookups on GPUs but on CPUs the dense
-            // packing->looked->unpacking is better if we're using expensive eoses. in the future
-            // we may just use dense representations everywhere but for now we use sparse ones.
+            // NOTE: we've found it's faster to do sparse lookups on GPUs but on CPUs
+            // the dense packing->looked->unpacking is better if we're using expensive
+            // eoses. in the future we may just use dense representations everywhere
+            // but for now we use sparse ones.
             if (is_cpu && pack_sparse_mats && num_elems_for_mat < num_elems) {
-
                 std::cout << " material " << mat_idx << ": using sparse packing for "
                           << num_elems_for_mat << " elems\n";
 
@@ -349,10 +324,9 @@ class MiniApp {
                 // -------------------------------------------------------------
 
             } else {
-
                 evaluate_inner(mat_idx, num_elems * num_qpts,
-                               const_cast<double *>(&d_density(0, 0, mat_idx)),
-                               const_cast<double *>(&d_energy(0, 0, mat_idx)),
+                               const_cast<double*>(&d_density(0, 0, mat_idx)),
+                               const_cast<double*>(&d_energy(0, 0, mat_idx)),
                                &d_pressure(0, 0, mat_idx), &d_soundspeed2(0, 0, mat_idx),
                                &d_bulkmod(0, 0, mat_idx), &d_temperature(0, 0, mat_idx));
             }
@@ -362,12 +336,11 @@ class MiniApp {
     }
 
     // --------------------------------------------------------------------------------
-    void evaluate_orig(mfem::DenseTensor &density, mfem::DenseTensor &energy,
-                       mfem::Array<int> &sparse_elem_indices, mfem::DenseTensor &pressure,
-                       mfem::DenseTensor &soundspeed2, mfem::DenseTensor &bulkmod,
-                       mfem::DenseTensor &temperature) {
-
-        auto &rm = umpire::ResourceManager::getInstance();
+    void evaluate_orig(mfem::DenseTensor& density, mfem::DenseTensor& energy,
+                       mfem::Array<int>& sparse_elem_indices, mfem::DenseTensor& pressure,
+                       mfem::DenseTensor& soundspeed2, mfem::DenseTensor& bulkmod,
+                       mfem::DenseTensor& temperature) {
+        auto& rm = umpire::ResourceManager::getInstance();
 
         CALIPER(CALI_MARK_FUNCTION_BEGIN;)
 
@@ -386,7 +359,6 @@ class MiniApp {
         // ---------------------------------------------------------------------
         // for each material
         for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
-
             const int offset_curr = mat_idx == 0 ? num_mats : sparse_elem_indices[mat_idx - 1];
             const int offset_next = sparse_elem_indices[mat_idx];
 
@@ -396,11 +368,11 @@ class MiniApp {
             }
 
             // -----------------------------------------------------------------
-            // NOTE: we've found it's faster to do sparse lookups on GPUs but on CPUs the dense
-            // packing->looked->unpacking is better if we're using expensive eoses. in the future
-            // we may just use dense representations everywhere but for now we use sparse ones.
+            // NOTE: we've found it's faster to do sparse lookups on GPUs but on CPUs
+            // the dense packing->looked->unpacking is better if we're using expensive
+            // eoses. in the future we may just use dense representations everywhere
+            // but for now we use sparse ones.
             if (is_cpu && pack_sparse_mats && num_elems_for_mat < num_elems) {
-
                 std::cout << " material " << mat_idx << ": using sparse packing for "
                           << num_elems_for_mat << " elems\n";
 
@@ -460,15 +432,15 @@ class MiniApp {
                 // should we create this memory again and again?
 
                 // Let's start working with pointers.
-                double *pDensity = &d_dense_density(0, 0);
-                double *pEnergy = &d_dense_energy(0, 0);
+                double* pDensity = &d_dense_density(0, 0);
+                double* pEnergy = &d_dense_energy(0, 0);
 
-                bool *pMl_acceptable = &d_dense_ml_acceptable(0, 0);
+                bool* pMl_acceptable = &d_dense_ml_acceptable(0, 0);
 
-                double *pPressure = &d_dense_pressure(0, 0);
-                double *pSoundSpeed2 = &d_dense_soundspeed2(0, 0);
-                double *pBulkmod = &d_dense_bulkmod(0, 0);
-                double *pTemperature = &d_dense_temperature(0, 0);
+                double* pPressure = &d_dense_pressure(0, 0);
+                double* pSoundSpeed2 = &d_dense_soundspeed2(0, 0);
+                double* pBulkmod = &d_dense_bulkmod(0, 0);
+                double* pTemperature = &d_dense_temperature(0, 0);
 
                 // -------------------------------------------------------------
                 // STEP 1: call the hdcache to look at input uncertainties
@@ -487,63 +459,71 @@ class MiniApp {
 
                 // ideally, we should do step 1 and step 2 async!
                 /*
-                 At this point I am puzzled with how allocations should be done
-                 in regards to packing. The worst case scenario and simlest policy
-                 would require "length" *("Num Input Vectors" + "Num Output Vectors" + 1).
-                 This can be fine in the case of CPU execution. It is definetely too high
-                 for GPU execution. I will start a partioning scheme that limits the memory
-                 usage to a user defined size "PARTITION_SIZE". Setting the size to length
-                 should operate as the worst case scenario.
-                */
+         At this point I am puzzled with how allocations should be done
+         in regards to packing. The worst case scenario and simlest policy
+         would require "length" *("Num Input Vectors" + "Num Output Vectors" +
+         1). This can be fine in the case of CPU execution. It is definetely too
+         high for GPU execution. I will start a partioning scheme that limits
+         the memory usage to a user defined size "PARTITION_SIZE". Setting the
+         size to length should operate as the worst case scenario.
+        */
                 // We have 6 elements + a vector holding the index values
                 int partitionElements = data_handler::computePartitionSize(2, 4);
                 auto dataAllocator = rm.getAllocator(AMS::utilities::getHostAllocatorName());
 
                 /*
-                    The way partioning is working now we can have "inbalance" across iterations.
-                    As we only check the "uq" vector for the next partionElements. Thus, the
-                    vectors will be filled in up to that size. However, most times the vector will
-                    be half-empty.
-                */
+            The way partioning is working now we can have "inbalance" across
+           iterations. As we only check the "uq" vector for the next
+           partionElements. Thus, the vectors will be filled in up to that size.
+           However, most times the vector will be half-empty.
+        */
                 int num_data = num_elems_for_mat * num_qpts;
                 for (int pId = 0; pId < num_elems_for_mat * num_qpts; pId += partitionElements) {
                     // Pointer values which store data values
                     // to be computed using the eos function.
-                    
+
                     int elements = std::min(partitionElements, num_data - pId);
 
                     double *packed_density, *packed_energy, *packed_pressure, *packed_soundspeed2,
                         *packed_bulkmod, *packed_temperature;
 
-                    int *reIndex =
-                        static_cast<int *>(dataAllocator.allocate(elements * sizeof(int)));
+                    int* reIndex =
+                        static_cast<int*>(dataAllocator.allocate(elements * sizeof(int)));
                     packed_density =
-                        static_cast<double *>(dataAllocator.allocate(elements * sizeof(double)));
+                        static_cast<double*>(dataAllocator.allocate(elements * sizeof(double)));
                     packed_energy =
-                        static_cast<double *>(dataAllocator.allocate(elements * sizeof(double)));
+                        static_cast<double*>(dataAllocator.allocate(elements * sizeof(double)));
                     packed_pressure =
-                        static_cast<double *>(dataAllocator.allocate(elements * sizeof(double)));
+                        static_cast<double*>(dataAllocator.allocate(elements * sizeof(double)));
                     packed_soundspeed2 =
-                        static_cast<double *>(dataAllocator.allocate(elements * sizeof(double)));
+                        static_cast<double*>(dataAllocator.allocate(elements * sizeof(double)));
                     packed_bulkmod =
-                        static_cast<double *>(dataAllocator.allocate(elements * sizeof(double)));
+                        static_cast<double*>(dataAllocator.allocate(elements * sizeof(double)));
                     packed_temperature =
-                        static_cast<double *>(dataAllocator.allocate(elements * sizeof(double)));
+                        static_cast<double*>(dataAllocator.allocate(elements * sizeof(double)));
+
+                    std::vector<double*> sparse_inputs({&pDensity[pId], &pEnergy[pId]});
+                    std::vector<double*> sparse_outputs(
+                        {&pPressure[pId], &pSoundSpeed2[pId], &pBulkmod[pId], &pTemperature[pId]});
+
+                    std::vector<double*> packed_inputs({packed_density, packed_energy});
+                    std::vector<double*> packed_outputs(
+                        {packed_pressure, packed_soundspeed2, packed_bulkmod, packed_temperature});
+
+                    bool* predicate = &pMl_acceptable[pId];
 
                     if (surrogates[mat_idx] != nullptr) {
                         // STEP 2:
                         // let's call surrogate for everything
-                        double *inputs[] = {&pDensity[pId], &pEnergy[pId]};
-                        double *outputs[] = {&pPressure[pId], &pSoundSpeed2[pId], &pBulkmod[pId],
-                                             &pTemperature[pId]};
 
                         /*
-                         One of the benefits of the packing is that we indirectly limit the size of
-                         the model. As it will perform inference on up to "elements" points. Thus,
-                         we indirectly control the maximum memory of the model.
-                         */
+             One of the benefits of the packing is that we indirectly limit the
+             size of the model. As it will perform inference on up to "elements"
+             points. Thus, we indirectly control the maximum memory of the
+             model.
+             */
                         CALIPER(CALI_MARK_BEGIN("SURROGATE");)
-                        surrogates[mat_idx]->Eval(elements, 2, 4, inputs, outputs);
+                        surrogates[mat_idx]->Eval(elements, sparse_inputs, sparse_outputs);
                         CALIPER(CALI_MARK_END("SURROGATE");)
 #ifdef __SURROGATE_DEBUG__
                         // TODO: I will revisit the RMSE later. We need to compute it only
@@ -556,21 +536,9 @@ class MiniApp {
 #endif
                     }
                     // Here we pack. ""
-#ifdef NEW_PACKING
-                    long packedElements =
-                        data_handler::pack(pMl_acceptable, pId, elements, reIndex, pDensity,
-                                           packed_density, pEnergy, packed_energy);
-#else
-                    long packedElements = 0;
-                    for (long p = 0; p < elements; p++) {
-                        if (pMl_acceptable[pId + p]) {
-                            packed_density[packedElements] = pDensity[pId + p];
-                            packed_energy[packedElements] = pEnergy[pId + p];
-                            reIndex[packedElements] = pId + p;
-                            packedElements++;
-                        }
-                    }
-#endif
+                    long packedElements = data_handler::pack(predicate, reIndex, elements,
+                                                             sparse_inputs, packed_inputs);
+
                     std::cout << "Physis Computed elements / Surrogate computed elements ["
                               << packedElements << "/" << elements - packedElements << "]\n";
 
@@ -589,23 +557,12 @@ class MiniApp {
                     inputs = {packed_energy, packed_density};
                     outputs = {packed_pressure, packed_soundspeed2, packed_bulkmod,
                                packed_temperature};
-                    DB->Store(packedElements, 2, 4, inputs, outputs);
+                    DB->Store(packedElements, 2, 4, packed_inputs, packed_outputs);
                     CALIPER(CALI_MARK_END("DBSTORE");)
 #endif
 
-#ifdef NEW_PACKING
-                    data_handler::unpack(reIndex, packedElements, packed_pressure, pPressure,
-                                         packed_soundspeed2, pSoundSpeed2, packed_bulkmod, pBulkmod,
-                                         packed_temperature, pTemperature);
-#else
-                    for (int p = 0; p < packedElements; p++) {
-                        int index = reIndex[p];
-                        pPressure[index] = packed_pressure[p];
-                        pSoundSpeed2[index] = packed_soundspeed2[p];
-                        pBulkmod[index] = packed_bulkmod[p];
-                        pTemperature[index] = packed_temperature[p];
-                    }
-#endif
+                    data_handler::unpack(reIndex, packedElements, packed_outputs, sparse_outputs);
+
                     // STEP 4: convert dense -> sparse
                     CALIPER(CALI_MARK_BEGIN("DENSE_TO_SPARSE");)
 #ifdef NEW_PACKING
@@ -642,12 +599,12 @@ class MiniApp {
                 }
             } else {
                 if (surrogates[mat_idx] != nullptr) {
-                    double *inputs[] = {const_cast<double *>(&d_density(0, 0, mat_idx)),
-                                        const_cast<double *>(&d_energy(0, 0, mat_idx))};
-                    double *outputs[] = {const_cast<double *>(&d_pressure(0, 0, mat_idx)),
-                                         const_cast<double *>(&d_soundspeed2(0, 0, mat_idx)),
-                                         const_cast<double *>(&d_bulkmod(0, 0, mat_idx)),
-                                         const_cast<double *>(&d_temperature(0, 0, mat_idx))};
+                    double* inputs[] = {const_cast<double*>(&d_density(0, 0, mat_idx)),
+                                        const_cast<double*>(&d_energy(0, 0, mat_idx))};
+                    double* outputs[] = {const_cast<double*>(&d_pressure(0, 0, mat_idx)),
+                                         const_cast<double*>(&d_soundspeed2(0, 0, mat_idx)),
+                                         const_cast<double*>(&d_bulkmod(0, 0, mat_idx)),
+                                         const_cast<double*>(&d_temperature(0, 0, mat_idx))};
                     CALIPER(CALI_MARK_BEGIN("SURROGATE");)
                     surrogates[mat_idx]->Eval(num_elems_for_mat * num_qpts, 2, 4, inputs, outputs);
                     CALIPER(CALI_MARK_END("SURROGATE");)
