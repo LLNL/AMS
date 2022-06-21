@@ -12,25 +12,23 @@
 #include "app/eos_idealgas.hpp"
 #include "ml/hdcache.hpp"
 #include "ml/surrogate.hpp"
-#include "wf/utilities.hpp"
 #include "utils/mfem_utils.hpp"
+#include "wf/utilities.hpp"
 
 #include "miniapp.hpp"
 
 //! ----------------------------------------------------------------------------
 //! the main miniapp function that is exposed to the shared lib
-extern "C" void miniapp_lib(const std::string &device_name,
-                            const std::string &eos_name,
-                            const std::string &model_path,
-                            int stop_cycle, bool pack_sparse_mats,
-                            int num_mats, int num_elems, int num_qpts,
-                            double *density_in, double *energy_in, bool *indicators_in) {
+extern "C" void miniapp_lib(const std::string &device_name, const std::string &eos_name,
+                            const std::string &model_path, int stop_cycle, bool pack_sparse_mats,
+                            int num_mats, int num_elems, int num_qpts, double *density_in,
+                            double *energy_in, bool *indicators_in) {
 
     // dimensions of input data is assumed to be (num_mats, num_elems, num_qpts)
     if (0) {
-      print_tensor_array("density_in", density_in, {num_mats, num_elems, num_qpts});
-      print_tensor_array("energy_in", energy_in, {num_mats, num_elems, num_qpts});
-      print_tensor_array("indicators_in", indicators_in, {1, num_mats, num_elems});
+        print_tensor_array("density_in", density_in, {num_mats, num_elems, num_qpts});
+        print_tensor_array("energy_in", energy_in, {num_mats, num_elems, num_qpts});
+        print_tensor_array("indicators_in", indicators_in, {1, num_mats, num_elems});
     }
 
     const bool use_device = device_name != "cpu";
@@ -45,7 +43,8 @@ extern "C" void miniapp_lib(const std::string &device_name,
     rm.makeAllocator<umpire::strategy::QuickPool, true>(host_alloc_name, rm.getAllocator("HOST"));
     mfem::MemoryManager::SetUmpireHostAllocatorName(host_alloc_name);
     if (use_device) {
-        rm.makeAllocator<umpire::strategy::QuickPool, true>(device_alloc_name, rm.getAllocator("DEVICE"));
+        rm.makeAllocator<umpire::strategy::QuickPool, true>(device_alloc_name,
+                                                            rm.getAllocator("DEVICE"));
         mfem::MemoryManager::SetUmpireDevice2AllocatorName(device_alloc_name);
         AMS::utilities::setDefaultDataAllocator(AMS::utilities::dLocation::DEVICE);
     }
@@ -79,8 +78,10 @@ extern "C" void miniapp_lib(const std::string &device_name,
             }
         }
         if (model_path.size() > 0) {
-            miniapp.surrogates[mat_idx] = new SurrogateModel(miniapp.eoses[mat_idx], model_path.c_str(), !use_device);
-            miniapp.hdcaches[mat_idx] = new HDCache<double>(cache_dim);   // TODO: should use TypeValue
+            miniapp.surrogates[mat_idx] =
+                new SurrogateModel<double>(model_path.c_str(), !use_device);
+            miniapp.hdcaches[mat_idx] =
+                new HDCache<double>(cache_dim); // TODO: should use TypeValue
         } else {
             miniapp.surrogates[mat_idx] = nullptr;
             miniapp.hdcaches[mat_idx] = nullptr;
@@ -102,8 +103,8 @@ extern "C" void miniapp_lib(const std::string &device_name,
     if (0) {
         print_dense_tensor("density", density);
         print_dense_tensor("density", density, indicators_in);
-        //print_dense_tensor("energy", energy);
-        //print_dense_tensor("energy", energy, indicators_in);
+        // print_dense_tensor("energy", energy);
+        // print_dense_tensor("energy", energy, indicators_in);
     }
 
     // outputs
@@ -120,12 +121,12 @@ extern "C" void miniapp_lib(const std::string &device_name,
     // after that, store the indices of those elements in order
     mfem::Array<int> sparse_elem_indices;
     sparse_elem_indices.SetSize(num_mats);
-    sparse_elem_indices.Reserve(num_mats*num_elems);
+    sparse_elem_indices.Reserve(num_mats * num_elems);
 
     for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
 
         for (int elem_idx = 0; elem_idx < num_elems; ++elem_idx) {
-            if (indicators_in[elem_idx + num_elems*mat_idx]) {
+            if (indicators_in[elem_idx + num_elems * mat_idx]) {
                 sparse_elem_indices.Append(elem_idx);
             }
         }
@@ -137,8 +138,8 @@ extern "C" void miniapp_lib(const std::string &device_name,
     miniapp.start();
     for (int c = 0; c <= stop_cycle; ++c) {
         std::cout << "\n--> cycle " << c << std::endl;
-        miniapp.evaluate(density, energy, sparse_elem_indices,
-                         pressure, soundspeed2, bulkmod, temperature);
+        miniapp.evaluate(density, energy, sparse_elem_indices, pressure, soundspeed2, bulkmod,
+                         temperature);
         // break;
     }
 

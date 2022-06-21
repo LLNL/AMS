@@ -17,9 +17,8 @@ using mfem::ForallWrap;
 #include "wf/basedb.hpp"
 #include "wf/utilities.hpp"
 
-#include "utils/mfem_utils.hpp"
 #include "utils/data_handler.hpp"
-
+#include "utils/mfem_utils.hpp"
 
 // This is usefull to completely remove
 // caliper at compile time.
@@ -31,7 +30,6 @@ using mfem::ForallWrap;
 #define CALIPER(stmt)
 #endif
 
-
 #define NEW_PACKING
 
 //! ----------------------------------------------------------------------------
@@ -39,8 +37,8 @@ using mfem::ForallWrap;
 //! ----------------------------------------------------------------------------
 class MiniApp {
 
-   using TypeValue = double;
-   using data_handler = DataHandler<TypeValue>;
+    using TypeValue = double;
+    using data_handler = DataHandler<TypeValue>;
 
   public:
     bool is_cpu = true;
@@ -54,7 +52,7 @@ class MiniApp {
 
     // added to include ML
     std::vector<HDCache<TypeValue> *> hdcaches;
-    std::vector<SurrogateModel *> surrogates;
+    std::vector<SurrogateModel<TypeValue> *> surrogates;
 
     // Added to include an offline DB
     // (currently implemented as a file)
@@ -99,15 +97,15 @@ class MiniApp {
     // -------------------------------------------------------------------------
     // the main loop
     // -------------------------------------------------------------------------
-    void evaluate_inner(const int mat_idx, const int num_data,
-                        double *pDensity, double *pEnergy,
-                        double *pPressure, double *pSoundSpeed2,
-                        double *pBulkmod, double *pTemperature) {
+    void evaluate_inner(const int mat_idx, const int num_data, double *pDensity, double *pEnergy,
+                        double *pPressure, double *pSoundSpeed2, double *pBulkmod,
+                        double *pTemperature) {
 
         auto &rm = umpire::ResourceManager::getInstance();
 
         auto dataAllocator = rm.getAllocator(AMS::utilities::getDefaultAllocatorName());
-        bool *p_ml_acceptable = static_cast<bool*> (dataAllocator.allocate(num_data* sizeof(bool)));
+        bool *p_ml_acceptable =
+            static_cast<bool *>(dataAllocator.allocate(num_data * sizeof(bool)));
 
         // ---------------------------------------------------------------------
         // operate directly on pointers
@@ -132,7 +130,6 @@ class MiniApp {
         // -------------------------------------------------------------
         */
 
-
         /*
          At this point I am puzzled with how allocations should be done
          in regards to packing. The worst case scenario and simlest policy
@@ -154,7 +151,7 @@ class MiniApp {
         for (int pId = 0; pId < num_data; pId += partitionElements) {
             // Pointer values which store data values
             // to be computed using the eos function.
-            int elements = std::min(partitionElements, num_data-pId);
+            int elements = std::min(partitionElements, num_data - pId);
 
             double *packed_density, *packed_energy, *packed_pressure, *packed_soundspeed2,
                 *packed_bulkmod, *packed_temperature;
@@ -175,39 +172,36 @@ class MiniApp {
 
             if (surrogates[mat_idx] != nullptr) {
 
+                std::vector<double *> inputs({&pDensity[pId], &pEnergy[pId]});
+                std::vector<double *> outputs(
+                    {&pPressure[pId], &pSoundSpeed2[pId], &pBulkmod[pId], &pTemperature[pId]});
+
                 // STEP 2:
                 // let's call surrogate for everything
-                double *inputs[] = {&pDensity[pId], &pEnergy[pId]};
-                double *outputs[] = {&pPressure[pId], &pSoundSpeed2[pId],
-                                     &pBulkmod[pId], &pTemperature[pId]};
-
                 /*
                  One of the benefits of the packing is that we indirectly limit the size of
                  the model. As it will perform inference on up to "elements" points. Thus,
                  we indirectly control the maximum memory of the model.
                  */
                 CALIPER(CALI_MARK_BEGIN("SURROGATE");)
-                surrogates[mat_idx]->Eval(elements, 2, 4, inputs, outputs);
+                surrogates[mat_idx]->Eval(elements, inputs, outputs);
                 CALIPER(CALI_MARK_END("SURROGATE");)
 
 #ifdef __SURROGATE_DEBUG__
                 // TODO: I will revisit the RMSE later. We need to compute it only
                 // for point which we have low uncertainty.
-                eoses[mat_idx]->computeRMSE(
-                    num_elems_for_mat * num_qpts, &d_dense_density(0, 0),
-                    &d_dense_energy(0, 0), &d_dense_pressure(0, 0),
-                    &d_dense_soundspeed2(0, 0), &d_dense_bulkmod(0, 0),
-                    &d_dense_temperature(0, 0));
+                eoses[mat_idx]->computeRMSE(num_elems_for_mat * num_qpts, &d_dense_density(0, 0),
+                                            &d_dense_energy(0, 0), &d_dense_pressure(0, 0),
+                                            &d_dense_soundspeed2(0, 0), &d_dense_bulkmod(0, 0),
+                                            &d_dense_temperature(0, 0));
 #endif
             }
 
             // Here we pack. ""
 #ifdef NEW_PACKING
             long packedElements =
-                    data_handler::pack(p_ml_acceptable, pId, elements,
-                                       reIndex,
-                                       pDensity, packed_density,
-                                       pEnergy, packed_energy);
+                data_handler::pack(p_ml_acceptable, pId, elements, reIndex, pDensity,
+                                   packed_density, pEnergy, packed_energy);
 #else
             long packedElements = 0;
             for (long p = 0; p < elements; p++) {
@@ -222,33 +216,26 @@ class MiniApp {
             std::cout << "Physis Computed elements / Surrogate computed elements ["
                       << packedElements << "/" << elements - packedElements << "]\n";
 
-
             // -------------------------------------------------------------
             // STEP 3: call physics module only where d_dense_need_phys = true
             CALIPER(CALI_MARK_BEGIN("PHYSICS MODULE");)
-            eoses[mat_idx]->Eval(packedElements, packed_energy, packed_density,
-                                 packed_pressure, packed_soundspeed2, packed_bulkmod,
-                                 packed_temperature);
+            eoses[mat_idx]->Eval(packedElements, packed_energy, packed_density, packed_pressure,
+                                 packed_soundspeed2, packed_bulkmod, packed_temperature);
             CALIPER(CALI_MARK_END("PHYSICS MODULE");)
-
 
 #ifdef __ENABLE_DB__
             // STEP 3b:
             // for d_dense_uq = False we store into DB.
             CALIPER(CALI_MARK_BEGIN("DBSTORE");)
             inputs = {packed_energy, packed_density};
-            outputs = {packed_pressure, packed_soundspeed2, packed_bulkmod,
-                       packed_temperature};
+            outputs = {packed_pressure, packed_soundspeed2, packed_bulkmod, packed_temperature};
             DB->Store(packedElements, 2, 4, inputs, outputs);
             CALIPER(CALI_MARK_END("DBSTORE");)
 #endif
 
-
 #ifdef NEW_PACKING
-            data_handler::unpack(reIndex, packedElements,
-                                 packed_pressure,  pPressure,
-                                 packed_soundspeed2, pSoundSpeed2,
-                                 packed_bulkmod, pBulkmod,
+            data_handler::unpack(reIndex, packedElements, packed_pressure, pPressure,
+                                 packed_soundspeed2, pSoundSpeed2, packed_bulkmod, pBulkmod,
                                  packed_temperature, pTemperature);
 #else
             for (int p = 0; p < packedElements; p++) {
@@ -260,28 +247,22 @@ class MiniApp {
             }
 #endif
 
-        // Deallocate temporal data
-        dataAllocator.deallocate(packed_density);
-        dataAllocator.deallocate(packed_energy);
-        dataAllocator.deallocate(packed_pressure);
-        dataAllocator.deallocate(packed_soundspeed2);
-        dataAllocator.deallocate(packed_bulkmod);
-        dataAllocator.deallocate(packed_temperature);
-        dataAllocator.deallocate(reIndex);
-      }
+            // Deallocate temporal data
+            dataAllocator.deallocate(packed_density);
+            dataAllocator.deallocate(packed_energy);
+            dataAllocator.deallocate(packed_pressure);
+            dataAllocator.deallocate(packed_soundspeed2);
+            dataAllocator.deallocate(packed_bulkmod);
+            dataAllocator.deallocate(packed_temperature);
+            dataAllocator.deallocate(reIndex);
+        }
 
-      dataAllocator.deallocate(p_ml_acceptable);
-
+        dataAllocator.deallocate(p_ml_acceptable);
     }
 
-
-
-    void evaluate(mfem::DenseTensor &density,
-                  mfem::DenseTensor &energy,
-                  mfem::Array<int> &sparse_elem_indices,
-                  mfem::DenseTensor &pressure,
-                  mfem::DenseTensor &soundspeed2,
-                  mfem::DenseTensor &bulkmod,
+    void evaluate(mfem::DenseTensor &density, mfem::DenseTensor &energy,
+                  mfem::Array<int> &sparse_elem_indices, mfem::DenseTensor &pressure,
+                  mfem::DenseTensor &soundspeed2, mfem::DenseTensor &bulkmod,
                   mfem::DenseTensor &temperature) {
 
         CALIPER(CALI_MARK_FUNCTION_BEGIN;)
@@ -295,14 +276,14 @@ class MiniApp {
         const auto d_bulkmod = RESHAPE_TENSOR(bulkmod, Write);
         const auto d_temperature = RESHAPE_TENSOR(temperature, Write);
 
-        const auto d_sparse_elem_indices = mfem::Reshape(sparse_elem_indices.Write(),
-                                                         sparse_elem_indices.Size());
+        const auto d_sparse_elem_indices =
+            mfem::Reshape(sparse_elem_indices.Write(), sparse_elem_indices.Size());
 
         // ---------------------------------------------------------------------
         // for each material
         for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
 
-            const int offset_curr = mat_idx == 0 ? num_mats : sparse_elem_indices[mat_idx-1];
+            const int offset_curr = mat_idx == 0 ? num_mats : sparse_elem_indices[mat_idx - 1];
             const int offset_next = sparse_elem_indices[mat_idx];
 
             const int num_elems_for_mat = offset_next - offset_curr;
@@ -316,7 +297,8 @@ class MiniApp {
             // we may just use dense representations everywhere but for now we use sparse ones.
             if (is_cpu && pack_sparse_mats && num_elems_for_mat < num_elems) {
 
-                std::cout << " material " << mat_idx << ": using sparse packing for " << num_elems_for_mat << " elems\n";
+                std::cout << " material " << mat_idx << ": using sparse packing for "
+                          << num_elems_for_mat << " elems\n";
 
                 // -------------------------------------------------------------
                 // TODO: I think Tom mentiond we can allocate these outside the loop
@@ -329,68 +311,61 @@ class MiniApp {
                 mfem::Array<double> dense_temperature(num_elems_for_mat * num_qpts);
 
                 // these are device tensors!
-                auto d_dense_density = mfem::Reshape(dense_density.Write(), num_qpts, num_elems_for_mat);
-                auto d_dense_energy = mfem::Reshape(dense_energy.Write(), num_qpts, num_elems_for_mat);
-                auto d_dense_pressure = mfem::Reshape(dense_pressure.Write(), num_qpts, num_elems_for_mat);
-                auto d_dense_soundspeed2 = mfem::Reshape(dense_soundspeed2.Write(), num_qpts, num_elems_for_mat);
-                auto d_dense_bulkmod = mfem::Reshape(dense_bulkmod.Write(), num_qpts, num_elems_for_mat);
-                auto d_dense_temperature = mfem::Reshape(dense_temperature.Write(), num_qpts, num_elems_for_mat);
-
+                auto d_dense_density =
+                    mfem::Reshape(dense_density.Write(), num_qpts, num_elems_for_mat);
+                auto d_dense_energy =
+                    mfem::Reshape(dense_energy.Write(), num_qpts, num_elems_for_mat);
+                auto d_dense_pressure =
+                    mfem::Reshape(dense_pressure.Write(), num_qpts, num_elems_for_mat);
+                auto d_dense_soundspeed2 =
+                    mfem::Reshape(dense_soundspeed2.Write(), num_qpts, num_elems_for_mat);
+                auto d_dense_bulkmod =
+                    mfem::Reshape(dense_bulkmod.Write(), num_qpts, num_elems_for_mat);
+                auto d_dense_temperature =
+                    mfem::Reshape(dense_temperature.Write(), num_qpts, num_elems_for_mat);
 
                 // -------------------------------------------------------------
                 // sparse -> dense
                 CALIPER(CALI_MARK_BEGIN("SPARSE_TO_DENSE");)
                 data_handler::pack_ij(mat_idx, num_qpts, num_elems_for_mat, offset_curr,
-                                      d_sparse_elem_indices,
-                                      d_density, d_dense_density,
-                                      d_energy, d_dense_energy);
+                                      d_sparse_elem_indices, d_density, d_dense_density, d_energy,
+                                      d_dense_energy);
                 CALIPER(CALI_MARK_END("SPARSE_TO_DENSE");)
                 // -------------------------------------------------------------
 
-                evaluate_inner(mat_idx, num_elems_for_mat*num_qpts,
-                               &d_dense_density(0, 0),
-                               &d_dense_energy(0, 0),
-                               &d_dense_pressure(0, 0),
-                               &d_dense_soundspeed2(0, 0),
-                               &d_dense_bulkmod(0, 0),
+                evaluate_inner(mat_idx, num_elems_for_mat * num_qpts, &d_dense_density(0, 0),
+                               &d_dense_energy(0, 0), &d_dense_pressure(0, 0),
+                               &d_dense_soundspeed2(0, 0), &d_dense_bulkmod(0, 0),
                                &d_dense_temperature(0, 0));
 
                 // -------------------------------------------------------------
                 // dense -> sparse
                 CALIPER(CALI_MARK_BEGIN("DENSE_TO_SPARSE");)
                 data_handler::unpack_ij(mat_idx, num_qpts, num_elems_for_mat, offset_curr,
-                                        d_sparse_elem_indices,
-                                        d_dense_pressure, d_pressure,
-                                        d_dense_soundspeed2, d_soundspeed2,
-                                        d_dense_bulkmod, d_bulkmod,
-                                        d_dense_temperature, d_temperature);
+                                        d_sparse_elem_indices, d_dense_pressure, d_pressure,
+                                        d_dense_soundspeed2, d_soundspeed2, d_dense_bulkmod,
+                                        d_bulkmod, d_dense_temperature, d_temperature);
                 CALIPER(CALI_MARK_END("DENSE_TO_SPARSE");)
                 // -------------------------------------------------------------
 
             } else {
 
-                evaluate_inner(mat_idx, num_elems*num_qpts,
+                evaluate_inner(mat_idx, num_elems * num_qpts,
                                const_cast<double *>(&d_density(0, 0, mat_idx)),
                                const_cast<double *>(&d_energy(0, 0, mat_idx)),
-                               &d_pressure(0, 0, mat_idx),
-                               &d_soundspeed2(0, 0, mat_idx),
-                               &d_bulkmod(0, 0, mat_idx),
-                               &d_temperature(0, 0, mat_idx));
+                               &d_pressure(0, 0, mat_idx), &d_soundspeed2(0, 0, mat_idx),
+                               &d_bulkmod(0, 0, mat_idx), &d_temperature(0, 0, mat_idx));
             }
         }
 
         CALIPER(CALI_MARK_FUNCTION_END);
     }
 
-
     // --------------------------------------------------------------------------------
-    void evaluate_orig(mfem::DenseTensor &density,
-                  mfem::DenseTensor &energy,
-                  mfem::Array<int> &sparse_elem_indices,
-                  mfem::DenseTensor &pressure,
-                  mfem::DenseTensor &soundspeed2,
-                  mfem::DenseTensor &bulkmod,
-                  mfem::DenseTensor &temperature) {
+    void evaluate_orig(mfem::DenseTensor &density, mfem::DenseTensor &energy,
+                       mfem::Array<int> &sparse_elem_indices, mfem::DenseTensor &pressure,
+                       mfem::DenseTensor &soundspeed2, mfem::DenseTensor &bulkmod,
+                       mfem::DenseTensor &temperature) {
 
         auto &rm = umpire::ResourceManager::getInstance();
 
@@ -405,14 +380,14 @@ class MiniApp {
         const auto d_bulkmod = RESHAPE_TENSOR(bulkmod, Write);
         const auto d_temperature = RESHAPE_TENSOR(temperature, Write);
 
-        const auto d_sparse_elem_indices = mfem::Reshape(sparse_elem_indices.Write(),
-                                                         sparse_elem_indices.Size());
+        const auto d_sparse_elem_indices =
+            mfem::Reshape(sparse_elem_indices.Write(), sparse_elem_indices.Size());
 
         // ---------------------------------------------------------------------
         // for each material
         for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
 
-            const int offset_curr = mat_idx == 0 ? num_mats : sparse_elem_indices[mat_idx-1];
+            const int offset_curr = mat_idx == 0 ? num_mats : sparse_elem_indices[mat_idx - 1];
             const int offset_next = sparse_elem_indices[mat_idx];
 
             const int num_elems_for_mat = offset_next - offset_curr;
@@ -426,7 +401,8 @@ class MiniApp {
             // we may just use dense representations everywhere but for now we use sparse ones.
             if (is_cpu && pack_sparse_mats && num_elems_for_mat < num_elems) {
 
-                std::cout << " material " << mat_idx << ": using sparse packing for " << num_elems_for_mat << " elems\n";
+                std::cout << " material " << mat_idx << ": using sparse packing for "
+                          << num_elems_for_mat << " elems\n";
 
                 // -------------------------------------------------------------
                 // TODO: I think Tom mentiond we can allocate these outside the loop
@@ -439,33 +415,40 @@ class MiniApp {
                 mfem::Array<double> dense_temperature(num_elems_for_mat * num_qpts);
 
                 // these are device tensors!
-                auto d_dense_density = mfem::Reshape(dense_density.Write(), num_qpts, num_elems_for_mat);
-                auto d_dense_energy = mfem::Reshape(dense_energy.Write(), num_qpts, num_elems_for_mat);
-                auto d_dense_pressure = mfem::Reshape(dense_pressure.Write(), num_qpts, num_elems_for_mat);
-                auto d_dense_soundspeed2 = mfem::Reshape(dense_soundspeed2.Write(), num_qpts, num_elems_for_mat);
-                auto d_dense_bulkmod = mfem::Reshape(dense_bulkmod.Write(), num_qpts, num_elems_for_mat);
-                auto d_dense_temperature = mfem::Reshape(dense_temperature.Write(), num_qpts, num_elems_for_mat);
-
+                auto d_dense_density =
+                    mfem::Reshape(dense_density.Write(), num_qpts, num_elems_for_mat);
+                auto d_dense_energy =
+                    mfem::Reshape(dense_energy.Write(), num_qpts, num_elems_for_mat);
+                auto d_dense_pressure =
+                    mfem::Reshape(dense_pressure.Write(), num_qpts, num_elems_for_mat);
+                auto d_dense_soundspeed2 =
+                    mfem::Reshape(dense_soundspeed2.Write(), num_qpts, num_elems_for_mat);
+                auto d_dense_bulkmod =
+                    mfem::Reshape(dense_bulkmod.Write(), num_qpts, num_elems_for_mat);
+                auto d_dense_temperature =
+                    mfem::Reshape(dense_temperature.Write(), num_qpts, num_elems_for_mat);
 
                 mfem::Array<bool> dense_ml_acceptable(num_elems_for_mat * num_qpts);
                 dense_ml_acceptable = false;
-                auto d_dense_ml_acceptable = mfem::Reshape(dense_ml_acceptable.Write(), num_qpts, num_elems_for_mat);
+                auto d_dense_ml_acceptable =
+                    mfem::Reshape(dense_ml_acceptable.Write(), num_qpts, num_elems_for_mat);
 
                 // -------------------------------------------------------------
                 // sparse -> dense
                 CALIPER(CALI_MARK_BEGIN("SPARSE_TO_DENSE");)
 #ifdef NEW_PACKING
                 data_handler::pack_ij(mat_idx, num_qpts, num_elems_for_mat, offset_curr,
-                                      d_sparse_elem_indices,
-                                      d_density, d_dense_density,
-                                      d_energy, d_dense_energy);
+                                      d_sparse_elem_indices, d_density, d_dense_density, d_energy,
+                                      d_dense_energy);
 
 #else
                 MFEM_FORALL(elem_idx, num_elems_for_mat, {
                     const int sparse_elem_idx = d_sparse_elem_indices[offset_curr + elem_idx];
                     for (int qpt_idx = 0; qpt_idx < num_qpts; ++qpt_idx) {
-                        d_dense_density(qpt_idx, elem_idx) = d_density(qpt_idx, sparse_elem_idx, mat_idx);
-                        d_dense_energy(qpt_idx, elem_idx)  = d_energy(qpt_idx, sparse_elem_idx, mat_idx);
+                        d_dense_density(qpt_idx, elem_idx) =
+                            d_density(qpt_idx, sparse_elem_idx, mat_idx);
+                        d_dense_energy(qpt_idx, elem_idx) =
+                            d_energy(qpt_idx, sparse_elem_idx, mat_idx);
                     }
                 });
 #endif
@@ -494,7 +477,8 @@ class MiniApp {
                 // ideally, we should do step 1 and step 2 async!
                 if (hdcaches[mat_idx] != nullptr) {
                     CALIPER(CALI_MARK_BEGIN("UQ_MODULE");)
-                    hdcaches[mat_idx]->evaluate(num_elems_for_mat * num_qpts, {pDensity, pEnergy}, pMl_acceptable);
+                    hdcaches[mat_idx]->evaluate(num_elems_for_mat * num_qpts, {pDensity, pEnergy},
+                                                pMl_acceptable);
                     CALIPER(CALI_MARK_END("UQ_MODULE");)
                 }
 
@@ -521,16 +505,18 @@ class MiniApp {
                     vectors will be filled in up to that size. However, most times the vector will
                     be half-empty.
                 */
+                int num_data = num_elems_for_mat * num_qpts;
                 for (int pId = 0; pId < num_elems_for_mat * num_qpts; pId += partitionElements) {
                     // Pointer values which store data values
                     // to be computed using the eos function.
-                    int elements = std::min(partitionElements, num_elems_for_mat*num_qpts-pId);
-                    //int elements = partitionElements;
+                    
+                    int elements = std::min(partitionElements, num_data - pId);
 
                     double *packed_density, *packed_energy, *packed_pressure, *packed_soundspeed2,
                         *packed_bulkmod, *packed_temperature;
 
-                    int *reIndex = static_cast<int *>(dataAllocator.allocate(elements * sizeof(int)));
+                    int *reIndex =
+                        static_cast<int *>(dataAllocator.allocate(elements * sizeof(int)));
                     packed_density =
                         static_cast<double *>(dataAllocator.allocate(elements * sizeof(double)));
                     packed_energy =
@@ -572,10 +558,8 @@ class MiniApp {
                     // Here we pack. ""
 #ifdef NEW_PACKING
                     long packedElements =
-                            data_handler::pack(pMl_acceptable, pId, elements,
-                                               reIndex,
-                                               pDensity, packed_density,
-                                               pEnergy, packed_energy);
+                        data_handler::pack(pMl_acceptable, pId, elements, reIndex, pDensity,
+                                           packed_density, pEnergy, packed_energy);
 #else
                     long packedElements = 0;
                     for (long p = 0; p < elements; p++) {
@@ -610,10 +594,8 @@ class MiniApp {
 #endif
 
 #ifdef NEW_PACKING
-                    data_handler::unpack(reIndex, packedElements,
-                                         packed_pressure,  pPressure,
-                                         packed_soundspeed2, pSoundSpeed2,
-                                         packed_bulkmod, pBulkmod,
+                    data_handler::unpack(reIndex, packedElements, packed_pressure, pPressure,
+                                         packed_soundspeed2, pSoundSpeed2, packed_bulkmod, pBulkmod,
                                          packed_temperature, pTemperature);
 #else
                     for (int p = 0; p < packedElements; p++) {
@@ -628,11 +610,9 @@ class MiniApp {
                     CALIPER(CALI_MARK_BEGIN("DENSE_TO_SPARSE");)
 #ifdef NEW_PACKING
                     data_handler::unpack_ij(mat_idx, num_qpts, num_elems_for_mat, offset_curr,
-                                            d_sparse_elem_indices,
-                                            d_dense_pressure, d_pressure,
-                                            d_dense_soundspeed2, d_soundspeed2,
-                                            d_dense_bulkmod, d_bulkmod,
-                                            d_dense_temperature, d_temperature);
+                                            d_sparse_elem_indices, d_dense_pressure, d_pressure,
+                                            d_dense_soundspeed2, d_soundspeed2, d_dense_bulkmod,
+                                            d_bulkmod, d_dense_temperature, d_temperature);
 
 #else
                     MFEM_FORALL(elem_idx, num_elems_for_mat, {
