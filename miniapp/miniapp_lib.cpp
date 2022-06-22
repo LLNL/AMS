@@ -18,6 +18,19 @@
 #include "miniapp.hpp"
 #include "utils/utils.hpp"
 
+
+#ifdef __ENABLE_FAISS__
+  #include "ml/hdcache_faiss.hpp"
+  template <typename T>
+  using TypeHDCache = HDCache_Faiss<T>;
+#else
+  #include "ml/hdcache_random.hpp"
+  template <typename T>
+  using TypeHDCache = HDCache_Random<T>;
+#endif
+
+using TypeValue = double;
+
 //! ----------------------------------------------------------------------------
 //! the main miniapp function that is exposed to the shared lib
 extern "C" void miniapp_lib(const std::string& device_name, const std::string& eos_name,
@@ -85,17 +98,17 @@ extern "C" void miniapp_lib(const std::string& device_name, const std::string& e
         } else {
             miniapp.surrogates[mat_idx] = nullptr;
         }
-        miniapp.hdcaches[mat_idx] = new HDCache<double>(cache_dim, 10, use_device);   // TODO: should use TypeValue
+        miniapp.hdcaches[mat_idx] = new TypeHDCache<TypeValue>(cache_dim, 10, false);
     }
 
     // -------------------------------------------------------------------------
     // create fake data for training the faiss index!
     if (0) {
-        std::cout << " Creatign fake data for training faiss index!\n";
+        std::cout << " Creating fake data for training faiss index!\n";
         const size_t nfakedata = 159744;
-        std::vector<double*> fake_data(2);
+        std::vector<TypeValue*> fake_data(2);
         for (int f = 0; f < 2; f++) {
-          fake_data[f] = new double[nfakedata];
+          fake_data[f] = new TypeValue[nfakedata];
           for (int i = 0; i < nfakedata; i++) {
             fake_data[f][i] = .1 + unitrand();
           }

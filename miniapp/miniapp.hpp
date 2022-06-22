@@ -98,7 +98,7 @@ class MiniApp {
                         double* pPressure, double* pSoundSpeed2, double* pBulkmod,
                         double* pTemperature) {
 
-        /* The allocate function always allocates on the default device. The default device 
+        /* The allocate function always allocates on the default device. The default device
          * can be set by calling setDefaultDataAllocator. Otherwise we can explicitly control
          * the location of the data by calling allocate(size, AMSDevice).
          */
@@ -112,14 +112,17 @@ class MiniApp {
         // STEP 1: call the hdcache to look at input uncertainties
         // to decide if making a ML inference makes sense
         // -------------------------------------------------------------
+        std::cout << " go call: " << hdcaches[mat_idx] << "\n";
 
         // ideally, we should do step 1 and step 2 async!
         if (hdcaches[mat_idx] != nullptr) {
-            CALIPER(CALI_MARK_BEGIN("UQ_MODULE");)
+            //CALIPER(CALI_MARK_BEGIN("UQ_MODULE");)
+            hdcaches[mat_idx]->print();
             hdcaches[mat_idx]->evaluate(num_data, {pDensity, pEnergy}, p_ml_acceptable);
-            CALIPER(CALI_MARK_END("UQ_MODULE");)
+            //CALIPER(CALI_MARK_END("UQ_MODULE");)
         }
-
+        //std::cout << " force exit after hdcache call!\n";
+        //exit(1);
         /*-------------------------------------------------------------
     // -------------------------------------------------------------
      STEP 2: let's call surrogate for everything
@@ -245,6 +248,7 @@ class MiniApp {
                   mfem::DenseTensor& temperature) {
         CALIPER(CALI_MARK_FUNCTION_BEGIN;)
 
+        std::cout << "miniapp::evaluate: \n";
         // move/allocate data on the device.
         // if the data is already on the device this is basically a noop
         const auto d_density = RESHAPE_TENSOR(density, Read);

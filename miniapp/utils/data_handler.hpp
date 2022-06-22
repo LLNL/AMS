@@ -25,6 +25,15 @@ using enable_if_t = typename std::enable_if<B, T>::type;
 
 #endif
 
+
+// -----------------------------------------------------------------------------
+
+template<typename T>
+bool is_data_on_device(T *) {
+  return true;
+}
+
+
 // -----------------------------------------------------------------------------
 #ifdef __ENABLE_CUDA__
 #include <cuda_runtime.h>
@@ -106,11 +115,11 @@ class DataHandler {
     //! a single vector of TypeValue (input can be another datatype)
     template<typename T>
     static inline
-    std::vector<TypeValue>
+    TypeValue*
     linearize_features(const size_t ndata, const std::vector<T*> &features) {
 
         const size_t nfeatures = features.size();
-        std::vector<TypeValue> data (ndata*nfeatures);
+        TypeValue *data = new TypeValue[ndata*nfeatures];
 
         for (size_t i = 0; i < ndata; i++) {
         for (size_t d = 0; d < nfeatures; d++) {
@@ -134,6 +143,7 @@ class DataHandler {
         TypeValue *data = static_cast<TypeValue*> (dataAllocator.allocate(ndata*nfeatures*sizeof(TypeValue)));
 
 
+        std::cerr << "WARNING: linearize_features_device has incorrect logic!\n";
         /*for (size_t i = 0; i < ndata; i++) {
         for (size_t d = 0; d < nfeatures; d++) {
             data[i*nfeatures + d] = static_cast<TypeValue>(features[d][i]);
@@ -150,6 +160,21 @@ class DataHandler {
         auto found_allocator = rm.getAllocator(data);
         std::cout << " created linearized: " << found_allocator << "\n";
         return data;
+    }
+
+
+    template<typename T>
+    static inline
+    TypeValue*
+    linearize_features_hd(const size_t ndata, const std::vector<T*> &features) {
+
+        // clean this and merge!
+        if (is_data_on_device(features[0])) {
+            return linearize_features_device(ndata, features);
+        }
+        else {
+            return linearize_features(ndata, features);
+        }
     }
 
     //! -----------------------------------------------------------------------
@@ -214,7 +239,7 @@ class DataHandler {
 
         size_t npacked = 0;
         size_t dims = sparse.size();
-        
+
         if ( !AMS::utilities::isDeviceExecution() ){
           for (size_t i = 0; i < n; i++) {
               if (predicate[i] == denseVal) {
@@ -225,7 +250,7 @@ class DataHandler {
           }
         }
         else {
-          npacked = AMS::Device::pack(predicate, n, sparse.data(), dense.data(), dims); 
+          npacked = AMS::Device::pack(predicate, n, sparse.data(), dense.data(), dims);
         }
         return npacked;
     }
