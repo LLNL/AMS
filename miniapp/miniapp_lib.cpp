@@ -16,6 +16,7 @@
 #include "wf/utilities.hpp"
 
 #include "miniapp.hpp"
+#include "utils/utils.hpp"
 
 //! ----------------------------------------------------------------------------
 //! the main miniapp function that is exposed to the shared lib
@@ -43,6 +44,7 @@ extern "C" void miniapp_lib(const std::string& device_name, const std::string& e
     rm.makeAllocator<umpire::strategy::QuickPool, true>(host_alloc_name, rm.getAllocator("HOST"));
     mfem::MemoryManager::SetUmpireHostAllocatorName(host_alloc_name);
     if (use_device) {
+        std::cout << " Setting up default allocator to: " << device_alloc_name << "\n";
         rm.makeAllocator<umpire::strategy::QuickPool, true>(device_alloc_name,
                                                             rm.getAllocator("DEVICE"));
         mfem::MemoryManager::SetUmpireDevice2AllocatorName(device_alloc_name);
@@ -80,13 +82,35 @@ extern "C" void miniapp_lib(const std::string& device_name, const std::string& e
         if (model_path.size() > 0) {
             miniapp.surrogates[mat_idx] =
                 new SurrogateModel<double>(model_path.c_str(), !use_device);
-            miniapp.hdcaches[mat_idx] =
-                new HDCache<double>(cache_dim, !use_device);  // TODO: should use TypeValue
         } else {
             miniapp.surrogates[mat_idx] = nullptr;
-            miniapp.hdcaches[mat_idx] = nullptr;
         }
+        miniapp.hdcaches[mat_idx] = new HDCache<double>(cache_dim, 10, use_device);   // TODO: should use TypeValue
     }
+
+    // -------------------------------------------------------------------------
+    // create fake data for training the faiss index!
+    if (0) {
+        std::cout << " Creatign fake data for training faiss index!\n";
+        const size_t nfakedata = 159744;
+        std::vector<double*> fake_data(2);
+        for (int f = 0; f < 2; f++) {
+          fake_data[f] = new double[nfakedata];
+          for (int i = 0; i < nfakedata; i++) {
+            fake_data[f][i] = .1 + unitrand();
+          }
+        }
+        miniapp.hdcaches[0]->train(nfakedata, fake_data);
+        miniapp.hdcaches[0]->add(nfakedata, fake_data);
+        miniapp.hdcaches[0]->save_cache("test_index.idx");
+    }
+    else {
+      const std::string idx_path = "/usr/workspace/AMS/miniapp_resources/test_index.idx";
+      for (int mat_idx = 0; mat_idx < miniapp.num_mats; ++mat_idx) {
+        miniapp.hdcaches[mat_idx]->load_cache(idx_path);
+      }
+    }
+    // -------------------------------------------------------------------------
 
     // -------------------------------------------------------------------------
     // initialize inputs and outputs as mfem tensors
