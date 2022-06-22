@@ -7,53 +7,7 @@
 #include <torch/script.h>  // One-stop header.
 #endif
 
-#include <type_traits>
-#if __cplusplus < 201402L
-template <bool B, typename T = void>
-using enable_if_t = typename std::enable_if<B, T>::type;
-#else
-
-#endif
-
 using namespace std;
-
-#ifdef __ENABLE_CUDA__
-#include <cuda_runtime.h>
-inline void DtoDMemcpy(void* dest, void* src, size_t nBytes) {
-    cudaMemcpy(dest, src, nBytes, cudaMemcpyDeviceToDevice);
-}
-
-inline void HtoHMemcpy(void* dest, void* src, size_t nBytes) {
-    std::memcpy(dest, src, nBytes);
-}
-
-inline void HtoDMemcpy(void* dest, void* src, size_t nBytes) {
-    cudaMemcpy(dest, src, nBytes, cudaMemcpyHostToDevice);
-};
-
-void DtoHMemcpy(void* dest, void* src, size_t nBytes) {
-    cudaMemcpy(dest, src, nBytes, cudaMemcpyDeviceToHost);
-}
-#else
-inline void DtoDMemcpy(void* dest, void* src, size_t nBytes) {
-    std::cerr << "DtoD Memcpy Not Enabled" << std::endl;
-    exit(-1);
-}
-
-inline void HtoHMemcpy(void* dest, void* src, size_t nBytes) {
-    std::memcpy(dest, src, nBytes);
-}
-
-inline void HtoDMemcpy(void* dest, void* src, size_t nBytes) {
-    std::cerr << "HtoD Memcpy Not Enabled" << std::endl;
-    exit(-1);
-};
-
-void DtoHMemcpy(void* dest, void* src, size_t nBytes) {
-    std::cerr << "DtoH Memcpy Not Enabled" << std::endl;
-    exit(-1);
-}
-#endif
 
 #include "app/eos.hpp"
 #include "app/eos_idealgas.hpp"

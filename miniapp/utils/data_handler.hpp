@@ -21,7 +21,48 @@ using enable_if_t = typename std::enable_if<B, T>::type;
 
 #endif
 
-template <typename TypeValue>
+// -----------------------------------------------------------------------------
+#ifdef __ENABLE_CUDA__
+#include <cuda_runtime.h>
+inline void DtoDMemcpy(void *dest, void *src, size_t nBytes ){
+  cudaMemcpy(dest, src, nBytes, cudaMemcpyDeviceToDevice);
+}
+
+inline void HtoHMemcpy(void *dest, void *src, size_t nBytes ){
+  std::memcpy(dest, src, nBytes);
+}
+
+inline void HtoDMemcpy(void *dest, void *src, size_t nBytes ){
+  cudaMemcpy(dest, src, nBytes, cudaMemcpyHostToDevice);
+};
+
+void DtoHMemcpy(void *dest, void *src, size_t nBytes ){
+  cudaMemcpy(dest, src, nBytes, cudaMemcpyDeviceToHost);
+}
+#else
+inline void DtoDMemcpy(void *dest, void *src, size_t nBytes ){
+  std::cerr<< "DtoD Memcpy Not Enabled" << std::endl;
+  exit(-1);
+}
+
+inline void HtoHMemcpy(void *dest, void *src, size_t nBytes ){
+  std::memcpy(dest, src, nBytes);
+}
+
+inline void HtoDMemcpy(void *dest, void *src, size_t nBytes ){
+  std::cerr<< "HtoD Memcpy Not Enabled" << std::endl;
+  exit(-1);
+};
+
+void DtoHMemcpy(void *dest, void *src, size_t nBytes ){
+  std::cerr<< "DtoH Memcpy Not Enabled" << std::endl;
+  exit(-1);
+}
+#endif
+// -----------------------------------------------------------------------------
+
+
+template<typename TypeValue>
 class DataHandler {
 
    public:
@@ -252,4 +293,6 @@ class DataHandler {
     }
 };
 
+
+// -----------------------------------------------------------------------------
 #endif
