@@ -10,6 +10,10 @@
 #include "wf/utilities.hpp"
 #include "wf/device.hpp"
 
+#include "umpire/ResourceManager.hpp"
+#include "wf/utilities.hpp"
+
+
 const int partitionSize = 1 << 24;
 
 using mfem::ForallWrap;
@@ -100,20 +104,52 @@ class DataHandler {
     //! -----------------------------------------------------------------------
     //! linearize a set of features (vector of pointers) into
     //! a single vector of TypeValue (input can be another datatype)
-
-    template <typename T>
-    static inline std::vector<TypeValue> linearize_features(const size_t ndata,
-                                                            const std::vector<T*>& features) {
+    template<typename T>
+    static inline
+    std::vector<TypeValue>
+    linearize_features(const size_t ndata, const std::vector<T*> &features) {
 
         const size_t nfeatures = features.size();
-        std::vector<TypeValue> ldata(ndata * nfeatures);
+        std::vector<TypeValue> data (ndata*nfeatures);
 
         for (size_t i = 0; i < ndata; i++) {
-            for (size_t d = 0; d < nfeatures; d++) {
-                ldata[i * nfeatures + d] = static_cast<TypeValue>(features[d][i]);
-            }
+        for (size_t d = 0; d < nfeatures; d++) {
+            data[i*nfeatures + d] = static_cast<TypeValue>(features[d][i]);
+        }}
+        return data;
+    }
+
+
+    // TODO: merge this with the above function (make a single linearize?)
+    template<typename T>
+    static inline
+    TypeValue*
+    linearize_features_device(const size_t ndata, const std::vector<T*> &features) {
+
+        auto &rm = umpire::ResourceManager::getInstance();
+        auto dataAllocator = rm.getAllocator(AMS::utilities::getDefaultAllocatorName());
+
+        size_t nfeatures = features.size();
+
+        TypeValue *data = static_cast<TypeValue*> (dataAllocator.allocate(ndata*nfeatures*sizeof(TypeValue)));
+
+
+        /*for (size_t i = 0; i < ndata; i++) {
+        for (size_t d = 0; d < nfeatures; d++) {
+            data[i*nfeatures + d] = static_cast<TypeValue>(features[d][i]);
+        }}*/
+
+        // TODO: this is incorrect ordering!
+        // but lets get the data movement working
+        for(size_t i = 0; i < nfeatures; i++) {
+          HtoDMemcpy(static_cast<void*>(data + i*ndata),
+                     static_cast<void*>(features[i]),
+                     ndata*sizeof(T));
         }
-        return ldata;
+
+        auto found_allocator = rm.getAllocator(data);
+        std::cout << " created linearized: " << found_allocator << "\n";
+        return data;
     }
 
     //! -----------------------------------------------------------------------
