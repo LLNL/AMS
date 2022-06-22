@@ -524,8 +524,8 @@ class MiniApp {
                 for (int pId = 0; pId < num_elems_for_mat * num_qpts; pId += partitionElements) {
                     // Pointer values which store data values
                     // to be computed using the eos function.
-                    int elements = std::min(partitionElements, num_data-pId);
-                    int elements = partitionElements;
+                    int elements = std::min(partitionElements, num_elems_for_mat*num_qpts-pId);
+                    //int elements = partitionElements;
 
                     double *packed_density, *packed_energy, *packed_pressure, *packed_soundspeed2,
                         *packed_bulkmod, *packed_temperature;
