@@ -3,15 +3,21 @@
 
 namespace AMS {
 namespace utilities {
-typedef enum d_location { CPU = 0, DEVICE } dLocation;
+typedef enum d_location { CPU = 0, DEVICE } AMSDevice;
 
-void setDefaultDataAllocator(dLocation location);
+void setDefaultDataAllocator(AMSDevice location);
+
+AMSDevice getDefaultDataAllocator();
 
 const char *getDeviceAllocatorName();
 
 const char *getHostAllocatorName();
 
 const char *getDefaultAllocatorName();
+
+void *allocate(size_t bytes);
+void *allocate(size_t bytes, AMSDevice dev);
+
 
 } // namespace utilities
 } // namespace AMS

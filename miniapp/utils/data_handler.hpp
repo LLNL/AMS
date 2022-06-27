@@ -7,6 +7,7 @@
 #include "mfem.hpp"
 #include "mfem/general/forall.hpp"
 #include "mfem/linalg/dtensor.hpp"
+#include "wf/utilities.hpp"
 
 const int partitionSize = 1 << 24;
 
@@ -36,7 +37,7 @@ class DataHandler {
     //! when  (data type != TypeValue)
     template <typename T, std::enable_if_t<!std::is_same<TypeValue, T>::value>* = nullptr>
     static inline TypeValue* cast_to_typevalue(const size_t n, T* data) {
-        TypeValue* fdata = new TypeValue[n];
+        TypeValue* fdata = static_cast<TypeValue *> (AMS::utilities::allocate(n * sizeof(TypeValue)));
         std::transform(data, data + n, fdata,
                        [&](const T& v) { return static_cast<TypeValue>(v); });
         return fdata;
