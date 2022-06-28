@@ -46,6 +46,15 @@ int unpack(const size_t n, TypeValue** sparse, TypeValue** dense, int* sparse_in
     return 0;
 #endif
 }
+
+template <typename TypeValue>
+void rand_init(bool *predicate, const size_t n, TypeValue threshold){
+#ifdef __ENABLE_CUDA__
+  cuda_rand_init(predicate, n, threshold);
+#endif
+  return;
+}
+
 }  // namespace Device
 }  // namespace AMS
 

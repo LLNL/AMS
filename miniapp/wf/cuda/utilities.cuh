@@ -3,6 +3,9 @@
 
 #include <thrust/device_vector.h>
 #include <thrust/scan.h>
+#include <curand_kernel.h>
+#include <curand.h>
+
 
 #include "wf/utilities.hpp"
 
@@ -69,6 +72,25 @@ inline void __cudaCheckError(const char* file, const int line) {
 #endif
 
     return;
+}
+
+__global__ void srand_dev(curandState *states, const int total_threads) {
+    int id = threadIdx.x + blockDim.x * blockIdx.x;
+    if ( id < total_threads ){
+      int seed = id; // different seed per thread
+      curand_init(seed, id, 0, &states[id]);
+    }
+}
+
+template<typename T>
+__global__ void fillRandom(bool* predicate, const int total_threads, curandState *states, const size_t length, T threshold){
+    int id = threadIdx.x + blockDim.x * blockIdx.x;
+    if ( id < total_threads ){
+      for ( int i = id; i < length; i+=total_threads){
+        float x = curand_uniform (&states[id]);
+        predicate[i] = (x <= threshold);
+      }
+    }
 }
 
 template <typename T>
@@ -214,6 +236,20 @@ int compact(T** sparse, T** dense, int* indices, const size_t length, int dims, 
     assignK<<<numBlocks, blockSize>>>(sparse, dense, indices, sparseElements, dims, isReverse);
 
     return length;
+}
+
+template <typename T>
+void cuda_rand_init(bool* predicate, const size_t length, T threshold){
+  static curandState *dev_random = NULL;
+  const int TS = 4096;
+  const int BS = 128;
+  int numBlocks = divup(TS, BS);
+  if ( ! dev_random ){
+    dev_random = static_cast<curandState*>(AMS::utilities::allocate(sizeof(curandState) * 4096));
+    srand_dev<<<numBlocks, BS>>>(dev_random, TS);
+
+  }
+  fillRandom<<<numBlocks, BS>>>(predicate, TS, dev_random, length, threshold);
 }
 
 #endif

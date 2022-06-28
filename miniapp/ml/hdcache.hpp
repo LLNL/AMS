@@ -54,6 +54,7 @@ class HDCache {
 
     const uint8_t dim;
     const uint8_t knbrs;
+    bool is_cpu;
 
 
 #ifdef __ENABLE_FAISS__
@@ -146,8 +147,8 @@ public:
     //! -----------------------------------------------------------------------
     //! constructors
     //! -----------------------------------------------------------------------
-    HDCache(uint8_t _dim, uint8_t _knbrs = 10) :
-        dim(_dim), knbrs(_knbrs), index(nullptr) {
+    HDCache(uint8_t _dim, bool _is_cpu = true, uint8_t _knbrs = 10) :
+        dim(_dim), knbrs(_knbrs), is_cpu(_is_cpu), index(nullptr) {
     }
 
     void load_cache(const std::string &filename) {
@@ -304,8 +305,13 @@ public:
         std::cout << "Successfully evaluated " << ndata << " " << inputs.size() << "-dim points!\n";
 #else
         static const TypeInValue acceptable_error = 0.5;
+        if ( is_cpu ){
         for(int i = 0; i < ndata; i++) {
           is_acceptable[i] = ((TypeInValue)rand() / RAND_MAX) <= acceptable_error;
+        }
+        }
+        else{
+          AMS::Device::rand_init(is_acceptable, ndata, acceptable_error);
         }
 #endif
     }

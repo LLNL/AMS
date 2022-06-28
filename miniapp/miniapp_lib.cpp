@@ -81,7 +81,7 @@ extern "C" void miniapp_lib(const std::string& device_name, const std::string& e
             miniapp.surrogates[mat_idx] =
                 new SurrogateModel<double>(model_path.c_str(), !use_device);
             miniapp.hdcaches[mat_idx] =
-                new HDCache<double>(cache_dim);  // TODO: should use TypeValue
+                new HDCache<double>(cache_dim, !use_device);  // TODO: should use TypeValue
         } else {
             miniapp.surrogates[mat_idx] = nullptr;
             miniapp.hdcaches[mat_idx] = nullptr;

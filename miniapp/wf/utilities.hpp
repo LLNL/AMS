@@ -1,5 +1,6 @@
 #ifndef __UTILITIES__
 #define __UTILITIES__
+#include <cstddef>
 
 namespace AMS {
 namespace utilities {
