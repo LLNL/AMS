@@ -8,6 +8,7 @@
 #include "mfem/general/forall.hpp"
 #include "mfem/linalg/dtensor.hpp"
 #include "wf/utilities.hpp"
+#include "wf/device.hpp"
 
 const int partitionSize = 1 << 24;
 
@@ -136,12 +137,18 @@ class DataHandler {
 
         size_t npacked = 0;
         size_t dims = sparse.size();
-        for (size_t i = 0; i < n; i++) {
-            if (predicate[i] == denseVal) {
-                for (size_t j = 0; j < dims; j++)
-                    dense[j][npacked] = sparse[j][i];
-                npacked++;
-            }
+        
+        if ( !AMS::utilities::isDeviceExecution() ){
+          for (size_t i = 0; i < n; i++) {
+              if (predicate[i] == denseVal) {
+                  for (size_t j = 0; j < dims; j++)
+                      dense[j][npacked] = sparse[j][i];
+                  npacked++;
+              }
+          }
+        }
+        else {
+          npacked = AMS::Device::pack(predicate, n, sparse.data(), dense.data(), dims); 
         }
         return npacked;
     }
@@ -159,12 +166,17 @@ class DataHandler {
 
         size_t npacked = 0;
         size_t dims = sparse.size();
-        for (size_t i = 0; i < n; i++) {
-            if (predicate[i] == denseVal) {
-                for (size_t j = 0; j < dims; j++)
-                    sparse[j][i] = dense[j][npacked];
-                npacked++;
-            }
+        if ( !AMS::utilities::isDeviceExecution() ){
+          for (size_t i = 0; i < n; i++) {
+              if (predicate[i] == denseVal) {
+                  for (size_t j = 0; j < dims; j++)
+                      sparse[j][i] = dense[j][npacked];
+                  npacked++;
+              }
+          }
+        }
+        else{
+          npacked = AMS::Device::unpack(predicate, n, sparse.data(), dense.data(), dims);
         }
         return;
     }
@@ -184,14 +196,20 @@ class DataHandler {
             throw std::invalid_argument("Packing arrays size mismatch");
 
         size_t npacked = 0;
-        size_t dims = sparse.size();
-        for (size_t i = 0; i < n; i++) {
-            if (predicate[i] == denseVal) {
-                for (size_t j = 0; j < dims; j++)
-                    dense[j][npacked] = sparse[j][i];
-                sparse_indices[npacked++] = i;
-            }
+        int dims = sparse.size();
+
+        if ( !AMS::utilities::isDeviceExecution() ){
+          for (size_t i = 0; i < n; i++) {
+              if (predicate[i] == denseVal) {
+                  for (size_t j = 0; j < dims; j++)
+                      dense[j][npacked] = sparse[j][i];
+                  sparse_indices[npacked++] = i;
+              }
+          }
+        } else {
+          npacked = AMS::Device::pack(predicate, n, sparse.data(), dense.data(), sparse_indices, dims);
         }
+
         return npacked;
     }
 
@@ -201,17 +219,23 @@ class DataHandler {
     //! We unpack data values from a dense (packed) representation to an
     //! sparse representation. We use "sparse_indices" to map indices from the
     //! dense representation to the sparse one
-    static inline void unpack(int* sparse_indeces, const size_t nPacked,
+    static inline void unpack(int* sparse_indices, const size_t nPacked,
                               std::vector<TypeValue*>& dense, std::vector<TypeValue*>& sparse,
                               bool denseVal = true) {
 
         if (sparse.size() != dense.size())
             throw std::invalid_argument("Packing arrays size mismatch");
 
-        size_t dims = sparse.size();
-        for (size_t i = 0; i < nPacked; i++)
-            for (size_t j = 0; j < dims; j++)
-                sparse[j][sparse_indeces[i]] = dense[j][i];
+        int dims = sparse.size();
+
+        if ( !AMS::utilities::isDeviceExecution() ){
+          for (size_t i = 0; i < nPacked; i++)
+              for (size_t j = 0; j < dims; j++)
+                  sparse[j][sparse_indices[i]] = dense[j][i];
+        }
+        else{
+          AMS::Device::unpack(nPacked, sparse.data(), dense.data(), sparse_indices, dims);
+        }
 
         return;
     }

@@ -9,17 +9,21 @@ void setDefaultDataAllocator(AMSDevice location);
 
 AMSDevice getDefaultDataAllocator();
 
-const char *getDeviceAllocatorName();
+const char* getDeviceAllocatorName();
 
-const char *getHostAllocatorName();
+const char* getHostAllocatorName();
 
-const char *getDefaultAllocatorName();
+const char* getDefaultAllocatorName();
 
-void *allocate(size_t bytes);
-void *allocate(size_t bytes, AMSDevice dev);
+void* allocate(size_t bytes);
+void* allocate(size_t bytes, AMSDevice dev);
 
+void deallocate(void* ptr, AMSDevice dev);
+void deallocate(void* ptr);
 
-} // namespace utilities
-} // namespace AMS
+bool isDeviceExecution();
+
+}  // namespace utilities
+}  // namespace AMS
 
 #endif
