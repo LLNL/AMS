@@ -4,7 +4,7 @@
 
 namespace AMS {
 namespace utilities {
-typedef enum d_location { CPU = 0, DEVICE } AMSDevice;
+typedef enum d_location { HOST = 0, DEVICE } AMSDevice;
 
 void setDefaultDataAllocator(AMSDevice location);
 

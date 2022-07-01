@@ -3,7 +3,7 @@
 
 namespace AMS {
 namespace utilities {
-AMSDevice defaultDloc = AMSDevice::CPU;
+AMSDevice defaultDloc = AMSDevice::HOST;
 
 void setDefaultDataAllocator(AMSDevice location) {
     defaultDloc = location;
@@ -23,7 +23,7 @@ const char* getHostAllocatorName() {
 
 void deallocate(void* ptr) {
     static auto& rm = umpire::ResourceManager::getInstance();
-    if (defaultDloc == CPU) {
+    if (defaultDloc == HOST) {
         static auto cpuAllocator = rm.getAllocator(getHostAllocatorName());
         cpuAllocator.deallocate(ptr);
     } else if (defaultDloc == DEVICE) {
@@ -34,7 +34,7 @@ void deallocate(void* ptr) {
 
 void deallocate(void* ptr, AMSDevice dev) {
     static auto& rm = umpire::ResourceManager::getInstance();
-    if (dev == CPU) {
+    if (dev == HOST) {
         static auto cpuAllocator = rm.getAllocator(getHostAllocatorName());
         cpuAllocator.deallocate(ptr);
     } else if (dev == DEVICE) {
@@ -45,7 +45,7 @@ void deallocate(void* ptr, AMSDevice dev) {
 
 void* allocate(size_t bytes) {
     static auto& rm = umpire::ResourceManager::getInstance();
-    if (defaultDloc == CPU) {
+    if (defaultDloc == HOST) {
         static auto cpuAllocator = rm.getAllocator(getHostAllocatorName());
         return cpuAllocator.allocate(bytes);
     } else if (defaultDloc == DEVICE) {
@@ -57,7 +57,7 @@ void* allocate(size_t bytes) {
 
 void* allocate(size_t bytes, AMSDevice dev) {
     static auto& rm = umpire::ResourceManager::getInstance();
-    if (dev == CPU) {
+    if (dev == HOST) {
         static auto cpuAllocator = rm.getAllocator(getHostAllocatorName());
         return cpuAllocator.allocate(bytes);
     } else if (dev == DEVICE) {
@@ -69,7 +69,7 @@ void* allocate(size_t bytes, AMSDevice dev) {
 
 const char* getDefaultAllocatorName() {
     switch (defaultDloc) {
-        case AMSDevice::CPU:
+        case AMSDevice::HOST:
             return getHostAllocatorName();
         case AMSDevice::DEVICE:
             return getDeviceAllocatorName();

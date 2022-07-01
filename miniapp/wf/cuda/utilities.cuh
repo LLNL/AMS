@@ -1,11 +1,12 @@
 #ifndef __DEVICE_UTILITIES__
 #define __DEVICE_UTILITIES__
 
+#include <curand.h>
+#include <curand_kernel.h>
 #include <thrust/device_vector.h>
 #include <thrust/scan.h>
-#include <curand_kernel.h>
-#include <curand.h>
 
+#include <iostream>
 
 #include "wf/utilities.hpp"
 
@@ -45,6 +46,10 @@ inline void __cudaSafeCall(cudaError err, const char* file, const int line) {
     return;
 }
 
+struct is_true {
+    __host__ __device__ bool operator()(const int x) { return x; }
+};
+
 inline void __cudaCheckError(const char* file, const int line) {
 #ifdef CUDA_ERROR_CHECK
     cudaError err = cudaGetLastError();
@@ -74,22 +79,29 @@ inline void __cudaCheckError(const char* file, const int line) {
     return;
 }
 
-__global__ void srand_dev(curandState *states, const int total_threads) {
+__global__ void srand_dev(curandState* states, const int total_threads) {
     int id = threadIdx.x + blockDim.x * blockIdx.x;
-    if ( id < total_threads ){
-      int seed = id; // different seed per thread
-      curand_init(seed, id, 0, &states[id]);
+    if (id < total_threads) {
+        int seed = id;  // different seed per thread
+        curand_init(seed, id, 0, &states[id]);
     }
 }
 
-template<typename T>
-__global__ void fillRandom(bool* predicate, const int total_threads, curandState *states, const size_t length, T threshold){
+__global__ void initIndices(int* ind, int length) {
     int id = threadIdx.x + blockDim.x * blockIdx.x;
-    if ( id < total_threads ){
-      for ( int i = id; i < length; i+=total_threads){
-        float x = curand_uniform (&states[id]);
-        predicate[i] = (x <= threshold);
-      }
+    if (id < length)
+        ind[id] = id;
+}
+
+template <typename T>
+__global__ void fillRandom(bool* predicate, const int total_threads, curandState* states,
+                           const size_t length, T threshold) {
+    int id = threadIdx.x + blockDim.x * blockIdx.x;
+    if (id < total_threads) {
+        for (int i = id; i < length; i += total_threads) {
+            float x = curand_uniform(&states[id]);
+            predicate[i] = (x <= threshold);
+        }
     }
 }
 
@@ -180,8 +192,7 @@ __global__ void compactK(T** d_input, T** d_output, const bool* predicates, cons
 
         // if valid element, place the element in proper destination address based on thread offset in warp, warp offset in block, and block offset in grid
         if (pred) {
-            // currently I am assuming dims is small. If it gets larger we may need to create a 2-D block of threads.
-            if (reverse) {
+            if (!reverse) {
                 for (int i = 0; i < dims; i++)
                     d_output[i][t_u + warpTotals[w_i] + d_BlocksOffset[blockIdx.x]] =
                         d_input[i][idx];
@@ -197,9 +208,10 @@ __global__ void compactK(T** d_input, T** d_output, const bool* predicates, cons
 template <typename T>
 int compact(T** sparse, T** dense, const bool* dPredicate, const size_t length, int dims,
             int blockSize, bool isReverse = false) {
+    auto GPU = AMS::utilities::AMSDevice::DEVICE;
     int numBlocks = divup(length, blockSize);
-    int* d_BlocksCount = static_cast<int*>(AMS::utilities::allocate(numBlocks * sizeof(int)));
-    int* d_BlocksOffset = static_cast<int*>(AMS::utilities::allocate(numBlocks * sizeof(int)));
+    int* d_BlocksCount = static_cast<int*>(AMS::utilities::allocate(numBlocks * sizeof(int), GPU));
+    int* d_BlocksOffset = static_cast<int*>(AMS::utilities::allocate(numBlocks * sizeof(int), GPU));
     thrust::device_ptr<int> thrustPrt_bCount(d_BlocksCount);
     thrust::device_ptr<int> thrustPrt_bOffset(d_BlocksOffset);
 
@@ -207,7 +219,7 @@ int compact(T** sparse, T** dense, const bool* dPredicate, const size_t length, 
     computeBlockCounts<<<numBlocks, blockSize>>>(dPredicate, length, d_BlocksCount);
 
     //phase 2: compute exclusive prefix sum of valid block counts to get output offset for each thread block in grid
-    thrust::exclusive_scan(thrustPrt_bCount, thrustPrt_bCount + numBlocks, thrustPrt_bOffset);
+    thrust::exclusive_scan(thrust::device, d_BlocksCount, d_BlocksCount + numBlocks, d_BlocksOffset);
 
     //phase 3: compute output offset for each thread in warp and each warp in thread block, then output valid elements
     compactK<<<numBlocks, blockSize, sizeof(int) * (blockSize / warpSize)>>>(
@@ -216,8 +228,8 @@ int compact(T** sparse, T** dense, const bool* dPredicate, const size_t length, 
     // determine number of elements in the compacted list
     int compact_length = thrustPrt_bOffset[numBlocks - 1] + thrustPrt_bCount[numBlocks - 1];
 
-    AMS::utilities::deallocate(d_BlocksCount);
-    AMS::utilities::deallocate(d_BlocksOffset);
+    AMS::utilities::deallocate(d_BlocksCount, GPU);
+    AMS::utilities::deallocate(d_BlocksOffset, GPU);
 
     return compact_length;
 }
@@ -229,27 +241,30 @@ int compact(T** sparse, T** dense, int* indices, const size_t length, int dims, 
     size_t sparseElements = length;
 
     if (!isReverse) {
-        auto last = thrust::exclusive_scan(dPredicate, dPredicate + sparseElements, indices);
+        initIndices<<<numBlocks, blockSize>>>(indices, length);
+        auto last = thrust::copy_if(thrust::device, indices, indices + sparseElements, dPredicate,
+                                    indices, is_true());
         sparseElements = last - indices;
     }
 
     assignK<<<numBlocks, blockSize>>>(sparse, dense, indices, sparseElements, dims, isReverse);
 
-    return length;
+    return sparseElements;
 }
 
 template <typename T>
-void cuda_rand_init(bool* predicate, const size_t length, T threshold){
-  static curandState *dev_random = NULL;
-  const int TS = 4096;
-  const int BS = 128;
-  int numBlocks = divup(TS, BS);
-  if ( ! dev_random ){
-    dev_random = static_cast<curandState*>(AMS::utilities::allocate(sizeof(curandState) * 4096));
-    srand_dev<<<numBlocks, BS>>>(dev_random, TS);
+void cuda_rand_init(bool* predicate, const size_t length, T threshold) {
+    static curandState* dev_random = NULL;
+    const int TS = 4096;
+    const int BS = 128;
+    int numBlocks = divup(TS, BS);
+    if (!dev_random) {
+        dev_random =
+            static_cast<curandState*>(AMS::utilities::allocate(sizeof(curandState) * 4096));
+        srand_dev<<<numBlocks, BS>>>(dev_random, TS);
+    }
 
-  }
-  fillRandom<<<numBlocks, BS>>>(predicate, TS, dev_random, length, threshold);
+    fillRandom<<<numBlocks, BS>>>(predicate, TS, dev_random, length, threshold);
 }
 
 #endif
