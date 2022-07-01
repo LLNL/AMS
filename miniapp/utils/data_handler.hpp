@@ -29,8 +29,20 @@ using enable_if_t = typename std::enable_if<B, T>::type;
 // -----------------------------------------------------------------------------
 
 template<typename T>
-bool is_data_on_device(T *) {
-  return true;
+bool is_data_on_device(T* data) {
+
+  // todo: we need to do this better! should not rely on strings,
+  // but see how Dinos is using the enums!
+  auto& rm = umpire::ResourceManager::getInstance();
+  auto found_allocator = rm.getAllocator(data);
+  auto nm = found_allocator.getName();
+
+  bool is_device = int(nm.find("device")) > 0 || int(nm.find("DEVICE")) > 0;
+
+  //std::cout << " is_data_on_device("<<data<<") = "<< is_device << " ::: " << nm
+  //          << " :: " << nm.find("host") << ", " << nm.find("HOST")
+  //          << " :: " << nm.find("device") << ", " << nm.find("DEVICE") << "\n";
+  return is_device;
 }
 
 
@@ -119,7 +131,11 @@ class DataHandler {
     linearize_features(const size_t ndata, const std::vector<T*> &features) {
 
         const size_t nfeatures = features.size();
-        TypeValue *data = new TypeValue[ndata*nfeatures];
+
+        auto &rm = umpire::ResourceManager::getInstance();
+        auto dataAllocator = rm.getAllocator(AMS::utilities::getHostAllocatorName());
+
+        TypeValue *data = static_cast<TypeValue*> (dataAllocator.allocate(ndata*nfeatures*sizeof(TypeValue)));
 
         for (size_t i = 0; i < ndata; i++) {
         for (size_t d = 0; d < nfeatures; d++) {
