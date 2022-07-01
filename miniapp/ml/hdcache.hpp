@@ -40,40 +40,38 @@ public:
     virtual inline size_t count() const { return 0;    }
 
     virtual inline void
-    load_cache(const std::string &filename) {
+    load_cache(const std::string &) {
         std::cerr << "HDCache::load_cache() is a no-op!\n";
     }
     virtual inline void
-    save_cache(const std::string &filename) const {
+    save_cache(const std::string &) const {
         std::cerr << "HDCache::save_cache() is a no-op\n";
     }
 
     virtual inline void
-    add(const size_t ndata, const size_t d, TypeInValue *data) {
+    add(const size_t, const size_t, TypeInValue *) {
         std::cerr << "HDCache::add() is a no-op\n";
     }
     virtual inline void
-    add(const size_t ndata, const std::vector<TypeInValue *> &data) {
+    add(const size_t, const std::vector<TypeInValue *> &) {
         std::cerr << "HDCache::add() is a no-op\n";
     }
 
     virtual inline void
-    train(const size_t ndata, const size_t d, TypeInValue *data) {
+    train(const size_t, const size_t, TypeInValue *) {
         std::cerr << "HDCache::train() is a no-op\n";
     }
     virtual inline void
-    train(const size_t ndata, const std::vector<TypeInValue *> &inputs) {
+    train(const size_t, const std::vector<TypeInValue *> &) {
         std::cerr << "HDCache::train() is a no-op\n";
     }
 
     // any child class must implement these!
     virtual inline void
-    evaluate(const size_t ndata, const size_t d, TypeInValue *data,
-             bool *is_acceptable) = 0;
+    evaluate(const size_t, const size_t, TypeInValue *, bool *) = 0;
 
     virtual inline void
-    evaluate(const size_t ndata, const std::vector<TypeInValue*> &inputs,
-             bool *is_acceptable) = 0;
+    evaluate(const size_t, const std::vector<TypeInValue*> &, bool *) = 0;
 };
 
 #endif

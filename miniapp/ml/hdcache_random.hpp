@@ -31,12 +31,16 @@ public:
         if (AMS::utilities::is_data_on_device(is_acceptable)) {
 #ifdef __ENABLE_CUDA__
             random_uq_device<<<1,1>>>(is_acceptable, ndata, acceptable_error);
+#else
+            std::cerr << "Data should not be resident on device if CUDA is not available!\n";
+            exit(1);
 #endif
         }
         else {
             random_uq_host(is_acceptable, ndata, acceptable_error);
         }
     }
+
     inline void
     evaluate(const size_t ndata, const std::vector<TypeInValue*> &inputs,
              bool *is_acceptable) {
