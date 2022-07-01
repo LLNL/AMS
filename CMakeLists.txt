@@ -24,6 +24,7 @@ option(WITH_CALIPER     "Use Caliper for Profiling" OFF)
 option(WITH_FAISS       "Use C/C++ FAISS interface for HD Cache" OFF)
 option(WITH_TORCH       "Use C/C++ Torch interface for Surrogate Model Inference" OFF)
 option(WITH_TORCH_DEBUG "Compute RMSE of Surrogate Model and Physics Module" OFF)
+option(WITH_TESTS "Compile tests" OFF)
 
 
 # ------------------------------------------------------------------------------
@@ -136,5 +137,10 @@ endif()
 
 # ------------------------------------------------------------------------------
 add_subdirectory(miniapp)
+
+if (WITH_TESTS)
+  include(CTest)
+  add_subdirectory(tests)
+endif()
 
 # ------------------------------------------------------------------------------

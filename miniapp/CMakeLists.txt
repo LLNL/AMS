@@ -2,6 +2,9 @@
 # handle sources and headers
 file(GLOB_RECURSE MINIAPP_INCLUDES "*.hpp")
 
+#set global library path to link with tests if necessary
+set(LIBRARY_OUTPUT_PATH ${AMS_LIB_OUT_PATH})
+
 set(AMS_LIB_SRC ${MINIAPP_INCLUDES} miniapp_lib.cpp wf/utilities.cpp)
 set(AMS_EXE_SRC ${MINIAPP_INCLUDES} miniapp_exe.cpp)
 
