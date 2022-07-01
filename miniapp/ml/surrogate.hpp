@@ -11,7 +11,9 @@ using namespace std;
 
 #include "app/eos.hpp"
 #include "app/eos_idealgas.hpp"
-#include "utils/data_handler.hpp"
+#include "utils/utils_data.hpp"
+
+#ifdef __ENABLE_TORCH__
 
 //! An implementation for a surrogate model
 template <typename ModelDataType>
@@ -143,4 +145,48 @@ class SurrogateModel {
              static_cast<T**>(outputs.data()));
     }
 };
+
+#else
+
+//! An implementation for a surrogate model
+template <typename ModelDataType>
+class SurrogateModel {
+
+    static_assert(
+        std::is_floating_point<ModelDataType>::value,
+        "HDCache supports floating-point values (floats, doubles, or long doubles) only!");
+
+    using data_handler = DataHandler<ModelDataType>;  // utils to handle float data
+
+    string model_path;
+    bool is_cpu;
+
+private:
+
+public:
+    template <typename T = ModelDataType,
+              std::enable_if_t<std::is_same<T, double>::value>* = nullptr>
+    SurrogateModel(const char* model_path, bool is_cpu = true)
+        : model_path(model_path), is_cpu(is_cpu) {
+    }
+
+    template <typename T = ModelDataType,
+              std::enable_if_t<std::is_same<T, float>::value>* = nullptr>
+    SurrogateModel(const char* model_path, bool is_cpu = true)
+        : model_path(model_path), is_cpu(is_cpu) {
+    }
+
+    template <typename T, std::enable_if_t<std::is_same<ModelDataType, T>::value>* = nullptr>
+    void Eval(long num_elements, long num_in, size_t num_out, T** inputs, T** outputs) {
+    }
+
+    template <typename T, std::enable_if_t<!std::is_same<ModelDataType, T>::value>* = nullptr>
+    void Eval(long num_elements, long num_in, size_t num_out, T** inputs, T** outputs) {
+    }
+
+    template <typename T>
+    void Eval(long num_elements, std::vector<T*> inputs, std::vector<T*> outputs) {
+    }
+};
+#endif
 #endif

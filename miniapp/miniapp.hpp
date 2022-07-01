@@ -14,20 +14,13 @@ using mfem::ForallWrap;
 #include "app/eos.hpp"
 #include "ml/hdcache.hpp"
 #include "ml/surrogate.hpp"
-#include "utils/data_handler.hpp"
-#include "utils/mfem_utils.hpp"
 #include "wf/basedb.hpp"
-#include "wf/utilities.hpp"
+#include "utils/utils_data.hpp"
+#include "utils/utils_mfem.hpp"
+#include "utils/utils_caliper.hpp"
+#include "utils/allocator.hpp"
 
-// This is usefull to completely remove
-// caliper at compile time.
-#ifdef __ENABLE_CALIPER__
-#include <caliper/cali-manager.h>
-#include <caliper/cali.h>
-#define CALIPER(stmt) stmt
-#else
-#define CALIPER(stmt)
-#endif
+
 
 #define NEW_PACKING
 

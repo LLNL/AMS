@@ -15,16 +15,17 @@
 #include <faiss/index_io.h>
 #include <faiss/index_factory.h>
 #include <faiss/IndexFlat.h>
+#ifdef __ENABLE_CUDA__
 #include <faiss/gpu/GpuAutoTune.h>
 #include <faiss/gpu/GpuCloner.h>
 #include <faiss/gpu/GpuIndexIVFPQ.h>
 #include <faiss/gpu/StandardGpuResources.h>
+#endif
 
-
+#include "hdcache.hpp"
 #include "utils/data_handler.hpp"
+#include "utils/allocator.hpp"
 #include "umpire/ResourceManager.hpp"
-#include "wf/utilities.hpp"
-
 
 //! ----------------------------------------------------------------------------
 //! An implementation of FAISS-based HDCache
@@ -252,7 +253,7 @@ private:
         static const TypeValue ook = 1.0 / TypeValue(knbrs);
 
 
-        const bool data_on_device = is_data_on_device(data);
+        const bool data_on_device = AMS::utilities::is_data_on_device(data);
 
         // index on host
         if (!this->m_use_device) {

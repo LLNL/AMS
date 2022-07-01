@@ -6,7 +6,7 @@
 
 #include "mfem.hpp"
 #include "miniapp_lib.hpp"
-#include "utils/utils.hpp"
+#include "utils/utils_data.hpp"
 
 
 //! ----------------------------------------------------------------------------

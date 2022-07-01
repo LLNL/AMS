@@ -5,7 +5,8 @@
 #include <vector>
 #include <iostream>
 
-#include "utils/utils.hpp"
+#include "utils/utils_data.hpp"
+#include "utils/allocator.hpp"
 #include "hdcache.hpp"
 
 //! ----------------------------------------------------------------------------
@@ -27,8 +28,10 @@ public:
 
         static const TypeInValue acceptable_error = 0.5;
 
-        if (is_data_on_device(is_acceptable)) {
+        if (AMS::utilities::is_data_on_device(is_acceptable)) {
+#ifdef __ENABLE_CUDA__
             random_uq_device<<<1,1>>>(is_acceptable, ndata, acceptable_error);
+#endif
         }
         else {
             random_uq_host(is_acceptable, ndata, acceptable_error);

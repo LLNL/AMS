@@ -1,17 +1,17 @@
-#ifndef __DATA_HANDLER_HPP__
-#define __DATA_HANDLER_HPP__
+#ifndef __AMS_UTILS_DATA_HPP__
+#define __AMS_UTILS_DATA_HPP__
 
 #include <algorithm>
 #include <vector>
+#include <random>
 
 #include "mfem.hpp"
 #include "mfem/general/forall.hpp"
 #include "mfem/linalg/dtensor.hpp"
-#include "wf/utilities.hpp"
-#include "wf/device.hpp"
+#include "utils/allocator.hpp"
+#include "utils/utils_cuda.hpp"
 
 #include "umpire/ResourceManager.hpp"
-#include "wf/utilities.hpp"
 
 
 const int partitionSize = 1 << 24;
@@ -26,64 +26,38 @@ using enable_if_t = typename std::enable_if<B, T>::type;
 #endif
 
 
-// -----------------------------------------------------------------------------
-
-template<typename T>
-bool is_data_on_device(T* data) {
-
-  // todo: we need to do this better! should not rely on strings,
-  // but see how Dinos is using the enums!
-  auto& rm = umpire::ResourceManager::getInstance();
-  auto found_allocator = rm.getAllocator(data);
-  auto nm = found_allocator.getName();
-
-  bool is_device = int(nm.find("device")) > 0 || int(nm.find("DEVICE")) > 0;
-
-  //std::cout << " is_data_on_device("<<data<<") = "<< is_device << " ::: " << nm
-  //          << " :: " << nm.find("host") << ", " << nm.find("HOST")
-  //          << " :: " << nm.find("device") << ", " << nm.find("DEVICE") << "\n";
-  return is_device;
-}
-
 
 // -----------------------------------------------------------------------------
-#ifdef __ENABLE_CUDA__
-#include <cuda_runtime.h>
-inline void DtoDMemcpy(void *dest, void *src, size_t nBytes ){
-  cudaMemcpy(dest, src, nBytes, cudaMemcpyDeviceToDevice);
+// -----------------------------------------------------------------------------
+
+double unitrand() { return (double)rand() / RAND_MAX; }
+
+
+template <typename T>
+static inline
+T* create_random(const size_t dim, const size_t n) {
+
+    std::mt19937 rng;
+    std::uniform_real_distribution<> distrib;
+
+    T *data = new T[dim * n];
+
+    for (size_t i = 0; i < n; i++) {
+        for (size_t d = 0; d < dim; d++) {
+            data[dim*i + d] = distrib(rng);
+            data[dim*i] += i / 1000.;
+        }
+    }
+    return data;
+}
+void random_uq_host(bool *uq_flags, int ndata, double acceptable_error) {
+
+  for(int i = 0; i < ndata; i++) {
+      uq_flags[i] = ((double)rand() / RAND_MAX) <= acceptable_error;
+  }
 }
 
-inline void HtoHMemcpy(void *dest, void *src, size_t nBytes ){
-  std::memcpy(dest, src, nBytes);
-}
-
-inline void HtoDMemcpy(void *dest, void *src, size_t nBytes ){
-  cudaMemcpy(dest, src, nBytes, cudaMemcpyHostToDevice);
-};
-
-void DtoHMemcpy(void *dest, void *src, size_t nBytes ){
-  cudaMemcpy(dest, src, nBytes, cudaMemcpyDeviceToHost);
-}
-#else
-inline void DtoDMemcpy(void *dest, void *src, size_t nBytes ){
-  std::cerr<< "DtoD Memcpy Not Enabled" << std::endl;
-  exit(-1);
-}
-
-inline void HtoHMemcpy(void *dest, void *src, size_t nBytes ){
-  std::memcpy(dest, src, nBytes);
-}
-
-inline void HtoDMemcpy(void *dest, void *src, size_t nBytes ){
-  std::cerr<< "HtoD Memcpy Not Enabled" << std::endl;
-  exit(-1);
-};
-
-void DtoHMemcpy(void *dest, void *src, size_t nBytes ){
-  std::cerr<< "DtoH Memcpy Not Enabled" << std::endl;
-  exit(-1);
-}
-#endif
+// -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
 
 
@@ -185,7 +159,7 @@ class DataHandler {
     linearize_features_hd(const size_t ndata, const std::vector<T*> &features) {
 
         // clean this and merge!
-        if (is_data_on_device(features[0])) {
+        if (AMS::utilities::is_data_on_device(features[0])) {
             return linearize_features_device(ndata, features);
         }
         else {

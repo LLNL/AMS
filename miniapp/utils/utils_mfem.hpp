@@ -1,5 +1,5 @@
-#ifndef _MFEM_UTILS_HPP_
-#define _MFEM_UTILS_HPP_
+#ifndef __AMS_UTILS_MFEM_HPP__
+#define __AMS_UTILS_MFEM_HPP__
 
 #include <array>
 #include <iostream>

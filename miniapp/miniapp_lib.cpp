@@ -12,11 +12,12 @@
 #include "app/eos_idealgas.hpp"
 #include "ml/hdcache.hpp"
 #include "ml/surrogate.hpp"
-#include "utils/mfem_utils.hpp"
-#include "wf/utilities.hpp"
+
+#include "utils/utils_data.hpp"
+#include "utils/utils_mfem.hpp"
+#include "utils/allocator.hpp"
 
 #include "miniapp.hpp"
-#include "utils/utils.hpp"
 
 
 #ifdef __ENABLE_FAISS__
