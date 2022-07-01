@@ -97,10 +97,12 @@ class MiniApp {
     void evaluate_inner(const int mat_idx, const int num_data, double* pDensity, double* pEnergy,
                         double* pPressure, double* pSoundSpeed2, double* pBulkmod,
                         double* pTemperature) {
-        auto& rm = umpire::ResourceManager::getInstance();
 
-        auto dataAllocator = rm.getAllocator(AMS::utilities::getDefaultAllocatorName());
-        bool* p_ml_acceptable = static_cast<bool*>(dataAllocator.allocate(num_data * sizeof(bool)));
+        /* The allocate function always allocates on the default device. The default device 
+         * can be set by calling setDefaultDataAllocator. Otherwise we can explicitly control
+         * the location of the data by calling allocate(size, AMSDevice).
+         */
+        bool* p_ml_acceptable = static_cast<bool*>(AMS::utilities::allocate(num_data * sizeof(bool)));
 
         // ---------------------------------------------------------------------
         // operate directly on pointers
@@ -152,16 +154,16 @@ class MiniApp {
                 *packed_bulkmod, *packed_temperature;
 
             packed_density =
-                static_cast<double*>(dataAllocator.allocate(elements * sizeof(double)));
-            packed_energy = static_cast<double*>(dataAllocator.allocate(elements * sizeof(double)));
+                static_cast<double*>(AMS::utilities::allocate(elements * sizeof(double)));
+            packed_energy = static_cast<double*>(AMS::utilities::allocate(elements * sizeof(double)));
             packed_pressure =
-                static_cast<double*>(dataAllocator.allocate(elements * sizeof(double)));
+                static_cast<double*>(AMS::utilities::allocate(elements * sizeof(double)));
             packed_soundspeed2 =
-                static_cast<double*>(dataAllocator.allocate(elements * sizeof(double)));
+                static_cast<double*>(AMS::utilities::allocate(elements * sizeof(double)));
             packed_bulkmod =
-                static_cast<double*>(dataAllocator.allocate(elements * sizeof(double)));
+                static_cast<double*>(AMS::utilities::allocate(elements * sizeof(double)));
             packed_temperature =
-                static_cast<double*>(dataAllocator.allocate(elements * sizeof(double)));
+                static_cast<double*>(AMS::utilities::allocate(elements * sizeof(double)));
 
             std::vector<double*> sparse_inputs({&pDensity[pId], &pEnergy[pId]});
             std::vector<double*> sparse_outputs(
@@ -226,15 +228,15 @@ class MiniApp {
             data_handler::unpack(predicate, elements, packed_outputs, sparse_outputs);
 
             // Deallocate temporal data
-            dataAllocator.deallocate(packed_density);
-            dataAllocator.deallocate(packed_energy);
-            dataAllocator.deallocate(packed_pressure);
-            dataAllocator.deallocate(packed_soundspeed2);
-            dataAllocator.deallocate(packed_bulkmod);
-            dataAllocator.deallocate(packed_temperature);
+            AMS::utilities::deallocate(packed_density);
+            AMS::utilities::deallocate(packed_energy);
+            AMS::utilities::deallocate(packed_pressure);
+            AMS::utilities::deallocate(packed_soundspeed2);
+            AMS::utilities::deallocate(packed_bulkmod);
+            AMS::utilities::deallocate(packed_temperature);
         }
 
-        dataAllocator.deallocate(p_ml_acceptable);
+        AMS::utilities::deallocate(p_ml_acceptable);
     }
 
     void evaluate(mfem::DenseTensor& density, mfem::DenseTensor& energy,
