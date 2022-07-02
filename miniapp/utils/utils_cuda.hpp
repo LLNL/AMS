@@ -9,7 +9,7 @@
 #include "cuda_utils.cuh"
 #endif
 
-namespace AMS {
+namespace ams {
 namespace Device {
 
 template <typename TypeValue>

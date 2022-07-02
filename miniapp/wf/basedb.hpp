@@ -1,5 +1,7 @@
 #ifndef __BASE_DB__
 #define __BASE_DB__
+
+#include <string>
 #include <fstream>
 #include <iostream>
 
@@ -49,7 +51,7 @@ public:
       // "Emulated data base through a file"
       std::fstream fd;
       //
-      BaseDB(string fn) : fn(fn) {
+      BaseDB(std::string fn) : fn(fn) {
         // void
       }
       ~BaseDB() {}

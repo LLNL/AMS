@@ -1,7 +1,7 @@
 #include "allocator.hpp"
 #include <umpire/Umpire.hpp>
 
-namespace AMS {
+namespace ams {
 
 
 #ifdef USE_NEW_ALLOCATOR

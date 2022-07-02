@@ -59,7 +59,7 @@ void random_uq_host(bool *uq_flags, int ndata, double acceptable_error) {
 
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
-
+namespace ams {
 
 template<typename TypeValue>
 class DataHandler {
@@ -79,7 +79,7 @@ class DataHandler {
     template <typename T, std::enable_if_t<!std::is_same<TypeValue, T>::value>* = nullptr>
     static inline TypeValue* cast_to_typevalue(const size_t n, T* data) {
         //TypeValue* fdata = static_cast<TypeValue *> (AMS::utilities::allocate(n * sizeof(TypeValue)));
-        TypeValue* fdata = AMS::ResourceManager::allocate<TypeValue>(n);
+        TypeValue* fdata = ams::ResourceManager::allocate<TypeValue>(n);
         std::transform(data, data + n, fdata,
                        [&](const T& v) { return static_cast<TypeValue>(v); });
         return fdata;
@@ -107,7 +107,7 @@ class DataHandler {
 
         const size_t nfeatures = features.size();
 
-        TypeValue *data = AMS::ResourceManager::allocate<TypeValue>(ndata*nfeatures);
+        TypeValue *data = ams::ResourceManager::allocate<TypeValue>(ndata*nfeatures);
 
         //auto &rm = umpire::ResourceManager::getInstance();
         //auto dataAllocator = rm.getAllocator(AMS::ResourceManager::getHostAllocatorName());
@@ -133,7 +133,7 @@ class DataHandler {
         //auto dataAllocator = rm.getAllocator(AMS::utilities::getDefaultAllocatorName());
         //TypeValue *data = static_cast<TypeValue*> (dataAllocator.allocate(ndata*nfeatures*sizeof(TypeValue)));
 
-        TypeValue *data = AMS::ResourceManager::allocate<TypeValue>(ndata*nfeatures);
+        TypeValue *data = ams::ResourceManager::allocate<TypeValue>(ndata*nfeatures);
 
         std::cerr << "WARNING: linearize_features_device has incorrect logic!\n";
         /*for (size_t i = 0; i < ndata; i++) {
@@ -161,7 +161,7 @@ class DataHandler {
     linearize_features_hd(const size_t ndata, const std::vector<T*> &features) {
 
         // clean this and merge!
-        if (AMS::ResourceManager::is_on_device(features[0])) {
+        if (ams::ResourceManager::is_on_device(features[0])) {
             return linearize_features_device(ndata, features);
         }
         else {
@@ -232,7 +232,7 @@ class DataHandler {
         size_t npacked = 0;
         size_t dims = sparse.size();
 
-        if ( !AMS::ResourceManager::isDeviceExecution() ){
+        if ( !ams::ResourceManager::isDeviceExecution() ){
           for (size_t i = 0; i < n; i++) {
               if (predicate[i] == denseVal) {
                   for (size_t j = 0; j < dims; j++)
@@ -242,7 +242,7 @@ class DataHandler {
           }
         }
         else {
-          npacked = AMS::Device::pack(predicate, n, sparse.data(), dense.data(), dims);
+          npacked = ams::Device::pack(predicate, n, sparse.data(), dense.data(), dims);
         }
         return npacked;
     }
@@ -260,7 +260,7 @@ class DataHandler {
 
         size_t npacked = 0;
         size_t dims = sparse.size();
-        if ( !AMS::ResourceManager::isDeviceExecution() ){
+        if ( !ams::ResourceManager::isDeviceExecution() ){
           for (size_t i = 0; i < n; i++) {
               if (predicate[i] == denseVal) {
                   for (size_t j = 0; j < dims; j++)
@@ -270,7 +270,7 @@ class DataHandler {
           }
         }
         else{
-          npacked = AMS::Device::unpack(predicate, n, sparse.data(), dense.data(), dims);
+          npacked = ams::Device::unpack(predicate, n, sparse.data(), dense.data(), dims);
         }
         return;
     }
@@ -292,7 +292,7 @@ class DataHandler {
         size_t npacked = 0;
         int dims = sparse.size();
 
-        if ( !AMS::ResourceManager::isDeviceExecution() ){
+        if ( !ams::ResourceManager::isDeviceExecution() ){
           for (size_t i = 0; i < n; i++) {
               if (predicate[i] == denseVal) {
                   for (size_t j = 0; j < dims; j++)
@@ -301,7 +301,7 @@ class DataHandler {
               }
           }
         } else {
-          npacked = AMS::Device::pack(predicate, n, sparse.data(), dense.data(), sparse_indices, dims);
+          npacked = ams::Device::pack(predicate, n, sparse.data(), dense.data(), sparse_indices, dims);
         }
 
         return npacked;
@@ -322,13 +322,13 @@ class DataHandler {
 
         int dims = sparse.size();
 
-        if ( !AMS::ResourceManager::isDeviceExecution() ){
+        if ( !ams::ResourceManager::isDeviceExecution() ){
           for (size_t i = 0; i < nPacked; i++)
               for (size_t j = 0; j < dims; j++)
                   sparse[j][sparse_indices[i]] = dense[j][i];
         }
         else{
-          AMS::Device::unpack(nPacked, sparse.data(), dense.data(), sparse_indices, dims);
+          ams::Device::unpack(nPacked, sparse.data(), dense.data(), sparse_indices, dims);
         }
 
         return;
@@ -345,7 +345,7 @@ class DataHandler {
             return pSize / (singleElementBytes);
     }
 };
-
+}   // end of namespace
 
 // -----------------------------------------------------------------------------
 #endif

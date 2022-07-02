@@ -41,9 +41,11 @@ using mfem::ForallWrap;
 //! ----------------------------------------------------------------------------
 //! mini app class
 //! ----------------------------------------------------------------------------
+namespace ams {
+
 template <typename TypeValue = double>
 class MiniApp {
-    using data_handler = DataHandler<TypeValue>;
+    using data_handler = ams::DataHandler<TypeValue>;
 
 private:
     const int num_mats;
@@ -85,9 +87,9 @@ public:
         // setup resource manager (data allocators)
         // -------------------------------------------------------------------------
 
-        AMS::ResourceManager::setup(use_device);
-        auto host_alloc_name = AMS::ResourceManager::getHostAllocatorName();
-        auto device_alloc_name = AMS::ResourceManager::getDeviceAllocatorName();
+        ams::ResourceManager::setup(use_device);
+        auto host_alloc_name = ams::ResourceManager::getHostAllocatorName();
+        auto device_alloc_name = ams::ResourceManager::getDeviceAllocatorName();
 
         // set up mfem memory manager
         mfem::MemoryManager::SetUmpireHostAllocatorName(host_alloc_name.c_str());
@@ -301,5 +303,5 @@ private:
         CALIPER(CALI_MARK_FUNCTION_END);
     }
 };
-
+}   // end of namespace
 #endif

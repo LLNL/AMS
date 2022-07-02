@@ -22,10 +22,11 @@
 //!     which has the same interface as the physics evaluation
 //! the intention is that we can easily switch in and out AMS wf in app code
 //! ----------------------------------------------------------------------------
+namespace ams {
 class AMSWorkflow {
 
     using TypeValue = double;       // todo: should template the class
-    using data_handler = DataHandler<TypeValue>;
+    using data_handler = ams::DataHandler<TypeValue>;
 
     const int num_mats;
 
@@ -102,7 +103,7 @@ public:
          * the location of the data by calling allocate(size, AMSDevice).
          */
 
-        bool* p_ml_acceptable = AMS::ResourceManager::allocate<bool>(num_data);
+        bool* p_ml_acceptable = ams::ResourceManager::allocate<bool>(num_data);
 
 
         // -------------------------------------------------------------
@@ -146,12 +147,12 @@ public:
             // to be computed using the eos function.
             const int elements = std::min(partitionElements, num_data - pId);
 
-            TypeValue *packed_density = AMS::ResourceManager::allocate<TypeValue>(elements);
-            TypeValue *packed_energy = AMS::ResourceManager::allocate<TypeValue>(elements);
-            TypeValue *packed_pressure = AMS::ResourceManager::allocate<TypeValue>(elements);
-            TypeValue *packed_soundspeed2 = AMS::ResourceManager::allocate<TypeValue>(elements);
-            TypeValue *packed_bulkmod = AMS::ResourceManager::allocate<TypeValue>(elements);
-            TypeValue *packed_temperature = AMS::ResourceManager::allocate<TypeValue>(elements);
+            TypeValue *packed_density = ams::ResourceManager::allocate<TypeValue>(elements);
+            TypeValue *packed_energy = ams::ResourceManager::allocate<TypeValue>(elements);
+            TypeValue *packed_pressure = ams::ResourceManager::allocate<TypeValue>(elements);
+            TypeValue *packed_soundspeed2 = ams::ResourceManager::allocate<TypeValue>(elements);
+            TypeValue *packed_bulkmod = ams::ResourceManager::allocate<TypeValue>(elements);
+            TypeValue *packed_temperature = ams::ResourceManager::allocate<TypeValue>(elements);
 
             std::vector<TypeValue*> sparse_inputs({&pDensity[pId], &pEnergy[pId]});
             std::vector<TypeValue*> sparse_outputs({&pPressure[pId], &pSoundSpeed2[pId],
@@ -218,15 +219,15 @@ public:
             data_handler::unpack(predicate, elements, packed_outputs, sparse_outputs);
 
             // Deallocate temporal data
-            AMS::ResourceManager::deallocate(packed_density);
-            AMS::ResourceManager::deallocate(packed_energy);
-            AMS::ResourceManager::deallocate(packed_pressure);
-            AMS::ResourceManager::deallocate(packed_soundspeed2);
-            AMS::ResourceManager::deallocate(packed_bulkmod);
-            AMS::ResourceManager::deallocate(packed_temperature);
+            ams::ResourceManager::deallocate(packed_density);
+            ams::ResourceManager::deallocate(packed_energy);
+            ams::ResourceManager::deallocate(packed_pressure);
+            ams::ResourceManager::deallocate(packed_soundspeed2);
+            ams::ResourceManager::deallocate(packed_bulkmod);
+            ams::ResourceManager::deallocate(packed_temperature);
         }
-        AMS::ResourceManager::deallocate(p_ml_acceptable);
+        ams::ResourceManager::deallocate(p_ml_acceptable);
     }
 };
-
+}   // end of namespace
 #endif

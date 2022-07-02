@@ -6,7 +6,7 @@
 
 #define USE_NEW_ALLOCATOR
 
-namespace AMS {
+namespace ams {
 
 
 #ifndef USE_NEW_ALLOCATOR
@@ -50,11 +50,8 @@ bool is_data_on_device(T* data) {
   return is_device;
 }
 }  // namespace utilities
-#endif
 
-
-
-#ifdef USE_NEW_ALLOCATOR
+#else
 class ResourceManager {
 
     typedef enum location { UNKNOWN = 0, HOST = 1, DEVICE = 2 } ResourceType;

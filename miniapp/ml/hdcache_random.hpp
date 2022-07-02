@@ -28,7 +28,7 @@ public:
 
         static const TypeInValue acceptable_error = 0.5;
 
-        if (AMS::ResourceManager::is_on_device(is_acceptable)) {
+        if (ams::ResourceManager::is_on_device(is_acceptable)) {
 #ifdef __ENABLE_CUDA__
             random_uq_device<<<1,1>>>(is_acceptable, ndata, acceptable_error);
 #else
