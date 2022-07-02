@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <umpire/Umpire.hpp>
+#include "eos.hpp"
 
 class ConstantEOSOnHost : public EOS {
     umpire::ResourceManager &rm_;

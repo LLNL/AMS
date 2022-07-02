@@ -95,7 +95,12 @@ class MiniApp {
          * can be set by calling setDefaultDataAllocator. Otherwise we can explicitly control
          * the location of the data by calling allocate(size, AMSDevice).
          */
+#ifdef USE_NEW_ALLOCATOR
+        bool* p_ml_acceptable = AMS::ResourceManager::allocate<bool>(num_data);
+#else
         bool* p_ml_acceptable = static_cast<bool*>(AMS::utilities::allocate(num_data * sizeof(bool)));
+#endif
+
 
         // ---------------------------------------------------------------------
         // operate directly on pointers

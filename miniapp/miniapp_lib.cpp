@@ -1,8 +1,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
-
+#ifndef USE_NEW_ALLOCATOR
 #include <umpire/Umpire.hpp>
+#endif
 
 #include "mfem.hpp"
 #include "mfem/linalg/dtensor.hpp"
@@ -50,21 +51,34 @@ extern "C" void miniapp_lib(const std::string& device_name, const std::string& e
 
     // -------------------------------------------------------------------------
     // setup device
+
+
+#ifdef USE_NEW_ALLOCATOR
+    AMS::ResourceManager::setup(use_device);
+
+    auto host_alloc_name = AMS::ResourceManager::getHostAllocatorName();
+    auto device_alloc_name = AMS::ResourceManager::getDeviceAllocatorName();
+
+#else
     auto& rm = umpire::ResourceManager::getInstance();
 
-    auto host_alloc_name = AMS::utilities::getHostAllocatorName();
-    auto device_alloc_name = AMS::utilities::getDeviceAllocatorName();
+    const std::string host_alloc_name = AMS::utilities::getHostAllocatorName();
+    const std::string device_alloc_name = AMS::utilities::getDeviceAllocatorName();
+    std::cout << " initialized umpire: " << host_alloc_name << ", " << device_alloc_name << "\n";
 
     rm.makeAllocator<umpire::strategy::QuickPool, true>(host_alloc_name, rm.getAllocator("HOST"));
-    mfem::MemoryManager::SetUmpireHostAllocatorName(host_alloc_name);
+
     if (use_device) {
         std::cout << " Setting up default allocator to: " << device_alloc_name << "\n";
-        rm.makeAllocator<umpire::strategy::QuickPool, true>(device_alloc_name,
-                                                            rm.getAllocator("DEVICE"));
-        mfem::MemoryManager::SetUmpireDevice2AllocatorName(device_alloc_name);
+        rm.makeAllocator<umpire::strategy::QuickPool, true>(device_alloc_name, rm.getAllocator("DEVICE"));
         AMS::utilities::setDefaultDataAllocator(AMS::utilities::AMSDevice::DEVICE);
     }
+#endif
 
+    mfem::MemoryManager::SetUmpireHostAllocatorName(host_alloc_name.c_str());
+    if (use_device) {
+        mfem::MemoryManager::SetUmpireDevice2AllocatorName(device_alloc_name.c_str());
+    }
     mfem::Device::SetMemoryTypes(mfem::MemoryType::HOST_UMPIRE, mfem::MemoryType::DEVICE_UMPIRE);
 
     mfem::Device device(device_name);
@@ -87,7 +101,7 @@ extern "C" void miniapp_lib(const std::string& device_name, const std::string& e
             if (eos_name == "ideal_gas") {
                 miniapp.eoses[mat_idx] = new IdealGas(1.6, 1.4);
             } else if (eos_name == "constant_host") {
-                miniapp.eoses[mat_idx] = new ConstantEOSOnHost(host_alloc_name, 1.0);
+                miniapp.eoses[mat_idx] = new ConstantEOSOnHost(host_alloc_name.c_str(), 1.0);
             } else {
                 std::cerr << "unknown eos `" << eos_name << "'" << std::endl;
                 return;
@@ -124,7 +138,6 @@ extern "C" void miniapp_lib(const std::string& device_name, const std::string& e
         miniapp.hdcaches[mat_idx]->load_cache(idx_path);
       }
     }
-    // -------------------------------------------------------------------------
 
     // -------------------------------------------------------------------------
     // initialize inputs and outputs as mfem tensors
@@ -183,6 +196,7 @@ extern "C" void miniapp_lib(const std::string& device_name, const std::string& e
 
     // pressure.HostRead();
     // print_dense_tensor("pressure", pressure);
+
 }
 
 //! ----------------------------------------------------------------------------

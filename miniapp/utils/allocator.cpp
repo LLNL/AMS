@@ -2,6 +2,63 @@
 #include <umpire/Umpire.hpp>
 
 namespace AMS {
+
+
+#ifdef USE_NEW_ALLOCATOR
+
+// default allocator
+ResourceManager::ResourceType ResourceManager::default_resource = ResourceManager::ResourceType::HOST;
+
+const std::string
+ResourceManager::getDeviceAllocatorName() {  return "mmp-device-quickpool"; }
+
+const std::string
+ResourceManager::getHostAllocatorName() {    return "mmp-host-quickpool";   }
+
+
+void
+ResourceManager::setDefaultDataAllocator(ResourceManager::ResourceType location) {
+    ResourceManager::default_resource = location;
+}
+
+ResourceManager::ResourceType
+ResourceManager::getDefaultDataAllocator() {
+    return ResourceManager::default_resource;
+}
+
+
+void
+ResourceManager::setup(bool use_device) {
+
+    std::cout << "Setting up ams::allocator\n";
+
+    auto host_alloc_name = ResourceManager::getHostAllocatorName();
+    auto device_alloc_name = ResourceManager::getDeviceAllocatorName();
+
+
+    auto& rm = umpire::ResourceManager::getInstance();
+    rm.makeAllocator<umpire::strategy::QuickPool, true>(host_alloc_name, rm.getAllocator("HOST"));
+    if (use_device) {
+        rm.makeAllocator<umpire::strategy::QuickPool, true>(device_alloc_name, rm.getAllocator("DEVICE"));
+    }
+
+    // set the default
+    if (use_device) {
+        ResourceManager::setDefaultDataAllocator(ResourceType::DEVICE);
+        std::cout << "  default allocator = (" << device_alloc_name << ")\n";
+    }
+    else {
+        ResourceManager::setDefaultDataAllocator(ResourceType::HOST);
+        std::cout << "  default allocator = (" << host_alloc_name << ")\n";
+    }
+}
+#endif
+
+
+
+
+
+
 namespace utilities {
 AMSDevice defaultDloc = AMSDevice::HOST;
 

@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <umpire/Umpire.hpp>
 
+#define USE_NEW_ALLOCATOR
+
 namespace AMS {
 namespace utilities {
 typedef enum d_location { HOST = 0, DEVICE } AMSDevice;
@@ -47,6 +49,72 @@ bool is_data_on_device(T* data) {
 
 
 }  // namespace utilities
+
+
+
+#ifdef USE_NEW_ALLOCATOR
+class ResourceManager {
+
+    typedef enum location { UNKNOWN = 0, HOST = 1, DEVICE = 2 } ResourceType;
+    static ResourceType default_resource;
+
+public:
+    //! names for these allocations
+    static const std::string getDeviceAllocatorName();
+    static const std::string getHostAllocatorName();
+
+
+    //! setup the allocator
+    static void setup(bool use_device);
+
+
+    //! get/set default allocator
+    static ResourceType getDefaultDataAllocator();
+    static void setDefaultDataAllocator(ResourceType location);
+
+
+    //! query an allocated array
+    template<typename T>
+    static const std::string
+    getDataAllocationName(T* data) {
+      auto& rm = umpire::ResourceManager::getInstance();
+      return rm.getAllocator(data).getName();
+    }
+
+    template<typename T>
+    static bool
+    is_on_device(T* data) {
+        // TODO: should find out w/o relying on strings
+        auto nm = ResourceManager::getDataAllocationName<T>(data);
+        return int(nm.find("device")) > 0 || int(nm.find("DEVICE")) > 0;
+    }
+
+
+    //! allocate and deallocate
+    template<typename T>
+    static T*
+    allocate(size_t nvalues, ResourceType dev = default_resource) {
+
+        const std::string &alloc_name = (dev == HOST) ?
+                    getHostAllocatorName() : getDeviceAllocatorName();
+
+        auto alloc = umpire::ResourceManager::getInstance().getAllocator(alloc_name);
+        return static_cast<T*>(alloc.allocate(nvalues * sizeof(T)));
+    }
+
+    template<typename T>
+    static void
+    deallocate(T* data, ResourceType dev = default_resource) {
+
+        const std::string &alloc_name = (dev == HOST) ?
+                    getHostAllocatorName() : getDeviceAllocatorName();
+
+        auto alloc = umpire::ResourceManager::getInstance().getAllocator(alloc_name);
+        alloc.deallocate(data);
+    }
+};
+#endif
+
 }  // namespace AMS
 
 #endif
