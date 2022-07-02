@@ -17,14 +17,22 @@ using mfem::ForallWrap;
 #include "app/eos.hpp"
 #include "app/eos_constant_on_host.hpp"
 #include "app/eos_idealgas.hpp"
-#include "ml/hdcache.hpp"
-#include "ml/surrogate.hpp"
-#include "wf/workflow.hpp"
+
 #include "utils/utils_data.hpp"
 #include "utils/utils_mfem.hpp"
 #include "utils/utils_caliper.hpp"
 #include "utils/allocator.hpp"
 
+
+// this macro completely bypasses all AMS functionality
+// this allows us to check how easy is it to test ams
+#define USE_AMS
+
+
+#ifdef USE_AMS
+#include "ml/hdcache.hpp"
+#include "ml/surrogate.hpp"
+#include "wf/workflow.hpp"
 
 #ifdef __ENABLE_FAISS__
   #include "ml/hdcache_faiss.hpp"
@@ -35,7 +43,7 @@ using mfem::ForallWrap;
   template <typename T>
   using TypeHDCache = HDCache_Random<T>;
 #endif
-
+#endif
 
 
 //! ----------------------------------------------------------------------------
@@ -55,8 +63,12 @@ private:
     const bool use_device;
     const bool pack_sparse_mats;
 
+    std::vector<EOS*> eoses;
 
+#ifdef USE_AMS
     AMSWorkflow *workflow;
+#endif
+
     CALIPER(cali::ConfigManager mgr;)
 
 
@@ -70,11 +82,17 @@ public:
             device_name(_device_name), use_device(device_name != "cpu"),
             pack_sparse_mats(_pack_sparse_mats && !use_device) {
 
+        eoses.resize(num_mats, nullptr);
+
+#ifdef USE_AMS
         workflow = new AMSWorkflow(_num_mats);
+#endif
         CALIPER(mgr.start();)
     }
     ~MiniApp() {
+#ifdef USE_AMS
         delete workflow;
+#endif
         CALIPER(mgr.flush());
     }
 
@@ -86,7 +104,8 @@ public:
         // -------------------------------------------------------------------------
         // setup resource manager (data allocators)
         // -------------------------------------------------------------------------
-
+        // TODO: in case USE_AMS is false, should we worry about not relying on ams namespace?
+        // may be, but it's not really a use case so we can think about this later
         ams::ResourceManager::setup(use_device);
         auto host_alloc_name = ams::ResourceManager::getHostAllocatorName();
         auto device_alloc_name = ams::ResourceManager::getDeviceAllocatorName();
@@ -111,17 +130,19 @@ public:
         // -------------------------------------------------------------------------
         for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
             if (eos_name == "ideal_gas") {
-                workflow->set_eos(mat_idx, new IdealGas(1.6, 1.4));
+                eoses[mat_idx] = new IdealGas(1.6, 1.4);
             } else if (eos_name == "constant_host") {
-                workflow->set_eos(mat_idx, new ConstantEOSOnHost(host_alloc_name.c_str(), 1.0));
+                eoses[mat_idx] = new ConstantEOSOnHost(host_alloc_name.c_str(), 1.0);
             } else {
                 std::cerr << "unknown eos `" << eos_name << "'" << std::endl;
                 return;
             }
         }
 
+#ifdef USE_AMS
         const int cache_dim = 2;
         for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
+            workflow->set_eos(mat_idx, eoses[mat_idx]);
             if (model_path.size() > 0) {
                 workflow->set_surrogate(mat_idx,
                                       new SurrogateModel<double>(model_path.c_str(), !use_device));
@@ -130,6 +151,7 @@ public:
             }
             workflow->set_hdcache(mat_idx, new TypeHDCache<TypeValue>(cache_dim, 10, false));
         }
+#endif
     }
 
     // -------------------------------------------------------------------------
@@ -274,12 +296,18 @@ private:
                 CALIPER(CALI_MARK_END("SPARSE_TO_DENSE");)
                 // -------------------------------------------------------------
 
+#ifdef USE_AMS
                 workflow->evaluate(num_elems_for_mat * num_qpts,
                                    &d_dense_density(0, 0), &d_dense_energy(0, 0),
                                    &d_dense_pressure(0, 0), &d_dense_soundspeed2(0, 0),
                                    &d_dense_bulkmod(0, 0), &d_dense_temperature(0, 0),
                                    mat_idx);
-
+#else
+                eoses[mat_idx]->Eval(num_elems_for_mat * num_qpts,
+                                     &d_dense_density(0, 0), &d_dense_energy(0, 0),
+                                     &d_dense_pressure(0, 0), &d_dense_soundspeed2(0, 0),
+                                     &d_dense_bulkmod(0, 0), &d_dense_temperature(0, 0));
+#endif
                 // -------------------------------------------------------------
                 // dense -> sparse
                 CALIPER(CALI_MARK_BEGIN("DENSE_TO_SPARSE");)
@@ -291,12 +319,19 @@ private:
                 // -------------------------------------------------------------
 
             } else {
+#ifdef USE_AMS
                 workflow->evaluate(num_elems * num_qpts,
                                    const_cast<TypeValue*>(&d_density(0, 0, mat_idx)),
                                    const_cast<TypeValue*>(&d_energy(0, 0, mat_idx)),
                                    &d_pressure(0, 0, mat_idx), &d_soundspeed2(0, 0, mat_idx),
                                    &d_bulkmod(0, 0, mat_idx), &d_temperature(0, 0, mat_idx),
                                    mat_idx);
+#else
+                eoses[mat_idx]->Eval(num_elems * num_qpts,
+                                     &d_density(0, 0, mat_idx), &d_energy(0, 0, mat_idx),
+                                     &d_pressure(0, 0, mat_idx), &d_soundspeed2(0, 0, mat_idx),
+                                     &d_bulkmod(0, 0, mat_idx), &d_temperature(0, 0, mat_idx));
+#endif
             }
         }
 
