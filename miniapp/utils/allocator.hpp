@@ -7,7 +7,11 @@
 #define USE_NEW_ALLOCATOR
 
 namespace AMS {
+
+
+#ifndef USE_NEW_ALLOCATOR
 namespace utilities {
+
 typedef enum d_location { HOST = 0, DEVICE } AMSDevice;
 
 void setDefaultDataAllocator(AMSDevice location);
@@ -45,10 +49,8 @@ bool is_data_on_device(T* data) {
   //          << " :: " << nm.find("device") << ", " << nm.find("DEVICE") << "\n";
   return is_device;
 }
-
-
-
 }  // namespace utilities
+#endif
 
 
 
@@ -73,6 +75,9 @@ public:
     static void setDefaultDataAllocator(ResourceType location);
 
 
+    static bool isDeviceExecution();
+
+
     //! query an allocated array
     template<typename T>
     static const std::string
@@ -80,6 +85,7 @@ public:
       auto& rm = umpire::ResourceManager::getInstance();
       return rm.getAllocator(data).getName();
     }
+
 
     template<typename T>
     static bool

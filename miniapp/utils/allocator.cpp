@@ -27,6 +27,13 @@ ResourceManager::getDefaultDataAllocator() {
 }
 
 
+
+bool
+ResourceManager::isDeviceExecution() {
+    return ResourceManager::default_resource == ResourceManager::ResourceType::DEVICE;
+}
+
+
 void
 ResourceManager::setup(bool use_device) {
 
@@ -59,7 +66,9 @@ ResourceManager::setup(bool use_device) {
 
 
 
+#ifndef USE_NEW_ALLOCATOR
 namespace utilities {
+
 AMSDevice defaultDloc = AMSDevice::HOST;
 
 void setDefaultDataAllocator(AMSDevice location) {
@@ -137,6 +146,6 @@ const char* getDefaultAllocatorName() {
 bool isDeviceExecution() {
     return defaultDloc == DEVICE;
 }
-
 }  // namespace utilities
+#endif
 }  // namespace AMS

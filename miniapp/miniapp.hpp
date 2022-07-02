@@ -151,6 +151,14 @@ class MiniApp {
             // to be computed using the eos function.
             int elements = std::min(partitionElements, num_data - pId);
 
+#ifdef USE_NEW_ALLOCATOR
+            double *packed_density = AMS::ResourceManager::allocate<double>(elements);
+            double *packed_energy = AMS::ResourceManager::allocate<double>(elements);
+            double *packed_pressure = AMS::ResourceManager::allocate<double>(elements);
+            double *packed_soundspeed2 = AMS::ResourceManager::allocate<double>(elements);
+            double *packed_bulkmod = AMS::ResourceManager::allocate<double>(elements);
+            double *packed_temperature = AMS::ResourceManager::allocate<double>(elements);
+#else
             double *packed_density, *packed_energy, *packed_pressure, *packed_soundspeed2,
                 *packed_bulkmod, *packed_temperature;
 
@@ -165,14 +173,14 @@ class MiniApp {
                 static_cast<double*>(AMS::utilities::allocate(elements * sizeof(double)));
             packed_temperature =
                 static_cast<double*>(AMS::utilities::allocate(elements * sizeof(double)));
-
+#endif
             std::vector<double*> sparse_inputs({&pDensity[pId], &pEnergy[pId]});
-            std::vector<double*> sparse_outputs(
-                {&pPressure[pId], &pSoundSpeed2[pId], &pBulkmod[pId], &pTemperature[pId]});
+            std::vector<double*> sparse_outputs({&pPressure[pId], &pSoundSpeed2[pId],
+                                                 &pBulkmod[pId], &pTemperature[pId]});
 
             std::vector<double*> packed_inputs({packed_density, packed_energy});
-            std::vector<double*> packed_outputs(
-                {packed_pressure, packed_soundspeed2, packed_bulkmod, packed_temperature});
+            std::vector<double*> packed_outputs({packed_pressure, packed_soundspeed2,
+                                                 packed_bulkmod, packed_temperature});
 
             bool* predicate = &p_ml_acceptable[pId];
 
@@ -229,15 +237,27 @@ class MiniApp {
             data_handler::unpack(predicate, elements, packed_outputs, sparse_outputs);
 
             // Deallocate temporal data
+#ifdef USE_NEW_ALLOCATOR
+            AMS::ResourceManager::deallocate(packed_density);
+            AMS::ResourceManager::deallocate(packed_energy);
+            AMS::ResourceManager::deallocate(packed_pressure);
+            AMS::ResourceManager::deallocate(packed_soundspeed2);
+            AMS::ResourceManager::deallocate(packed_bulkmod);
+            AMS::ResourceManager::deallocate(packed_temperature);
+#else
             AMS::utilities::deallocate(packed_density);
             AMS::utilities::deallocate(packed_energy);
             AMS::utilities::deallocate(packed_pressure);
             AMS::utilities::deallocate(packed_soundspeed2);
             AMS::utilities::deallocate(packed_bulkmod);
             AMS::utilities::deallocate(packed_temperature);
+#endif
         }
-
+#ifdef USE_NEW_ALLOCATOR
+        AMS::ResourceManager::deallocate(p_ml_acceptable);
+#else
         AMS::utilities::deallocate(p_ml_acceptable);
+#endif
     }
 
     void evaluate(mfem::DenseTensor& density, mfem::DenseTensor& energy,
@@ -473,7 +493,7 @@ class MiniApp {
         */
                 // We have 6 elements + a vector holding the index values
                 int partitionElements = data_handler::computePartitionSize(2, 4);
-                auto dataAllocator = rm.getAllocator(AMS::utilities::getHostAllocatorName());
+                auto dataAllocator = rm.getAllocator(AMS::ResourceManager::getHostAllocatorName());
 
                 /*
             The way partioning is working now we can have "inbalance" across

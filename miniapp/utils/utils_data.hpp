@@ -78,7 +78,8 @@ class DataHandler {
     //! when  (data type != TypeValue)
     template <typename T, std::enable_if_t<!std::is_same<TypeValue, T>::value>* = nullptr>
     static inline TypeValue* cast_to_typevalue(const size_t n, T* data) {
-        TypeValue* fdata = static_cast<TypeValue *> (AMS::utilities::allocate(n * sizeof(TypeValue)));
+        //TypeValue* fdata = static_cast<TypeValue *> (AMS::utilities::allocate(n * sizeof(TypeValue)));
+        TypeValue* fdata = AMS::ResourceManager::allocate<TypeValue>(n);
         std::transform(data, data + n, fdata,
                        [&](const T& v) { return static_cast<TypeValue>(v); });
         return fdata;
@@ -106,10 +107,11 @@ class DataHandler {
 
         const size_t nfeatures = features.size();
 
-        auto &rm = umpire::ResourceManager::getInstance();
-        auto dataAllocator = rm.getAllocator(AMS::utilities::getHostAllocatorName());
+        TypeValue *data = AMS::ResourceManager::allocate<TypeValue>(ndata*nfeatures);
 
-        TypeValue *data = static_cast<TypeValue*> (dataAllocator.allocate(ndata*nfeatures*sizeof(TypeValue)));
+        //auto &rm = umpire::ResourceManager::getInstance();
+        //auto dataAllocator = rm.getAllocator(AMS::ResourceManager::getHostAllocatorName());
+        //TypeValue *data = static_cast<TypeValue*> (dataAllocator.allocate(ndata*nfeatures*sizeof(TypeValue)));
 
         for (size_t i = 0; i < ndata; i++) {
         for (size_t d = 0; d < nfeatures; d++) {
@@ -125,13 +127,13 @@ class DataHandler {
     TypeValue*
     linearize_features_device(const size_t ndata, const std::vector<T*> &features) {
 
-        auto &rm = umpire::ResourceManager::getInstance();
-        auto dataAllocator = rm.getAllocator(AMS::utilities::getDefaultAllocatorName());
-
         size_t nfeatures = features.size();
 
-        TypeValue *data = static_cast<TypeValue*> (dataAllocator.allocate(ndata*nfeatures*sizeof(TypeValue)));
+        //auto &rm = umpire::ResourceManager::getInstance();
+        //auto dataAllocator = rm.getAllocator(AMS::utilities::getDefaultAllocatorName());
+        //TypeValue *data = static_cast<TypeValue*> (dataAllocator.allocate(ndata*nfeatures*sizeof(TypeValue)));
 
+        TypeValue *data = AMS::ResourceManager::allocate<TypeValue>(ndata*nfeatures);
 
         std::cerr << "WARNING: linearize_features_device has incorrect logic!\n";
         /*for (size_t i = 0; i < ndata; i++) {
@@ -147,8 +149,8 @@ class DataHandler {
                      ndata*sizeof(T));
         }
 
-        auto found_allocator = rm.getAllocator(data);
-        std::cout << " created linearized: " << found_allocator << "\n";
+        //auto found_allocator = rm.getAllocator(data);
+        //std::cout << " created linearized: " << found_allocator << "\n";
         return data;
     }
 
@@ -159,7 +161,7 @@ class DataHandler {
     linearize_features_hd(const size_t ndata, const std::vector<T*> &features) {
 
         // clean this and merge!
-        if (AMS::utilities::is_data_on_device(features[0])) {
+        if (AMS::ResourceManager::is_on_device(features[0])) {
             return linearize_features_device(ndata, features);
         }
         else {
@@ -230,7 +232,7 @@ class DataHandler {
         size_t npacked = 0;
         size_t dims = sparse.size();
 
-        if ( !AMS::utilities::isDeviceExecution() ){
+        if ( !AMS::ResourceManager::isDeviceExecution() ){
           for (size_t i = 0; i < n; i++) {
               if (predicate[i] == denseVal) {
                   for (size_t j = 0; j < dims; j++)
@@ -258,7 +260,7 @@ class DataHandler {
 
         size_t npacked = 0;
         size_t dims = sparse.size();
-        if ( !AMS::utilities::isDeviceExecution() ){
+        if ( !AMS::ResourceManager::isDeviceExecution() ){
           for (size_t i = 0; i < n; i++) {
               if (predicate[i] == denseVal) {
                   for (size_t j = 0; j < dims; j++)
@@ -290,7 +292,7 @@ class DataHandler {
         size_t npacked = 0;
         int dims = sparse.size();
 
-        if ( !AMS::utilities::isDeviceExecution() ){
+        if ( !AMS::ResourceManager::isDeviceExecution() ){
           for (size_t i = 0; i < n; i++) {
               if (predicate[i] == denseVal) {
                   for (size_t j = 0; j < dims; j++)
@@ -320,7 +322,7 @@ class DataHandler {
 
         int dims = sparse.size();
 
-        if ( !AMS::utilities::isDeviceExecution() ){
+        if ( !AMS::ResourceManager::isDeviceExecution() ){
           for (size_t i = 0; i < nPacked; i++)
               for (size_t j = 0; j < dims; j++)
                   sparse[j][sparse_indices[i]] = dense[j][i];
