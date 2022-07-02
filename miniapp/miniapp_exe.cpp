@@ -20,7 +20,7 @@ struct MiniAppArgs {
     const char *model_path     = "";
 
     int seed                   = 0;
-    double empty_element_ratio = -1;
+    TypeValue empty_element_ratio = -1;
 
     int stop_cycle             = 1;
 
@@ -132,8 +132,8 @@ int main(int argc, char **argv) {
     for (int mat_idx = 0; mat_idx < args.num_mats; ++mat_idx) {
 
         // min ratio if empty_element_ratio is -1
-        const double min_ratio = 0.2;
-        const double ratio     = args.empty_element_ratio == -1 ? unitrand() * (1 - min_ratio) + min_ratio
+        const TypeValue min_ratio = 0.2;
+        const TypeValue ratio     = args.empty_element_ratio == -1 ? unitrand() * (1 - min_ratio) + min_ratio
                                                                  : 1 - args.empty_element_ratio;
         const int num_nonzero_elems = ratio * args.num_elems;
         std::cout << "  using " << num_nonzero_elems << "/"<< args.num_elems << " for material " << mat_idx << std::endl;
@@ -158,8 +158,8 @@ int main(int argc, char **argv) {
     // -------------------------------------------------------------------------
     std::cout << "Initializing random data" << std::endl;
     // inputs
-    std::vector<double> density (args.num_mats * args.num_elems * args.num_qpts, 0.);
-    std::vector<double> energy (args.num_mats * args.num_elems * args.num_qpts, 0.);
+    std::vector<TypeValue> density (args.num_mats * args.num_elems * args.num_qpts, 0.);
+    std::vector<TypeValue> energy (args.num_mats * args.num_elems * args.num_qpts, 0.);
 
     // init inputs
     // TODO: what are good initial values?

@@ -8,8 +8,9 @@
 #include "mfem/linalg/dtensor.hpp"
 
 
-#define RESHAPE_TENSOR(m, op) mfem::Reshape(m.op(), m.SizeI(), m.SizeJ(), m.SizeK())
-
+#define mfemReshapeTensor3(m, op)       mfem::Reshape(m.op(), m.SizeI(), m.SizeJ(), m.SizeK())
+#define mfemReshapeArray2(m, op, X, Y)  mfem::Reshape(m.op(), X, Y);
+#define mfemReshapeArray1(m, op)        mfem::Reshape(m.op(), m.Size());
 
 template<typename T>
 static void

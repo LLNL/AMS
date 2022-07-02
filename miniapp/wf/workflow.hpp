@@ -1,0 +1,232 @@
+#ifndef __AMS_WORKFLOW_HPP__
+#define __AMS_WORKFLOW_HPP__
+
+#include <cassert>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <vector>
+
+#include "app/eos.hpp"
+#include "ml/hdcache.hpp"
+#include "ml/surrogate.hpp"
+#include "wf/basedb.hpp"
+#include "utils/utils_data.hpp"
+#include "utils/utils_caliper.hpp"
+#include "utils/allocator.hpp"
+
+
+//! ----------------------------------------------------------------------------
+//! AMS Workflow class
+//! the purpose of this class is to expose an "evaluate" function
+//!     which has the same interface as the physics evaluation
+//! the intention is that we can easily switch in and out AMS wf in app code
+//! ----------------------------------------------------------------------------
+class AMSWorkflow {
+
+    using TypeValue = double;       // todo: should template the class
+    using data_handler = DataHandler<TypeValue>;
+
+    const int num_mats;
+
+    // eos computations
+    std::vector<EOS*> eoses;
+
+    // added to include ML
+    std::vector<HDCache<TypeValue>*> hdcaches;
+    std::vector<SurrogateModel<TypeValue>*> surrogates;
+
+    // Added to include an offline DB
+    // (currently implemented as a file)
+    BaseDB* DB = nullptr;
+
+public:
+    // -------------------------------------------------------------------------
+    // constructor and destructor
+    // -------------------------------------------------------------------------
+    AMSWorkflow(int _num_mats) : num_mats(_num_mats) {
+
+#ifdef __ENABLE_DB__
+        DB = new BaseDB("miniApp_data.txt");
+        if (!DB) {
+            std::cout << "Cannot create static database\n";
+        }
+#endif
+
+        // setup eos
+        eoses.resize(num_mats, nullptr);
+        hdcaches.resize(num_mats, nullptr);
+        surrogates.resize(num_mats, nullptr);
+        DB = nullptr;
+    }
+
+    void set_eos(int mat_idx, EOS* eos) {
+        eoses[mat_idx] = eos;
+    }
+    void set_surrogate(int mat_idx, SurrogateModel<TypeValue>* surrogate) {
+        surrogates[mat_idx] = surrogate;
+    }
+    void set_hdcache(int mat_idx, HDCache<TypeValue>* hdcache) {
+        hdcaches[mat_idx] = hdcache;
+    }
+
+    ~AMSWorkflow() {
+        for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
+            delete eoses[mat_idx];
+            delete hdcaches[mat_idx];
+            delete surrogates[mat_idx];
+        }
+        delete DB;
+    }
+
+    // -------------------------------------------------------------------------
+    // the main evaluate function of the ams workflow
+    // -------------------------------------------------------------------------
+    // todo: inputs should be const!
+    void evaluate(const int num_data,
+                  TypeValue* pDensity, TypeValue* pEnergy,          // inputs
+                  TypeValue* pPressure, TypeValue* pSoundSpeed2,    // outputs
+                  TypeValue* pBulkmod, TypeValue* pTemperature,     // outputs
+                  const int mat_idx = 0) {
+
+        // we want to make this function equivalent to the eos call
+        // the only difference is "mat_idx", which is now an optional parameters
+        // we need mat_idx only to figure out which instances to use
+        auto eos = eoses[mat_idx];
+        auto hdcache = hdcaches[mat_idx];
+        auto surrogate = surrogates[mat_idx];
+
+
+        /* The allocate function always allocates on the default device. The default device
+         * can be set by calling setDefaultDataAllocator. Otherwise we can explicitly control
+         * the location of the data by calling allocate(size, AMSDevice).
+         */
+
+        bool* p_ml_acceptable = AMS::ResourceManager::allocate<bool>(num_data);
+
+
+        // -------------------------------------------------------------
+        // STEP 1: call the hdcache to look at input uncertainties
+        // to decide if making a ML inference makes sense
+        // -------------------------------------------------------------
+        // ideally, we should do step 1 and step 2 async!
+        if (hdcache != nullptr) {
+            CALIPER(CALI_MARK_BEGIN("UQ_MODULE");)
+            hdcache->print();
+            hdcache->evaluate(num_data, {pDensity, pEnergy}, p_ml_acceptable);
+            CALIPER(CALI_MARK_END("UQ_MODULE");)
+        }
+
+        // -------------------------------------------------------------
+        // STEP 2: let's call surrogate for everything
+        // ideally, we should do step 1 and step 2 async!
+        // -------------------------------------------------------------
+
+        /*
+         At this point I am puzzled with how allocations should be done
+         in regards to packing. The worst case scenario and simlest policy
+         would require "length" *("Num Input Vectors" + "Num Output Vectors" + 1).
+         This can be fine in the case of CPU execution. It is definetely too high
+         for GPU execution. I will start a partioning scheme that limits the memory
+         usage to a user defined size "PARTITION_SIZE". Setting the size to length
+         should operate as the worst case scenario.
+        */
+
+        int partitionElements = data_handler::computePartitionSize(2, 4);
+
+        /*
+         The way partioning is working now we can have "inbalance" across
+         iterations. As we only check the "uq" vector for the next
+         partionElements. Thus, the vectors will be filled in up to that size.
+         However, most times the vector will be half-empty.
+        */
+        for (int pId = 0; pId < num_data; pId += partitionElements) {
+
+            // Pointer values which store data values
+            // to be computed using the eos function.
+            const int elements = std::min(partitionElements, num_data - pId);
+
+            TypeValue *packed_density = AMS::ResourceManager::allocate<TypeValue>(elements);
+            TypeValue *packed_energy = AMS::ResourceManager::allocate<TypeValue>(elements);
+            TypeValue *packed_pressure = AMS::ResourceManager::allocate<TypeValue>(elements);
+            TypeValue *packed_soundspeed2 = AMS::ResourceManager::allocate<TypeValue>(elements);
+            TypeValue *packed_bulkmod = AMS::ResourceManager::allocate<TypeValue>(elements);
+            TypeValue *packed_temperature = AMS::ResourceManager::allocate<TypeValue>(elements);
+
+            std::vector<TypeValue*> sparse_inputs({&pDensity[pId], &pEnergy[pId]});
+            std::vector<TypeValue*> sparse_outputs({&pPressure[pId], &pSoundSpeed2[pId],
+                                                    &pBulkmod[pId], &pTemperature[pId]});
+
+            std::vector<TypeValue*> packed_inputs({packed_density, packed_energy});
+            std::vector<TypeValue*> packed_outputs({packed_pressure, packed_soundspeed2,
+                                                    packed_bulkmod, packed_temperature});
+
+            bool* predicate = &p_ml_acceptable[pId];
+
+            if (surrogate != nullptr) {
+                // STEP 2:
+                // let's call surrogate for everything
+                /*
+                 One of the benefits of the packing is that we indirectly limit the size
+                 of the model. As it will perform inference on up to "elements" points.
+                 Thus, we indirectly control the maximum memory of the model.
+                */
+                CALIPER(CALI_MARK_BEGIN("SURROGATE");)
+                surrogate->Eval(elements, sparse_inputs, sparse_outputs);
+                CALIPER(CALI_MARK_END("SURROGATE");)
+
+#ifdef __SURROGATE_DEBUG__
+                // TODO: I will revisit the RMSE later. We need to compute it only
+                // for point which we have low uncertainty.
+                eoses[mat_idx]->computeRMSE(num_elems_for_mat * num_qpts, &d_dense_density(0, 0),
+                                            &d_dense_energy(0, 0), &d_dense_pressure(0, 0),
+                                            &d_dense_soundspeed2(0, 0), &d_dense_bulkmod(0, 0),
+                                            &d_dense_temperature(0, 0));
+#endif
+            }
+
+            // Here we pack. ""
+            const long packedElements =
+                data_handler::pack(predicate, elements, sparse_inputs, packed_inputs);
+
+            std::cout << std::setprecision(2)
+                      << "Physis Computed elements / Surrogate computed elements "
+                         "(Fraction) ["
+                      << packedElements << "/" << elements - packedElements << " ("
+                      << static_cast<double>(packedElements) / static_cast<double>(elements)
+                      << ")]\n";
+
+            // -------------------------------------------------------------
+            // STEP 3: call physics module only where d_dense_need_phys = true
+            CALIPER(CALI_MARK_BEGIN("PHYSICS MODULE");)
+            eos->Eval(packedElements,
+                      packed_energy, packed_density,             // inputs
+                      packed_pressure, packed_soundspeed2,       // outputs
+                      packed_bulkmod, packed_temperature);       // outputs
+            CALIPER(CALI_MARK_END("PHYSICS MODULE");)
+
+#ifdef __ENABLE_DB__
+            // STEP 3b:
+            // for d_dense_uq = False we store into DB.
+            CALIPER(CALI_MARK_BEGIN("DBSTORE");)
+            inputs = {packed_energy, packed_density};
+            outputs = {packed_pressure, packed_soundspeed2, packed_bulkmod, packed_temperature};
+            DB->Store(packedElements, 2, 4, inputs, outputs);
+            CALIPER(CALI_MARK_END("DBSTORE");)
+#endif
+
+            data_handler::unpack(predicate, elements, packed_outputs, sparse_outputs);
+
+            // Deallocate temporal data
+            AMS::ResourceManager::deallocate(packed_density);
+            AMS::ResourceManager::deallocate(packed_energy);
+            AMS::ResourceManager::deallocate(packed_pressure);
+            AMS::ResourceManager::deallocate(packed_soundspeed2);
+            AMS::ResourceManager::deallocate(packed_bulkmod);
+            AMS::ResourceManager::deallocate(packed_temperature);
+        }
+        AMS::ResourceManager::deallocate(p_ml_acceptable);
+    }
+};
+
+#endif
