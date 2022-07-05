@@ -23,7 +23,7 @@ class SurrogateModel {
         std::is_floating_point<ModelDataType>::value,
         "HDCache supports floating-point values (floats, doubles, or long doubles) only!");
 
-    using data_handler = ams::DataHandlerModelDataType>;  // utils to handle float data
+    using data_handler = ams::DataHandler<ModelDataType>;  // utils to handle float data
 
     string model_path;
     bool is_cpu;
@@ -134,7 +134,7 @@ class SurrogateModel {
         }
 
         for (int i = 0; i < num_out; i++) {
-            ams::DataHandlerT>::cast_from_typevalue(num_elements, outputs[i], coutputs[i]);
+            ams::DataHandler<T>::cast_from_typevalue(num_elements, outputs[i], coutputs[i]);
             delete[] coutputs[i];
         }
     }

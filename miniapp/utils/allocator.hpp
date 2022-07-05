@@ -53,8 +53,9 @@ bool is_data_on_device(T* data) {
 
 #else
 class ResourceManager {
-
+public:
     typedef enum location { UNKNOWN = 0, HOST = 1, DEVICE = 2 } ResourceType;
+private:
     static ResourceType default_resource;
 
 public:

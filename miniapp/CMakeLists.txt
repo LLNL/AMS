@@ -18,7 +18,7 @@ if (WITH_CUDA)
     set_source_files_properties(miniapp_lib.cpp PROPERTIES LANGUAGE CUDA)
     set_source_files_properties(miniapp_exe.cpp PROPERTIES LANGUAGE CUDA)
     set_source_files_properties(miniapp_lib.cpp PROPERTIES COMPILE_FLAGS "--expt-extended-lambda")
-    set_source_files_properties(miniapp_exe.cpp PROPERTIES COMPILER_FLAGS "--expt-extended-lambda")
+    set_source_files_properties(miniapp_exe.cpp PROPERTIES COMPILE_FLAGS "--expt-extended-lambda")
 endif()
 
 #link_directories(${CMAKE_CURRENT_BINARY_DIR})

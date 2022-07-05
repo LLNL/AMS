@@ -8,7 +8,7 @@
 
 #include <iostream>
 
-#include "wf/utilities.hpp"
+#include "utils/allocator.hpp"
 
 //#include <stdio.h>
 //#include <stdlib.h>
@@ -208,10 +208,9 @@ __global__ void compactK(T** d_input, T** d_output, const bool* predicates, cons
 template <typename T>
 int compact(T** sparse, T** dense, const bool* dPredicate, const size_t length, int dims,
             int blockSize, bool isReverse = false) {
-    auto GPU = AMS::utilities::AMSDevice::DEVICE;
     int numBlocks = divup(length, blockSize);
-    int* d_BlocksCount = static_cast<int*>(AMS::utilities::allocate(numBlocks * sizeof(int), GPU));
-    int* d_BlocksOffset = static_cast<int*>(AMS::utilities::allocate(numBlocks * sizeof(int), GPU));
+    int* d_BlocksCount = ams::ResourceManager::allocate<int>(numBlocks); 
+    int* d_BlocksOffset = ams::ResourceManager::allocate<int>(numBlocks);
     thrust::device_ptr<int> thrustPrt_bCount(d_BlocksCount);
     thrust::device_ptr<int> thrustPrt_bOffset(d_BlocksOffset);
 
@@ -228,8 +227,8 @@ int compact(T** sparse, T** dense, const bool* dPredicate, const size_t length, 
     // determine number of elements in the compacted list
     int compact_length = thrustPrt_bOffset[numBlocks - 1] + thrustPrt_bCount[numBlocks - 1];
 
-    AMS::utilities::deallocate(d_BlocksCount, GPU);
-    AMS::utilities::deallocate(d_BlocksOffset, GPU);
+    ams::ResourceManager::deallocate(d_BlocksCount, ams::ResourceManager::ResourceType::DEVICE);
+    ams::ResourceManager::deallocate(d_BlocksOffset, ams::ResourceManager::ResourceType::DEVICE);
 
     return compact_length;
 }
@@ -259,8 +258,7 @@ void cuda_rand_init(bool* predicate, const size_t length, T threshold) {
     const int BS = 128;
     int numBlocks = divup(TS, BS);
     if (!dev_random) {
-        dev_random =
-            static_cast<curandState*>(AMS::utilities::allocate(sizeof(curandState) * 4096));
+        dev_random = ams::ResourceManager::allocate<curandState>(4096);
         srand_dev<<<numBlocks, BS>>>(dev_random, TS);
     }
 

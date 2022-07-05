@@ -6,7 +6,7 @@
 #include <iostream>
 
 #ifdef __ENABLE_CUDA__
-#include "cuda_utils.cuh"
+#include "utils_cuda.cuh"
 #endif
 
 namespace ams {
