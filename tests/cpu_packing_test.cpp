@@ -2,11 +2,10 @@
 #include <iostream>
 #include <umpire/Umpire.hpp>
 #include <vector>
-#include "wf/utilities.hpp"
-#include "utils/data_handler.hpp"
+#include "utils/allocator.hpp"
+#include "utils/utils_data.hpp"
 
 #define SIZE (32*1024 +3)
-using namespace AMS::utilities;
 
 void initPredicate(bool *ptr, double *data, int size){
   for (int i = 0 ; i < size  ; i++){
@@ -34,10 +33,11 @@ int verify(bool *pred, double *d1, double *d2, int size){
 }
 
 int main(int argc, char* argv[]) {
+    using namespace ams;
     using data_handler = DataHandler<double>;
     auto& rm = umpire::ResourceManager::getInstance();
-    auto host_alloc_name = AMS::utilities::getHostAllocatorName();
-    auto device_alloc_name = AMS::utilities::getDeviceAllocatorName();
+    auto host_alloc_name = ResourceManager::getHostAllocatorName();
+    auto device_alloc_name = ResourceManager::getDeviceAllocatorName();
     const size_t size = SIZE;
     int use_reindex  = std::atoi(argv[1]);
 
@@ -45,12 +45,11 @@ int main(int argc, char* argv[]) {
     rm.makeAllocator<umpire::strategy::QuickPool, true>(device_alloc_name,
                                                         rm.getAllocator("DEVICE"));
     
-    bool* predicate = static_cast<bool*>(
-            AMS::utilities::allocate(sizeof(bool) * SIZE));
-    double* dense = static_cast<double*>(AMS::utilities::allocate(sizeof(double)*SIZE));
-    double* sparse = static_cast<double*>(AMS::utilities::allocate(sizeof(double)*SIZE));
-    double* rsparse = static_cast<double*>(AMS::utilities::allocate(sizeof(double)*SIZE));
-    int* reindex = static_cast<int*>(AMS::utilities::allocate(sizeof(int)*SIZE));
+    bool* predicate = ResourceManager::allocate<bool>(SIZE);
+    double* dense = ResourceManager::allocate<double>(SIZE);
+    double* sparse = ResourceManager::allocate<double>(SIZE);
+    double* rsparse = ResourceManager::allocate<double>(SIZE);
+    int* reindex = ResourceManager::allocate<int>(SIZE);
 
     initPredicate(predicate, sparse, SIZE);
     std::vector<double *> s_data({sparse});
@@ -83,11 +82,11 @@ int main(int argc, char* argv[]) {
       return 1;
     }
 
-    deallocate(predicate);
-    deallocate(dense);
-    deallocate(sparse);
-    deallocate(rsparse);
-    deallocate(reindex);
+    ResourceManager::deallocate(predicate);
+    ResourceManager::deallocate(dense);
+    ResourceManager::deallocate(sparse);
+    ResourceManager::deallocate(rsparse);
+    ResourceManager::deallocate(reindex);
 
     return 0;
 }

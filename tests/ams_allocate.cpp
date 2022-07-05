@@ -1,81 +1,77 @@
 #include <cstring>
 #include <iostream>
 #include <umpire/Umpire.hpp>
-#include "wf/utilities.hpp"
+#include "utils/allocator.hpp"
 
-using namespace AMS::utilities;
 
 int main(int argc, char* argv[]) {
+    using namespace ams;
     auto& rm = umpire::ResourceManager::getInstance();
-    auto host_alloc_name = AMS::utilities::getHostAllocatorName();
-    auto device_alloc_name = AMS::utilities::getDeviceAllocatorName();
+    auto host_alloc_name = ams::ResourceManager::getHostAllocatorName().c_str();
+    auto device_alloc_name = ams::ResourceManager::getDeviceAllocatorName().c_str();
 
-    rm.makeAllocator<umpire::strategy::QuickPool, true>(host_alloc_name, rm.getAllocator("HOST"));
-    rm.makeAllocator<umpire::strategy::QuickPool, true>(device_alloc_name,
-                                                        rm.getAllocator("DEVICE"));
-
+    
     if (strcmp(argv[1], "device") == 0) {
+        ams::ResourceManager::setup(1);
         std::cout << "Starting allocation[Done]\n";
-        double* data = static_cast<double*>(
-            AMS::utilities::allocate(sizeof(double), AMSDevice::DEVICE));
+        double* data = 
+            ams::ResourceManager::allocate<double>(1, ResourceManager::ResourceType::DEVICE);
         auto found_allocator = rm.getAllocator(data);
-        if (strcmp(getDeviceAllocatorName(), found_allocator.getName().data()) != 0) {
-            std::cout << "Device Allocator Name" << getDeviceAllocatorName() << "Actual Allocation "
+        if (strcmp(ResourceManager::getDeviceAllocatorName().c_str(), found_allocator.getName().data()) != 0) {
+            std::cout << "Device Allocator Name" << ResourceManager::getDeviceAllocatorName() << "Actual Allocation "
                       << found_allocator.getName() << "\n";
             return 1;
         }
         std::cout << "Explicit device allocation[Done]\n";
         
-        deallocate(data, AMSDevice::DEVICE);
+        ResourceManager::deallocate(data, ResourceManager::ResourceType::DEVICE);
         std::cout << "Explicit device de-allocation[Done]\n";
 
-        setDefaultDataAllocator(AMSDevice::DEVICE);
+        ResourceManager::setDefaultDataAllocator(ResourceManager::ResourceType::DEVICE);
 
-        if ( getDefaultDataAllocator() != AMSDevice::DEVICE ){
+        if ( ResourceManager::getDefaultDataAllocator() != ResourceManager::ResourceType::DEVICE ){
           std::cout<<"Default allocator not set correctly\n"; 
           return 2;
         }
         std::cout << "Set default allocator to device[Done]\n";
 
-        data = static_cast<double*>(
-            AMS::utilities::allocate(sizeof(double)));
+        data = ams::ResourceManager::allocate<double>(1);
 
         found_allocator = rm.getAllocator(data);
-        if (strcmp(getDeviceAllocatorName(), found_allocator.getName().data()) != 0) {
-            std::cout << "Device Allocator Name" << getDeviceAllocatorName() << "Actual Allocation "
+        if (strcmp(ResourceManager::getDeviceAllocatorName().c_str(), found_allocator.getName().data()) != 0) {
+            std::cout << "Device Allocator Name" << ResourceManager::getDeviceAllocatorName() << "Actual Allocation "
                       << found_allocator.getName() << "\n";
             return 3;
         }
         std::cout << "Implicit device allocation [Done]\n";
     } else if (strcmp(argv[1], "host") == 1) {
+        ams::ResourceManager::setup(0);
         std::cout << "Starting allocation[Done]\n";
-        double* data = static_cast<double*>(
-            AMS::utilities::allocate(sizeof(double), AMSDevice::HOST));
+        double* data = ams::ResourceManager::allocate<double>(1, ResourceManager::ResourceType::HOST);
         auto found_allocator = rm.getAllocator(data);
-        if (strcmp(getHostAllocatorName(), found_allocator.getName().data()) != 0) {
-            std::cout << "Host Allocator Name" << getHostAllocatorName() << "Actual Allocation "
+        if (strcmp(ResourceManager::getHostAllocatorName().c_str(), found_allocator.getName().data()) != 0) {
+            std::cout << "Host Allocator Name" << ResourceManager::getHostAllocatorName() << "Actual Allocation "
                       << found_allocator.getName() << "\n";
             return 1;
         }
         std::cout << "Explicit device allocation[Done]\n";
         
-        deallocate(data, AMSDevice::HOST);
+        ResourceManager::deallocate(data, ResourceManager::ResourceType::HOST);
         std::cout << "Explicit device de-allocation[Done]\n";
 
-        setDefaultDataAllocator(AMSDevice::HOST);
+        ResourceManager::setDefaultDataAllocator(ResourceManager::ResourceType::HOST);
 
-        if ( getDefaultDataAllocator() != AMSDevice::HOST ){
+        if ( ResourceManager::getDefaultDataAllocator() != ResourceManager::ResourceType::HOST ){
           std::cout<<"Default allocator not set correctly\n"; 
           return 2;
         }
         std::cout << "Set default allocator to device[Done]\n";
 
-        data = static_cast<double*>(
-            AMS::utilities::allocate(sizeof(double)));
+        data = ams::ResourceManager::allocate<double>(1);
 
         found_allocator = rm.getAllocator(data);
-        if (strcmp(getHostAllocatorName(), found_allocator.getName().data()) != 0) {
-            std::cout << "Host Allocator Name" << getHostAllocatorName() << "Actual Allocation "
+        if (strcmp(ResourceManager::getHostAllocatorName().c_str(), found_allocator.getName().data()) != 0) {
+            std::cout << "Host Allocator Name" << ResourceManager::getHostAllocatorName() << "Actual Allocation "
                       << found_allocator.getName() << "\n";
             return 3;
         }

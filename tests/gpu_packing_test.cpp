@@ -2,12 +2,10 @@
 #include <iostream>
 #include <umpire/Umpire.hpp>
 #include <vector>
-#include "wf/utilities.hpp"
-#include "utils/data_handler.hpp"
+#include "utils/allocator.hpp"
+#include "utils/utils_data.hpp"
 
 #define SIZE (32*1024 +3)
-
-using namespace AMS::utilities;
 
 void initPredicate(bool *ptr, double *data, int size){
   for (int i = 0 ; i < size  ; i++){
@@ -36,32 +34,32 @@ int verify(bool *pred, double *d1, double *d2, int size){
 }
 
 int main(int argc, char* argv[]) {
+    using namespace ams;
     using data_handler = DataHandler<double>;
     auto& rm = umpire::ResourceManager::getInstance();
-    auto host_alloc_name = AMS::utilities::getHostAllocatorName();
-    auto device_alloc_name = AMS::utilities::getDeviceAllocatorName();
+    auto host_alloc_name = ams::ResourceManager::getHostAllocatorName();
+    auto device_alloc_name = ams::ResourceManager::getDeviceAllocatorName();
     const size_t size = SIZE;
     int use_reindex  = std::atoi(argv[1]);
 
     rm.makeAllocator<umpire::strategy::QuickPool, true>(host_alloc_name, rm.getAllocator("HOST"));
     rm.makeAllocator<umpire::strategy::QuickPool, true>(device_alloc_name,
                                                         rm.getAllocator("DEVICE"));
-    setDefaultDataAllocator(AMSDevice::DEVICE);
+    ResourceManager::setDefaultDataAllocator(ResourceManager::ResourceType::DEVICE);
 
-    bool* h_predicate = static_cast<bool*>(
-            AMS::utilities::allocate(sizeof(bool) * SIZE, AMSDevice::HOST));
-    double* h_dense = static_cast<double*>(AMS::utilities::allocate(sizeof(double)*SIZE, AMSDevice::HOST));
-    double* h_sparse = static_cast<double*>(AMS::utilities::allocate(sizeof(double)*SIZE, AMSDevice::HOST));
-    double* h_rsparse = static_cast<double*>(AMS::utilities::allocate(sizeof(double)*SIZE, AMSDevice::HOST));
+    bool* h_predicate = 
+            ams::ResourceManager::allocate<bool>(SIZE, ResourceManager::ResourceType::HOST);
+    double* h_dense = ams::ResourceManager::allocate<double>(SIZE, ResourceManager::ResourceType::HOST);
+    double* h_sparse = ams::ResourceManager::allocate<double>(SIZE, ResourceManager::ResourceType::HOST);
+    double* h_rsparse = ams::ResourceManager::allocate<double>(SIZE, ResourceManager::ResourceType::HOST);
 
     initPredicate(h_predicate, h_sparse, SIZE);
 
-    bool* predicate = static_cast<bool*>(
-            AMS::utilities::allocate(sizeof(bool) * SIZE));
-    double* dense = static_cast<double*>(AMS::utilities::allocate(sizeof(double)*SIZE));
-    double* sparse = static_cast<double*>(AMS::utilities::allocate(sizeof(double)*SIZE));
-    double* rsparse = static_cast<double*>(AMS::utilities::allocate(sizeof(double)*SIZE));
-    int* reindex = static_cast<int*>(AMS::utilities::allocate(sizeof(int)*SIZE));
+    bool* predicate = ams::ResourceManager::allocate<bool>(SIZE);
+    double* dense = ams::ResourceManager::allocate<double>(SIZE);
+    double* sparse = ams::ResourceManager::allocate<double>(SIZE);
+    double* rsparse = ams::ResourceManager::allocate<double>(SIZE);
+    int* reindex = ams::ResourceManager::allocate<int>(SIZE);
 
     rm.copy(predicate, h_predicate);
     rm.copy(sparse, h_sparse);
@@ -98,15 +96,15 @@ int main(int argc, char* argv[]) {
       return 1;
     }
 
-    deallocate(predicate);
-    deallocate(h_predicate, AMSDevice::HOST);
-    deallocate(dense);
-    deallocate(h_dense, AMSDevice::HOST);
-    deallocate(sparse);
-    deallocate(h_sparse, AMSDevice::HOST);
-    deallocate(rsparse);
-    deallocate(h_rsparse, AMSDevice::HOST);
-    deallocate(reindex);
+    ams::ResourceManager::deallocate(predicate);
+    ams::ResourceManager::deallocate(h_predicate, ResourceManager::ResourceType::HOST);
+    ams::ResourceManager::deallocate(dense);
+    ams::ResourceManager::deallocate(h_dense, ResourceManager::ResourceType::HOST);
+    ams::ResourceManager::deallocate(sparse);
+    ams::ResourceManager::deallocate(h_sparse, ResourceManager::ResourceType::HOST);
+    ams::ResourceManager::deallocate(rsparse);
+    ams::ResourceManager::deallocate(h_rsparse, ResourceManager::ResourceType::HOST);
+    ams::ResourceManager::deallocate(reindex);
 
     return 0;
 }
