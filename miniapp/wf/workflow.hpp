@@ -173,7 +173,18 @@ public:
                  Thus, we indirectly control the maximum memory of the model.
                 */
                 CALIPER(CALI_MARK_BEGIN("SURROGATE");)
+                #ifdef __ENABLE_TORCH__
                 surrogate->Eval(elements, sparse_inputs, sparse_outputs);
+                #else
+                    // Becayse we dont have py-torch we call the actual physics code. 
+                    // This helps out debugging. Disabling torch 
+                    // should result to identical 
+                    // results.
+                    eos->Eval(elements,
+                      &pEnergy[pId], &pDensity[pId],             // inputs
+                      &pPressure[pId], &pSoundSpeed2[pId],       // outputs
+                      &pBulkmod[pId], &pTemperature[pId]);        // outputs
+                #endif
                 CALIPER(CALI_MARK_END("SURROGATE");)
 
 #ifdef __SURROGATE_DEBUG__
