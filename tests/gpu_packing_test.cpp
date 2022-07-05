@@ -37,15 +37,10 @@ int main(int argc, char* argv[]) {
     using namespace ams;
     using data_handler = DataHandler<double>;
     auto& rm = umpire::ResourceManager::getInstance();
-    auto host_alloc_name = ams::ResourceManager::getHostAllocatorName();
-    auto device_alloc_name = ams::ResourceManager::getDeviceAllocatorName();
     const size_t size = SIZE;
     int use_reindex  = std::atoi(argv[1]);
 
-    rm.makeAllocator<umpire::strategy::QuickPool, true>(host_alloc_name, rm.getAllocator("HOST"));
-    rm.makeAllocator<umpire::strategy::QuickPool, true>(device_alloc_name,
-                                                        rm.getAllocator("DEVICE"));
-    ResourceManager::setDefaultDataAllocator(ResourceManager::ResourceType::DEVICE);
+    ams::ResourceManager::setup(true);
 
     bool* h_predicate = 
             ams::ResourceManager::allocate<bool>(SIZE, ResourceManager::ResourceType::HOST);

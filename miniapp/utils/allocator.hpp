@@ -2,61 +2,21 @@
 #define __AMS_ALLOCATOR__
 
 #include <cstddef>
+
+#include "umpire/ResourceManager.hpp"
+#include "umpire/Allocator.hpp"
 #include <umpire/Umpire.hpp>
 
 #define USE_NEW_ALLOCATOR
 
 namespace ams {
 
-
-#ifndef USE_NEW_ALLOCATOR
-namespace utilities {
-
-typedef enum d_location { HOST = 0, DEVICE } AMSDevice;
-
-void setDefaultDataAllocator(AMSDevice location);
-
-AMSDevice getDefaultDataAllocator();
-
-const char* getDeviceAllocatorName();
-
-const char* getHostAllocatorName();
-
-const char* getDefaultAllocatorName();
-
-void* allocate(size_t bytes);
-void* allocate(size_t bytes, AMSDevice dev);
-
-void deallocate(void* ptr, AMSDevice dev);
-void deallocate(void* ptr);
-
-bool isDeviceExecution();
-
-
-template<typename T>
-bool is_data_on_device(T* data) {
-
-  // todo: we need to do this better! should not rely on strings,
-  // but see how Dinos is using the enums!
-  auto& rm = umpire::ResourceManager::getInstance();
-  auto found_allocator = rm.getAllocator(data);
-  auto nm = found_allocator.getName();
-
-  bool is_device = int(nm.find("device")) > 0 || int(nm.find("DEVICE")) > 0;
-
-  //std::cout << " is_data_on_device("<<data<<") = "<< is_device << " ::: " << nm
-  //          << " :: " << nm.find("host") << ", " << nm.find("HOST")
-  //          << " :: " << nm.find("device") << ", " << nm.find("DEVICE") << "\n";
-  return is_device;
-}
-}  // namespace utilities
-
-#else
 class ResourceManager {
 public:
-    typedef enum location { UNKNOWN = 0, HOST = 1, DEVICE = 2 } ResourceType;
+    typedef enum location { UNKNOWN = -1, HOST = 0, DEVICE = 1, RSEND } ResourceType;
 private:
     static ResourceType default_resource;
+    static int allocator_ids[ResourceType::RSEND];
 
 public:
     //! names for these allocations
@@ -89,8 +49,8 @@ public:
     static bool
     is_on_device(T* data) {
         // TODO: should find out w/o relying on strings
-        auto nm = ResourceManager::getDataAllocationName<T>(data);
-        return int(nm.find("device")) > 0 || int(nm.find("DEVICE")) > 0;
+        auto& rm = umpire::ResourceManager::getInstance();
+        return rm.getAllocator(data).getId() == allocator_ids[ResourceType::DEVICE]; 
     }
 
 
@@ -98,26 +58,17 @@ public:
     template<typename T>
     static T*
     allocate(size_t nvalues, ResourceType dev = default_resource) {
-
-        const std::string &alloc_name = (dev == HOST) ?
-                    getHostAllocatorName() : getDeviceAllocatorName();
-
-        auto alloc = umpire::ResourceManager::getInstance().getAllocator(alloc_name);
+        auto alloc = umpire::ResourceManager::getInstance().getAllocator(allocator_ids[dev]);
         return static_cast<T*>(alloc.allocate(nvalues * sizeof(T)));
     }
 
     template<typename T>
     static void
     deallocate(T* data, ResourceType dev = default_resource) {
-
-        const std::string &alloc_name = (dev == HOST) ?
-                    getHostAllocatorName() : getDeviceAllocatorName();
-
-        auto alloc = umpire::ResourceManager::getInstance().getAllocator(alloc_name);
+        auto alloc = umpire::ResourceManager::getInstance().getAllocator(allocator_ids[dev]);
         alloc.deallocate(data);
     }
 };
-#endif
 
 }  // namespace AMS
 

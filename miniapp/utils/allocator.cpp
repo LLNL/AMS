@@ -3,11 +3,9 @@
 
 namespace ams {
 
-
-#ifdef USE_NEW_ALLOCATOR
-
 // default allocator
 ResourceManager::ResourceType ResourceManager::default_resource = ResourceManager::ResourceType::HOST;
+int ResourceManager::allocator_ids[ResourceType::RSEND] = {-1, -1};
 
 const std::string
 ResourceManager::getDeviceAllocatorName() {  return "mmp-device-quickpool"; }
@@ -42,11 +40,13 @@ ResourceManager::setup(bool use_device) {
     auto host_alloc_name = ResourceManager::getHostAllocatorName();
     auto device_alloc_name = ResourceManager::getDeviceAllocatorName();
 
-
     auto& rm = umpire::ResourceManager::getInstance();
-    rm.makeAllocator<umpire::strategy::QuickPool, true>(host_alloc_name, rm.getAllocator("HOST"));
+    auto h_alloc = rm.makeAllocator<umpire::strategy::QuickPool, true>(host_alloc_name, rm.getAllocator("HOST"));
+    allocator_ids[ResourceType::HOST] = h_alloc.getId();
+ 
     if (use_device) {
-        rm.makeAllocator<umpire::strategy::QuickPool, true>(device_alloc_name, rm.getAllocator("DEVICE"));
+        auto d_alloc = rm.makeAllocator<umpire::strategy::QuickPool, true>(device_alloc_name, rm.getAllocator("DEVICE"));
+        allocator_ids[ResourceType::DEVICE] = d_alloc.getId();
     }
 
     // set the default
@@ -59,93 +59,4 @@ ResourceManager::setup(bool use_device) {
         std::cout << "  default allocator = (" << host_alloc_name << ")\n";
     }
 }
-#endif
-
-
-
-
-
-
-#ifndef USE_NEW_ALLOCATOR
-namespace utilities {
-
-AMSDevice defaultDloc = AMSDevice::HOST;
-
-void setDefaultDataAllocator(AMSDevice location) {
-    defaultDloc = location;
-}
-
-AMSDevice getDefaultDataAllocator() {
-    return defaultDloc;
-}
-
-const char* getDeviceAllocatorName() {
-    return "mmp-device-quickpool";
-}
-
-const char* getHostAllocatorName() {
-    return "mmp-host-quickpool";
-}
-
-void deallocate(void* ptr) {
-    static auto& rm = umpire::ResourceManager::getInstance();
-    if (defaultDloc == HOST) {
-        static auto cpuAllocator = rm.getAllocator(getHostAllocatorName());
-        cpuAllocator.deallocate(ptr);
-    } else if (defaultDloc == DEVICE) {
-        static auto deviceAllocator = rm.getAllocator(getDeviceAllocatorName());
-        deviceAllocator.deallocate(ptr);
-    }
-}
-
-void deallocate(void* ptr, AMSDevice dev) {
-    static auto& rm = umpire::ResourceManager::getInstance();
-    if (dev == HOST) {
-        static auto cpuAllocator = rm.getAllocator(getHostAllocatorName());
-        cpuAllocator.deallocate(ptr);
-    } else if (dev == DEVICE) {
-        static auto deviceAllocator = rm.getAllocator(getDeviceAllocatorName());
-        deviceAllocator.deallocate(ptr);
-    }
-}
-
-void* allocate(size_t bytes) {
-    static auto& rm = umpire::ResourceManager::getInstance();
-    if (defaultDloc == HOST) {
-        static auto cpuAllocator = rm.getAllocator(getHostAllocatorName());
-        return cpuAllocator.allocate(bytes);
-    } else if (defaultDloc == DEVICE) {
-        static auto deviceAllocator = rm.getAllocator(getDeviceAllocatorName());
-        return deviceAllocator.allocate(bytes);
-    }
-    return nullptr;
-}
-
-void* allocate(size_t bytes, AMSDevice dev) {
-    static auto& rm = umpire::ResourceManager::getInstance();
-    if (dev == HOST) {
-        static auto cpuAllocator = rm.getAllocator(getHostAllocatorName());
-        return cpuAllocator.allocate(bytes);
-    } else if (dev == DEVICE) {
-        static auto deviceAllocator = rm.getAllocator(getDeviceAllocatorName());
-        return deviceAllocator.allocate(bytes);
-    }
-    return nullptr;
-}
-
-const char* getDefaultAllocatorName() {
-    switch (defaultDloc) {
-        case AMSDevice::HOST:
-            return getHostAllocatorName();
-        case AMSDevice::DEVICE:
-            return getDeviceAllocatorName();
-    }
-    return "unknown";
-}
-
-bool isDeviceExecution() {
-    return defaultDloc == DEVICE;
-}
-}  // namespace utilities
-#endif
 }  // namespace AMS
