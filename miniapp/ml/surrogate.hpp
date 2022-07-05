@@ -35,6 +35,8 @@ private:
     // -------------------------------------------------------------------------
     torch::jit::script::Module module;
     c10::TensorOptions tensorOptions;
+#endif
+
 
 
     // -------------------------------------------------------------------------
@@ -87,6 +89,8 @@ private:
             exit(-1);
         }
     }
+#endif //__ENABLE_TORCH__
+
 
 
     template <typename T, std::enable_if_t<std::is_same<T, double>::value>* = nullptr>
@@ -116,6 +120,7 @@ private:
 
         std::cout << input.sizes() << " --> " << output.sizes() << "\n";
         tensorToArray(output, num_elements, num_out, outputs);
+#endif
     }
 
 #else
@@ -167,22 +172,32 @@ public:
               std::enable_if_t<std::is_same<T, double>::value>* = nullptr>
     SurrogateModel(const char* model_path, bool is_cpu = true)
         : model_path(model_path), is_cpu(is_cpu) {
+#ifdef __ENABLE_TORCH__
         std::cout << "Using double precision models\n";
         if (is_cpu)
             loadModel(torch::kFloat64, torch::Device("cpu"));
         else
             loadModel(torch::kFloat64, torch::Device("cuda"));
+#else
+        std::cerr << "fatal: not built with PyTorch" << std::endl;
+        exit(1);
+#endif
     }
 
     template <typename T = TypeInValue,
               std::enable_if_t<std::is_same<T, float>::value>* = nullptr>
     SurrogateModel(const char* model_path, bool is_cpu = true)
         : model_path(model_path), is_cpu(is_cpu) {
+#ifdef __ENABLE_TORCH__
         std::cout << "Using single precision models\n";
         if (is_cpu)
             loadModel(torch::kFloat32, torch::Device("cpu"));
         else
             loadModel(torch::kFloat32, torch::Device("cuda"));
+#else
+        std::cerr << "fatal: not built with PyTorch" << std::endl;
+        exit(1);
+#endif
     }
 
     template <typename T, std::enable_if_t<std::is_same<TypeInValue, T>::value>* = nullptr>

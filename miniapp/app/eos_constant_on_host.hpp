@@ -93,8 +93,9 @@ class ConstantEOSOnHost : public EOS {
         }
 
         for (int i = 0; i < length; ++i) {
-            const double density = h_density[i];
-            const double energy = h_energy[i];
+            // Unused
+            //const double density = h_density[i];
+            //const double energy = h_energy[i];
             if (filter && h_filter[i]) {
                 continue;
             }
