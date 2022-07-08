@@ -24,9 +24,8 @@
 #endif
 
 #include "hdcache.hpp"
-#include "utils/data_handler.hpp"
+#include "utils/utils_data.hpp"
 #include "utils/allocator.hpp"
-#include "umpire/ResourceManager.hpp"
 
 //! ----------------------------------------------------------------------------
 //! An implementation of FAISS-based HDCache
@@ -36,7 +35,7 @@ class HDCache_Faiss : public HDCache<TypeInValue> {
 
     using TypeIndex = faiss::Index::idx_t;          // 64-bit int
     using TypeValue = float;                        // faiss uses floats
-    using data_handler = DataHandler<TypeValue>;    // utils to handle float data
+    using data_handler = ams::DataHandler<TypeValue>;    // utils to handle float data
 
     faiss::Index *index;  // old
     const char* index_key = "IVF4096,Flat";
@@ -254,7 +253,7 @@ private:
         static const TypeValue ook = 1.0 / TypeValue(knbrs);
 
 
-        const bool data_on_device = AMS::utilities::is_data_on_device(data);
+        const bool data_on_device = ams::ResourceManager::is_on_device(data);
 
         // index on host
         if (!this->m_use_device) {

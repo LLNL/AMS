@@ -96,7 +96,7 @@ private:
     }
 
     template <typename T, std::enable_if_t<std::is_same<T, float>::value>* = nullptr>
-    inline void _load(const std::string &model_path, const std::string &device) {
+    inline void _load(const std::string &model_path, const std::string &device_name) {
         std::cout << "Loading torch model ("<<model_path << ") at single precision\n";
         _load_torch(model_path, torch::Device(device_name), torch::kFloat32);
     }
