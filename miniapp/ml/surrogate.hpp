@@ -1,5 +1,5 @@
-#ifndef _SURROGATE_EOS_HPP_
-#define _SURROGATE_EOS_HPP_
+#ifndef __AMS_SURROGATE_HPP__
+#define __AMS_SURROGATE_HPP__
 
 #include <string>
 
@@ -7,30 +7,39 @@
 #include <torch/script.h>  // One-stop header.
 #endif
 
-using namespace std;
-
 #include "app/eos.hpp"
 #include "app/eos_idealgas.hpp"
 #include "utils/utils_data.hpp"
 
-#ifdef __ENABLE_TORCH__
 
+//! ----------------------------------------------------------------------------
 //! An implementation for a surrogate model
+//! ----------------------------------------------------------------------------
 template <typename TypeInValue>
 class SurrogateModel {
 
     static_assert(
         std::is_floating_point<TypeInValue>::value,
-        "HDCache supports floating-point values (floats, doubles, or long doubles) only!");
+        "SurrogateModel supports floating-point values (floats, doubles, or long doubles) only!");
 
     using data_handler = ams::DataHandler<TypeInValue>;  // utils to handle float data
 
-    string model_path;
-    bool is_cpu;
+private:
+    const std::string model_path;
+    const bool is_cpu;
+
+
+#ifdef __ENABLE_TORCH__
+    // -------------------------------------------------------------------------
+    // variables to store the torch model
+    // -------------------------------------------------------------------------
     torch::jit::script::Module module;
     c10::TensorOptions tensorOptions;
 
-   private:
+
+    // -------------------------------------------------------------------------
+    // conversion to and from torch
+    // -------------------------------------------------------------------------
     inline at::Tensor arrayToTensor(long numRows, long numCols, TypeInValue** array) {
         c10::SmallVector<at::Tensor, 8> Tensors;
         for (int i = 0; i < numCols; i++) {
@@ -63,29 +72,97 @@ class SurrogateModel {
         }
     }
 
-    void loadModel(at::ScalarType dType, c10::Device&& device) {
+
+    // -------------------------------------------------------------------------
+    // loading a surrogate model!
+    // -------------------------------------------------------------------------
+    void _load_torch(const std::string &model_path, c10::Device&& device, at::ScalarType dType) {
         try {
-            std::cout << "File Name :" << model_path << "\n";
             module = torch::jit::load(model_path);
             module.to(device);
             module.to(dType);
             tensorOptions = torch::TensorOptions().dtype(dType).device(device);
         } catch (const c10::Error& e) {
-            std::cerr << "error loading the model\n";
+            std::cerr << "Error loading torch model\n";
             exit(-1);
         }
     }
 
-    inline void _evaluate(long num_elements, long num_in, size_t num_out, TypeInValue** inputs,
-                          TypeInValue** outputs) {
+
+    template <typename T, std::enable_if_t<std::is_same<T, double>::value>* = nullptr>
+    inline void _load(const std::string &model_path, const std::string &device_name) {
+        std::cout << "Loading torch model ("<<model_path << ") at double precision\n";
+        _load_torch(model_path, torch::Device(device_name), torch::kFloat64);
+    }
+
+    template <typename T, std::enable_if_t<std::is_same<T, float>::value>* = nullptr>
+    inline void _load(const std::string &model_path, const std::string &device) {
+        std::cout << "Loading torch model ("<<model_path << ") at single precision\n";
+        _load_torch(model_path, torch::Device(device_name), torch::kFloat32);
+    }
+
+
+    // -------------------------------------------------------------------------
+    // evaluate a torch model
+    // -------------------------------------------------------------------------
+    inline void _evaluate(long num_elements, long num_in, size_t num_out,
+                          TypeInValue** inputs, TypeInValue** outputs) {
+
+        std::cout << "Evaluating surrogate model: ";
+        fflush(stdout);
+
         auto input = arrayToTensor(num_elements, num_in, inputs);
-        std::cout << "Shape I:" << input.sizes() << "\n";
         at::Tensor output = module.forward({input}).toTensor();
-        std::cout << "Shape O:" << output.sizes() << "\n";
+
+        std::cout << input.sizes() << " --> " << output.sizes() << "\n";
         tensorToArray(output, num_elements, num_out, outputs);
     }
 
-   public:
+#else
+    template <typename T>
+    inline void _load(const std::string &model_path, const std::string &device_name) {}
+
+    inline void _evaluate(long num_elements, long num_in, size_t num_out,
+                          TypeInValue** inputs, TypeInValue** outputs) {}
+
+#endif
+
+    // -------------------------------------------------------------------------
+    // public interface
+    // -------------------------------------------------------------------------
+public:
+
+    SurrogateModel(const char* model_path, bool is_cpu = true)
+        : model_path(model_path), is_cpu(is_cpu) {
+
+        if (is_cpu)   _load<TypeInValue>(model_path, "cpu");
+        else          _load<TypeInValue>(model_path, "cuda");
+    }
+
+    inline void evaluate(long num_elements, long num_in, size_t num_out,
+                         TypeInValue** inputs, TypeInValue** outputs) {
+        _evaluate(num_elements, num_in, num_out, inputs, outputs);
+    }
+
+    inline void evaluate(long num_elements,
+                         std::vector<TypeInValue*> inputs,
+                         std::vector<TypeInValue*> outputs) {
+        _evaluate(num_elements, inputs.size(), outputs.size(),
+                  static_cast<TypeInValue**>(inputs.data()),
+                  static_cast<TypeInValue**>(outputs.data()));
+    }
+
+
+#if 0
+    // disabled by Harsh on July 08, 2022
+    // --------- these are not needed, because
+    // because once the application instantiates the surrogate model object
+    // with TypeInValue, it should not be allowed to make queries in a different data type
+    // this may cause inconsistencies later because based on the type, we decide to
+    // cast the model into the appropriate type so we dont have to copy data back and forth
+    // we still give the application the choice of data type, but take away the flexibility
+    // to change the type to avoid abuse of data movement
+
     template <typename T = TypeInValue,
               std::enable_if_t<std::is_same<T, double>::value>* = nullptr>
     SurrogateModel(const char* model_path, bool is_cpu = true)
@@ -113,6 +190,8 @@ class SurrogateModel {
         _evaluate(num_elements, num_in, num_out, inputs, outputs);
     }
 
+    // similarly, this function is not needed
+    // we require the application to pass in the same data type
     template <typename T, std::enable_if_t<!std::is_same<TypeInValue, T>::value>* = nullptr>
     void Eval(long num_elements, long num_in, size_t num_out, T** inputs, T** outputs) {
 
@@ -144,49 +223,7 @@ class SurrogateModel {
         Eval(num_elements, inputs.size(), outputs.size(), static_cast<T**>(inputs.data()),
              static_cast<T**>(outputs.data()));
     }
-};
-
-#else
-
-//! An implementation for a surrogate model
-template <typename TypeInValue>
-class SurrogateModel {
-
-    static_assert(
-        std::is_floating_point<TypeInValue>::value,
-        "HDCache supports floating-point values (floats, doubles, or long doubles) only!");
-
-    using data_handler = ams::DataHandler<TypeInValue>;  // utils to handle float data
-
-    string model_path;
-    bool is_cpu;
-
-private:
-
-public:
-    template <typename T = TypeInValue,
-              std::enable_if_t<std::is_same<T, double>::value>* = nullptr>
-    SurrogateModel(const char* model_path, bool is_cpu = true)
-        : model_path(model_path), is_cpu(is_cpu) {
-    }
-
-    template <typename T = TypeInValue,
-              std::enable_if_t<std::is_same<T, float>::value>* = nullptr>
-    SurrogateModel(const char* model_path, bool is_cpu = true)
-        : model_path(model_path), is_cpu(is_cpu) {
-    }
-
-    template <typename T, std::enable_if_t<std::is_same<TypeInValue, T>::value>* = nullptr>
-    void Eval(long num_elements, long num_in, size_t num_out, T** inputs, T** outputs) {
-    }
-
-    template <typename T, std::enable_if_t<!std::is_same<TypeInValue, T>::value>* = nullptr>
-    void Eval(long num_elements, long num_in, size_t num_out, T** inputs, T** outputs) {
-    }
-
-    template <typename T>
-    void Eval(long num_elements, std::vector<T*> inputs, std::vector<T*> outputs) {
-    }
-};
 #endif
+};
+
 #endif

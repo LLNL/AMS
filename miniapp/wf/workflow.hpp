@@ -184,7 +184,7 @@ public:
                  Thus, we indirectly control the maximum memory of the model.
                 */
                 CALIPER(CALI_MARK_BEGIN("SURROGATE");)
-                surrogate->Eval(elements, sparse_inputs, sparse_outputs);
+                surrogate->evaluate(elements, packed_inputs, packed_outputs);
                 CALIPER(CALI_MARK_END("SURROGATE");)
 
 #ifdef __SURROGATE_DEBUG__
