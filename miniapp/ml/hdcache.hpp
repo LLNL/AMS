@@ -1,5 +1,5 @@
-#ifndef __HDCACHE_HPP__
-#define __HDCACHE_HPP__
+#ifndef __AMS_HDCACHE_HPP__
+#define __AMS_HDCACHE_HPP__
 
 #include <cstdint>
 #include <cstdlib>
@@ -11,7 +11,7 @@
 //! ----------------------------------------------------------------------------
 //! An abstract definition of the HDCache class
 //! ----------------------------------------------------------------------------
-template <typename TypeInValue=double>
+template <typename TypeInValue>
 class HDCache {
 
     static_assert (std::is_floating_point<TypeInValue>::value,

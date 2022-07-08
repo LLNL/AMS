@@ -47,18 +47,19 @@ public:
     // -------------------------------------------------------------------------
     AMSWorkflow(int _num_mats) : num_mats(_num_mats) {
 
+        // setup eos
+        eoses.resize(num_mats, nullptr);
+        hdcaches.resize(num_mats, nullptr);
+        surrogates.resize(num_mats, nullptr);
+
+        // default database is null
+        DB = nullptr;
 #ifdef __ENABLE_DB__
         DB = new BaseDB("miniApp_data.txt");
         if (!DB) {
             std::cout << "Cannot create static database\n";
         }
 #endif
-
-        // setup eos
-        eoses.resize(num_mats, nullptr);
-        hdcaches.resize(num_mats, nullptr);
-        surrogates.resize(num_mats, nullptr);
-        DB = nullptr;
     }
 
     void set_eos(int mat_idx, EOS* eos) {
@@ -108,9 +109,10 @@ public:
 
         // -------------------------------------------------------------
         // STEP 1: call the hdcache to look at input uncertainties
-        // to decide if making a ML inference makes sense
+        //         to decide if making a ML inference makes sense
         // -------------------------------------------------------------
         // ideally, we should do step 1 and step 2 async!
+
         if (hdcache != nullptr) {
             CALIPER(CALI_MARK_BEGIN("UQ_MODULE");)
             hdcache->print();
@@ -164,40 +166,43 @@ public:
 
             bool* predicate = &p_ml_acceptable[pId];
 
-            if (surrogate != nullptr) {
-                // STEP 2:
-                // let's call surrogate for everything
+            // null surrogate means we should call physics module
+            if (surrogate == nullptr) {
+
+                // Because we dont have py-torch we call the actual physics code.
+                // This helps debugging. Disabling torch should give identicalresults.
+                eos->Eval(elements,
+                          &pEnergy[pId], &pDensity[pId],          // inputs
+                          &pPressure[pId], &pSoundSpeed2[pId],    // outputs
+                          &pBulkmod[pId], &pTemperature[pId]);    // outputs
+            }
+
+            else {
                 /*
                  One of the benefits of the packing is that we indirectly limit the size
                  of the model. As it will perform inference on up to "elements" points.
                  Thus, we indirectly control the maximum memory of the model.
                 */
                 CALIPER(CALI_MARK_BEGIN("SURROGATE");)
-                #ifdef __ENABLE_TORCH__
                 surrogate->Eval(elements, sparse_inputs, sparse_outputs);
-                #else
-                    // Becayse we dont have py-torch we call the actual physics code. 
-                    // This helps out debugging. Disabling torch 
-                    // should result to identical 
-                    // results.
-                    eos->Eval(elements,
-                      &pEnergy[pId], &pDensity[pId],             // inputs
-                      &pPressure[pId], &pSoundSpeed2[pId],       // outputs
-                      &pBulkmod[pId], &pTemperature[pId]);        // outputs
-                #endif
                 CALIPER(CALI_MARK_END("SURROGATE");)
 
 #ifdef __SURROGATE_DEBUG__
                 // TODO: I will revisit the RMSE later. We need to compute it only
                 // for point which we have low uncertainty.
-                eoses[mat_idx]->computeRMSE(num_elems_for_mat * num_qpts, &d_dense_density(0, 0),
-                                            &d_dense_energy(0, 0), &d_dense_pressure(0, 0),
-                                            &d_dense_soundspeed2(0, 0), &d_dense_bulkmod(0, 0),
-                                            &d_dense_temperature(0, 0));
+                eos->computeRMSE(num_elems_for_mat * num_qpts,
+                                 &d_dense_density(0, 0), &d_dense_energy(0, 0),
+                                 &d_dense_pressure(0, 0), &d_dense_soundspeed2(0, 0),
+                                 &d_dense_bulkmod(0, 0), &d_dense_temperature(0, 0));
 #endif
             }
 
-            // Here we pack. ""
+
+            // -----------------------------------------------------------------
+            // STEP 3: call physics module only where d_dense_need_phys = true
+            // -----------------------------------------------------------------
+
+            // ---- 3a: we need to pack the sparse data based on the uq flag
             const long packedElements =
                 data_handler::pack(predicate, elements, sparse_inputs, packed_inputs);
 
@@ -208,28 +213,30 @@ public:
                       << static_cast<double>(packedElements) / static_cast<double>(elements)
                       << ")]\n";
 
-            // -------------------------------------------------------------
-            // STEP 3: call physics module only where d_dense_need_phys = true
-            CALIPER(CALI_MARK_BEGIN("PHYSICS MODULE");)
-            eos->Eval(packedElements,
-                      packed_energy, packed_density,             // inputs
-                      packed_pressure, packed_soundspeed2,       // outputs
-                      packed_bulkmod, packed_temperature);       // outputs
-            CALIPER(CALI_MARK_END("PHYSICS MODULE");)
+            // ---- 3b: call the physics module and store in the dat base
+            if (packedElements > 0) {
 
-#ifdef __ENABLE_DB__
-            // STEP 3b:
-            // for d_dense_uq = False we store into DB.
-            CALIPER(CALI_MARK_BEGIN("DBSTORE");)
-            inputs = {packed_energy, packed_density};
-            outputs = {packed_pressure, packed_soundspeed2, packed_bulkmod, packed_temperature};
-            DB->Store(packedElements, 2, 4, inputs, outputs);
-            CALIPER(CALI_MARK_END("DBSTORE");)
-#endif
+                CALIPER(CALI_MARK_BEGIN("PHYSICS MODULE");)
+                eos->Eval(packedElements,
+                          packed_energy, packed_density,             // inputs
+                          packed_pressure, packed_soundspeed2,       // outputs
+                          packed_bulkmod, packed_temperature);       // outputs
+                CALIPER(CALI_MARK_END("PHYSICS MODULE");)
 
+                if (DB != nullptr) {
+                    CALIPER(CALI_MARK_BEGIN("DBSTORE");)
+                    DB->Store(packedElements, packed_inputs, packed_outputs);
+                    CALIPER(CALI_MARK_END("DBSTORE");)
+                }
+            }
+
+            // ---- 3c: unpack the data
             data_handler::unpack(predicate, elements, packed_outputs, sparse_outputs);
 
+
+            // -----------------------------------------------------------------
             // Deallocate temporal data
+            // -----------------------------------------------------------------
             ams::ResourceManager::deallocate(packed_density);
             ams::ResourceManager::deallocate(packed_energy);
             ams::ResourceManager::deallocate(packed_pressure);

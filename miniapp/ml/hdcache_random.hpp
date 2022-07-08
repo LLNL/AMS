@@ -1,5 +1,5 @@
-#ifndef __HDCACHE_RANDOM_HPP__
-#define __HDCACHE_RANDOM_HPP__
+#ifndef __AMS_HDCACHE_RANDOM_HPP__
+#define __AMS_HDCACHE_RANDOM_HPP__
 
 #include <cstdint>
 #include <vector>
@@ -12,7 +12,7 @@
 //! ----------------------------------------------------------------------------
 //! An implementation of random HDCache
 //! ----------------------------------------------------------------------------
-template <typename TypeInValue=double>
+template <typename TypeInValue>
 class HDCache_Random : public HDCache<TypeInValue> {
 
 public:

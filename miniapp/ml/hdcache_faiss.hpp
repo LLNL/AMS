@@ -1,6 +1,6 @@
 #ifdef __ENABLE_FAISS__
-#ifndef __HDCACHE_FAISS_HPP__
-#define __HDCACHE_FAISS_HPP__
+#ifndef __AMS_HDCACHE_FAISS_HPP__
+#define __AMS_HDCACHE_FAISS_HPP__
 
 #include <cstdint>
 #include <cstdlib>
@@ -15,6 +15,7 @@
 #include <faiss/index_io.h>
 #include <faiss/index_factory.h>
 #include <faiss/IndexFlat.h>
+
 #ifdef __ENABLE_CUDA__
 #include <faiss/gpu/GpuAutoTune.h>
 #include <faiss/gpu/GpuCloner.h>
@@ -30,7 +31,7 @@
 //! ----------------------------------------------------------------------------
 //! An implementation of FAISS-based HDCache
 //! ----------------------------------------------------------------------------
-template <typename TypeInValue=double>
+template <typename TypeInValue>
 class HDCache_Faiss : public HDCache<TypeInValue> {
 
     using TypeIndex = faiss::Index::idx_t;          // 64-bit int
