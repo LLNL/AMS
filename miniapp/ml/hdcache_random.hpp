@@ -24,7 +24,7 @@ public:
 
     inline void
     evaluate(const size_t ndata, const size_t d, TypeInValue *data,
-             bool *is_acceptable) {
+             bool *is_acceptable) const {
 
         static const TypeInValue acceptable_error = 0.5;
 
@@ -43,7 +43,7 @@ public:
 
     inline void
     evaluate(const size_t ndata, const std::vector<TypeInValue*> &inputs,
-             bool *is_acceptable) {
+             bool *is_acceptable) const {
 
         return evaluate(ndata, inputs.size(), nullptr, is_acceptable);
     }

@@ -12,6 +12,7 @@ using TypeValue = double;
 extern "C" void miniapp_lib(const std::string &device_name,
                             const std::string &eos_name,
                             const std::string &model_path,
+                            const std::string &hdcache_path,
                             int stop_cycle, bool pack_sparse_mats,
                             int num_mats, int num_elems, int num_qpts,
                             TypeValue *density_in, TypeValue *energy_in,

@@ -58,6 +58,16 @@ public:
         }
     }
 
+    //todo: dim = 2 is wrong!
+    HDCache_Faiss(const std::string &cache_path, uint8_t knbrs, bool use_device) :
+        HDCache<TypeInValue>(2, knbrs, use_device, std::string("faiss")) {
+
+        if (use_device) {
+          throw std::invalid_argument("FAISS on device is not functional!");
+        }
+        load_cache(cache_path);
+    }
+
     inline bool has_index() const { return index != nullptr && index->is_trained; }
     inline size_t count() const { return has_index() ? index->ntotal : 0;      }
 
@@ -161,8 +171,11 @@ public:
     //! https://github.com/facebookresearch/faiss/wiki/Faiss-on-the-GPU#passing-in-pytorch-tensors
     //! so, we should use Dino's code to linearize data into torch tensor and then pass it here
     void evaluate(const size_t ndata, const size_t d, TypeInValue *data,
-                  bool *is_acceptable) {
+                  bool *is_acceptable) const {
 
+        if (!this->has_index()) {
+            throw std::invalid_argument("HDCache does not have a valid index!");
+        }
         static const TypeInValue acceptable_error = 0.5;
 
         std::cout << "Evaluating a " << int(this->m_dim) << "-dim cache "
@@ -177,8 +190,11 @@ public:
 
     //! train on data that comes separate features (a vector of pointers)
     void evaluate(const size_t ndata, const std::vector<TypeInValue*> &inputs,
-                  bool *is_acceptable) {//const {
+                  bool *is_acceptable) const {
 
+        if (!this->has_index()) {
+            throw std::invalid_argument("HDCache does not have a valid index!");
+        }
         static const TypeInValue acceptable_error = 0.5;
 
         std::cout << "Evaluating a " << int(this->m_dim) << "-dim cache "
@@ -252,7 +268,6 @@ private:
         static const TypeValue acceptable_error = 0.5;
         static const TypeValue ook = 1.0 / TypeValue(knbrs);
 
-
         const bool data_on_device = ams::ResourceManager::is_on_device(data);
 
         // index on host
@@ -296,8 +311,9 @@ private:
             delete [] kidxs;
         }
         else {
-            std::cerr << "   - evaluating on device is not implemented\n";
             // https://github.com/kyamagu/faiss-wheels/issues/54
+            std::cerr << "   - evaluating on device is not implemented\n";
+            exit(1);
         }
     }
 

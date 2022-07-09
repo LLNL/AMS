@@ -68,10 +68,10 @@ public:
 
     // any child class must implement these!
     virtual inline void
-    evaluate(const size_t, const size_t, TypeInValue *, bool *) = 0;
+    evaluate(const size_t, const size_t, TypeInValue *, bool *) const = 0;
 
     virtual inline void
-    evaluate(const size_t, const std::vector<TypeInValue*> &, bool *) = 0;
+    evaluate(const size_t, const std::vector<TypeInValue*> &, bool *) const = 0;
 };
 
 #endif

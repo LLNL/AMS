@@ -18,6 +18,7 @@ struct MiniAppArgs {
     const char *device_name    = "cpu";
     const char *eos_name       = "ideal_gas";
     const char *model_path     = "";
+    const char *hdcache_path     = "";
 
     int seed                   = 0;
     TypeValue empty_element_ratio = -1;
@@ -36,6 +37,7 @@ struct MiniAppArgs {
 
         // surrogate model
         args.AddOption(&model_path, "-S", "--surrogate", "Path to surrogate model");
+        args.AddOption(&hdcache_path, "-H", "--hdcache", "Path to hdcache index");
 
         // eos model and length of simulation
         args.AddOption(&eos_name, "-z", "--eos", "EOS model type");
@@ -164,22 +166,22 @@ int main(int argc, char **argv) {
     // init inputs
     // TODO: what are good initial values?
     for (int mat_idx = 0; mat_idx < args.num_mats; ++mat_idx) {
-        for (int elem_idx = 0; elem_idx < args.num_elems; ++elem_idx) {
+    for (int elem_idx = 0; elem_idx < args.num_elems; ++elem_idx) {
 
-           const int me = mat_idx*args.num_elems + elem_idx;
-            if (!indicators[me])
-                continue;
+       const int me = mat_idx*args.num_elems + elem_idx;
+        if (!indicators[me])
+            continue;
 
-            for (int qpt_idx = 0; qpt_idx < args.num_qpts; ++qpt_idx) {
-                density[qpt_idx + me*args.num_qpts] = .1 + unitrand();
-                energy[qpt_idx + me*args.num_qpts] = .1 + unitrand();
-            }
+        for (int qpt_idx = 0; qpt_idx < args.num_qpts; ++qpt_idx) {
+            density[qpt_idx + me*args.num_qpts] = .1 + unitrand();
+            energy[qpt_idx + me*args.num_qpts] = .1 + unitrand();
         }
-    }
+    }}
 
     // -------------------------------------------------------------------------
     std::cout << "Launching the miniapp" << std::endl;
-    miniapp_lib(args.device_name, args.eos_name, args.model_path,
+    miniapp_lib(args.device_name, args.eos_name,
+                args.model_path, args.hdcache_path,
                 args.stop_cycle, args.pack_sparse_mats,
                 args.num_mats, args.num_elems, args.num_qpts,
                 density.data(), energy.data(), indicators);

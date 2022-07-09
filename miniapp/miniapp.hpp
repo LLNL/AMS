@@ -33,13 +33,13 @@ using mfem::ForallWrap;
 #include "ml/hdcache.hpp"
 #include "ml/surrogate.hpp"
 #include "wf/workflow.hpp"
+#include "ml/hdcache_random.hpp"
+#include "ml/hdcache_faiss.hpp"
 
 #ifdef __ENABLE_FAISS__
-  #include "ml/hdcache_faiss.hpp"
   template <typename T>
   using TypeHDCache = HDCache_Faiss<T>;
 #else
-  #include "ml/hdcache_random.hpp"
   template <typename T>
   using TypeHDCache = HDCache_Random<T>;
 #endif
@@ -99,7 +99,8 @@ public:
     // -------------------------------------------------------------------------
     // setup the miniapp
     // -------------------------------------------------------------------------
-    void setup(const std::string eos_name, const std::string model_path) {
+    void setup(const std::string eos_name, const std::string model_path,
+               const std::string hdcache_path) {
 
         // -------------------------------------------------------------------------
         // setup resource manager (data allocators)
@@ -140,16 +141,26 @@ public:
         }
 
 #ifdef USE_AMS
-        const int cache_dim = 2;
         for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
             workflow->set_eos(mat_idx, eoses[mat_idx]);
             if (model_path.size() > 0) {
                 workflow->set_surrogate(mat_idx,
-                                      new SurrogateModel<double>(model_path.c_str(), !use_device));
+                                        new SurrogateModel<double>(model_path.c_str(), !use_device));
             } else {
                 workflow->set_surrogate(mat_idx, nullptr);
             }
-            workflow->set_hdcache(mat_idx, new TypeHDCache<TypeValue>(cache_dim, 10, false));
+
+#ifdef __ENABLE_FAISS__
+            const bool use_faiss = hdcache_path.size() > 0;
+#else
+            const bool use_faiss = false;
+#endif
+            if (use_faiss) {
+                workflow->set_hdcache(mat_idx, new HDCache_Faiss<TypeValue>(hdcache_path, 10, false));
+            }
+            else {
+                workflow->set_hdcache(mat_idx, new HDCache_Random<TypeValue>(2, 10, false));
+            }
         }
 #endif
     }
@@ -161,6 +172,8 @@ public:
                   TypeValue* density_in, TypeValue* energy_in,
                   const bool* indicators_in) {
 
+        // the inputs here are raw pointers to input data
+        // these are on the host
         // dimensions of input data is assumed to be (num_mats, num_elems, num_qpts)
         if (0) {
             print_tensor_array("density_in", density_in, {num_mats, num_elems, num_qpts});

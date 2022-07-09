@@ -3,11 +3,10 @@
 
 #include <cstddef>
 
-#include "umpire/ResourceManager.hpp"
-#include "umpire/Allocator.hpp"
 #include <umpire/Umpire.hpp>
+#include <umpire/Allocator.hpp>
+#include <umpire/ResourceManager.hpp>
 
-#define USE_NEW_ALLOCATOR
 
 namespace ams {
 
@@ -47,10 +46,20 @@ public:
 
     template<typename T>
     static bool
-    is_on_device(T* data) {
+    is_on_device(T* data, const std::string &data_name="") {
         // TODO: should find out w/o relying on strings
         auto& rm = umpire::ResourceManager::getInstance();
-        return rm.getAllocator(data).getId() == allocator_ids[ResourceType::DEVICE]; 
+
+        try {
+          std::cout << "DEBUG: data ("<<data_name<< ":"<<data<<") ::"
+                    << rm.getAllocator(data).getName() << ", "
+                    << rm.getAllocator(data).getId() << "\n";
+          return rm.getAllocator(data).getId() == allocator_ids[ResourceType::DEVICE];
+        }
+        catch (const std::exception& e) {
+          std::cerr << "WARNING: Failed to identify device location for ("<<data_name<<"). Assuming host!\n";
+          return false;
+        }
     }
 
 
