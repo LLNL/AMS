@@ -13,3 +13,4 @@ Makefile.user
 ## mac temps
 **.DS_Store
 
+__pycache__

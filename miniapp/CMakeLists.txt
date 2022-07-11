@@ -8,10 +8,14 @@ set(LIBRARY_OUTPUT_PATH ${AMS_LIB_OUT_PATH})
 set(AMS_LIB_SRC ${MINIAPP_INCLUDES} miniapp_lib.cpp wf/resource_manager.cpp)
 set(AMS_EXE_SRC ${MINIAPP_INCLUDES} miniapp_exe.cpp)
 
+if (WITH_RZ)
+    list(APPEND AMS_LIB_SRC ${RZ_AMS_SOURCES} ${RZ_AMS_HEADERS})
+    list(APPEND AMS_EXE_SRC ${RZ_AMS_HEADERS})
+endif()
+
 # two targets: a shared lib and an exec
 add_library(miniapp SHARED ${AMS_LIB_SRC} ${MINIAPP_INCLUDES})
 add_executable(miniapp_bin ${AMS_EXE_SRC} ${MINIAPP_INCLUDES})
-
 
 # ------------------------------------------------------------------------------
 if (WITH_CUDA)
@@ -19,6 +23,12 @@ if (WITH_CUDA)
     set_source_files_properties(miniapp_exe.cpp PROPERTIES LANGUAGE CUDA)
     set_source_files_properties(miniapp_lib.cpp PROPERTIES COMPILE_FLAGS "--expt-extended-lambda")
     set_source_files_properties(miniapp_exe.cpp PROPERTIES COMPILE_FLAGS "--expt-extended-lambda")
+
+    if (WITH_RZ)
+        set_source_files_properties(${RZ_AMS_SOURCES} PROPERTIES LANGUAGE CUDA)
+        set_source_files_properties(${RZ_AMS_SOURCES} PROPERTIES COMPILE_FLAGS "--expt-extended-lambda")
+        set_property(TARGET miniapp PROPERTY CUDA_SEPARABLE_COMPILATION ON)
+    endif()
 endif()
 
 #link_directories(${CMAKE_CURRENT_BINARY_DIR})

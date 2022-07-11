@@ -143,6 +143,15 @@ endif()
 #message("libs: ${AMS_APP_LIBRARIES}")
 #message("defines: ${AMS_DEFINES}")
 
+# ------------------------------------------------------------------------------
+if (WITH_RZ)
+  find_package(MPI REQUIRED)
+  add_subdirectory(rz)
+  list(APPEND AMS_APP_INCLUDES "${RZ_AMS_INCLUDES}" "${MPI_INCLUDE_PATH}")
+  list(APPEND AMS_APP_LIB_DIRS "${RZ_AMS_LIBDIRS}")
+  list(APPEND AMS_APP_LIBRARIES "${RZ_AMS_LIBRARIES}" "${MPI_C_LIBRARIES}")
+  list(APPEND AMS_APP_DEFINES "${RZ_AMS_DEFINES}")
+endif()
 
 # ------------------------------------------------------------------------------
 add_subdirectory(miniapp)
