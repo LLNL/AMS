@@ -17,7 +17,6 @@ const int warpSize = 32;
 const unsigned int fullMask = 0xffffffff;
 
 __host__ int divup(int x, int y) {
-
     return (x + y - 1) / y;
 }
 
@@ -209,7 +208,7 @@ template <typename T>
 int compact(T** sparse, T** dense, const bool* dPredicate, const size_t length, int dims,
             int blockSize, bool isReverse = false) {
     int numBlocks = divup(length, blockSize);
-    int* d_BlocksCount = ams::ResourceManager::allocate<int>(numBlocks); 
+    int* d_BlocksCount = ams::ResourceManager::allocate<int>(numBlocks);
     int* d_BlocksOffset = ams::ResourceManager::allocate<int>(numBlocks);
     thrust::device_ptr<int> thrustPrt_bCount(d_BlocksCount);
     thrust::device_ptr<int> thrustPrt_bOffset(d_BlocksOffset);

@@ -33,16 +33,6 @@ using mfem::ForallWrap;
 #include "ml/hdcache.hpp"
 #include "ml/surrogate.hpp"
 #include "wf/workflow.hpp"
-#include "ml/hdcache_random.hpp"
-#include "ml/hdcache_faiss.hpp"
-
-#ifdef __ENABLE_FAISS__
-  template <typename T>
-  using TypeHDCache = HDCache_Faiss<T>;
-#else
-  template <typename T>
-  using TypeHDCache = HDCache_Random<T>;
-#endif
 #endif
 
 
@@ -124,11 +114,9 @@ public:
         std::cout << std::endl;
 
 
-        // -------------------------------------------------------------------------
-        // setup eos, surrogate models, and hdcaches
-        // TODO: keeping it consistent with Tom's existing code currently
-        // Do we want different surrogates and caches for different materials?
-        // -------------------------------------------------------------------------
+        // ---------------------------------------------------------------------
+        // setup EOSes
+        // ---------------------------------------------------------------------
         for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
             if (eos_name == "ideal_gas") {
                 eoses[mat_idx] = new IdealGas(1.6, 1.4);
@@ -140,27 +128,40 @@ public:
             }
         }
 
+        // ---------------------------------------------------------------------
+        // setup AMS workflow (surrogate and cache)
+        // ---------------------------------------------------------------------
 #ifdef USE_AMS
-        for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
-            workflow->set_eos(mat_idx, eoses[mat_idx]);
-            if (model_path.size() > 0) {
-                workflow->set_surrogate(mat_idx,
-                                        new SurrogateModel<double>(model_path.c_str(), !use_device));
-            } else {
-                workflow->set_surrogate(mat_idx, nullptr);
-            }
-
 #ifdef __ENABLE_FAISS__
-            const bool use_faiss = hdcache_path.size() > 0;
+        const bool use_faiss = hdcache_path.size() > 0;
 #else
-            const bool use_faiss = false;
+        const bool use_faiss = false;
 #endif
+
+#ifdef __ENABLE_TORCH__
+        const bool use_surrogate = model_path.size() > 0;
+#else
+        const bool use_surrogate = false;
+#endif
+
+        for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
+
+            HDCache<TypeValue> *cache = nullptr;
+            SurrogateModel<TypeValue> *surrogate = nullptr;
+
+            if (use_surrogate) {
+                surrogate = new SurrogateModel<TypeValue>(model_path.c_str(), !use_device);
+            }
             if (use_faiss) {
-                workflow->set_hdcache(mat_idx, new HDCache_Faiss<TypeValue>(hdcache_path, 10, false));
+                cache = new HDCache<TypeValue>(hdcache_path, 10, false);
             }
             else {
-                workflow->set_hdcache(mat_idx, new HDCache_Random<TypeValue>(2, 10, false));
+                cache = new HDCache<TypeValue>(2, 10, false);
             }
+
+            workflow->set_eos(mat_idx, eoses[mat_idx]);
+            workflow->set_surrogate(mat_idx, surrogate);
+            workflow->set_hdcache(mat_idx, cache);
         }
 #endif
     }

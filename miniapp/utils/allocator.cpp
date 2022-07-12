@@ -35,7 +35,7 @@ ResourceManager::isDeviceExecution() {
 void
 ResourceManager::setup(bool use_device) {
 
-    std::cout << "Setting up ams::allocator\n";
+    std::cout << "Setting up ams::ResourceManager\n";
 
     auto host_alloc_name = ResourceManager::getHostAllocatorName();
     auto device_alloc_name = ResourceManager::getDeviceAllocatorName();
@@ -43,16 +43,21 @@ ResourceManager::setup(bool use_device) {
     auto& rm = umpire::ResourceManager::getInstance();
     auto h_alloc = rm.makeAllocator<umpire::strategy::QuickPool, true>(host_alloc_name, rm.getAllocator("HOST"));
     allocator_ids[ResourceType::HOST] = h_alloc.getId();
- 
+
+    std::cout << "  > created allocator["<<ResourceType::HOST<<"] = "
+              << h_alloc.getId() << ": " << h_alloc.getName() << "\n";
+
     if (use_device) {
         auto d_alloc = rm.makeAllocator<umpire::strategy::QuickPool, true>(device_alloc_name, rm.getAllocator("DEVICE"));
         allocator_ids[ResourceType::DEVICE] = d_alloc.getId();
+        std::cout << "  > created allocator["<<ResourceType::DEVICE<<"] = "
+                  << d_alloc.getId() << ": " << d_alloc.getName() << "\n";
     }
 
     // set the default
     if (use_device) {
         ResourceManager::setDefaultDataAllocator(ResourceType::DEVICE);
-        std::cout << "  default allocator = (" << device_alloc_name << ")\n";
+        std::cout << "  > default allocator = (" << device_alloc_name << ")\n";
     }
     else {
         ResourceManager::setDefaultDataAllocator(ResourceType::HOST);

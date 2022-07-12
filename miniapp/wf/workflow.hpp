@@ -106,7 +106,6 @@ public:
 
         bool* p_ml_acceptable = ams::ResourceManager::allocate<bool>(num_data);
 
-
         // -------------------------------------------------------------
         // STEP 1: call the hdcache to look at input uncertainties
         //         to decide if making a ML inference makes sense
@@ -115,7 +114,6 @@ public:
 
         if (hdcache != nullptr) {
             CALIPER(CALI_MARK_BEGIN("UQ_MODULE");)
-            hdcache->print();
             hdcache->evaluate(num_data, {pDensity, pEnergy}, p_ml_acceptable);
             CALIPER(CALI_MARK_END("UQ_MODULE");)
         }
@@ -207,7 +205,7 @@ public:
                 data_handler::pack(predicate, elements, sparse_inputs, packed_inputs);
 
             std::cout << std::setprecision(2)
-                      << "Physis Computed elements / Surrogate computed elements "
+                      << "Physics Computed elements / Surrogate computed elements "
                          "(Fraction) ["
                       << packedElements << "/" << elements - packedElements << " ("
                       << static_cast<double>(packedElements) / static_cast<double>(elements)
@@ -217,22 +215,34 @@ public:
             if (packedElements > 0) {
 
                 CALIPER(CALI_MARK_BEGIN("PHYSICS MODULE");)
+                std::cout << " call phys! : " << packedElements << " : " << eos << "\n";
+                std::cout << " : packed_energy is on " << ams::ResourceManager::is_on_device(packed_energy, "packed_energy") << "\n";
+                std::cout << " : packed_density is on " << ams::ResourceManager::is_on_device(packed_density, "packed_density") << "\n";
+                std::cout << " : packed_pressure is on " << ams::ResourceManager::is_on_device(packed_pressure, "packed_pressure") << "\n";
+                std::cout << " : packed_soundspeed2 is on " << ams::ResourceManager::is_on_device(packed_soundspeed2, "packed_soundspeed2") << "\n";
+                std::cout << " : packed_bulkmod is on " << ams::ResourceManager::is_on_device(packed_bulkmod, "packed_pressure") << "\n";
+                std::cout << " : packed_temperature is on " << ams::ResourceManager::is_on_device(packed_temperature, "packed_temperature") << "\n";
+
                 eos->Eval(packedElements,
                           packed_energy, packed_density,             // inputs
                           packed_pressure, packed_soundspeed2,       // outputs
                           packed_bulkmod, packed_temperature);       // outputs
+                std::cout << " done phys!\n";
                 CALIPER(CALI_MARK_END("PHYSICS MODULE");)
 
                 if (DB != nullptr) {
                     CALIPER(CALI_MARK_BEGIN("DBSTORE");)
+                    std::cout << " call db!\n";
                     DB->Store(packedElements, packed_inputs, packed_outputs);
                     CALIPER(CALI_MARK_END("DBSTORE");)
+                    std::cout << " done db!\n";
                 }
             }
 
             // ---- 3c: unpack the data
+            std::cout << " call unpack!\n";
             data_handler::unpack(predicate, elements, packed_outputs, sparse_outputs);
-
+            std::cout << " done unpack!\n";
 
             // -----------------------------------------------------------------
             // Deallocate temporal data
