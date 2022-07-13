@@ -91,6 +91,8 @@ public:
                   TypeValue* pBulkmod, TypeValue* pTemperature,     // outputs
                   const int mat_idx = 0) {
 
+        std::cout << " workflow.evaluate("<<pDensity<<", "<<pEnergy<<")\n";
+
         // we want to make this function equivalent to the eos call
         // the only difference is "mat_idx", which is now an optional parameters
         // we need mat_idx only to figure out which instances to use
@@ -98,6 +100,15 @@ public:
         auto hdcache = hdcaches[mat_idx];
         auto surrogate = surrogates[mat_idx];
 
+        // TODO: this is where the code fails right now
+        // umpire does not know about this allocation
+        // how can we link the mfem allocations with umpire allocations
+        std::cout << "> \'pDensity\' is on \'" << ams::ResourceManager::getDataAllocationName(pDensity) << "\'\n";
+        std::cout << "> \'pEnergy\' is on \'" << ams::ResourceManager::getDataAllocationName(pEnergy) << "\'\n";
+        std::cout << "> \'pPressure\' is on \'" << ams::ResourceManager::getDataAllocationName(pPressure) << "\'\n";
+        std::cout << "> \'pSoundSpeed2\' is on \'" << ams::ResourceManager::getDataAllocationName(pSoundSpeed2) << "\'\n";
+        std::cout << "> \'pBulkmod\' is on \'" << ams::ResourceManager::getDataAllocationName(pBulkmod) << "\'\n";
+        std::cout << "> \'pTemperature\' is on \'" << ams::ResourceManager::getDataAllocationName(pTemperature) << "\'\n";
 
         /* The allocate function always allocates on the default device. The default device
          * can be set by calling setDefaultDataAllocator. Otherwise we can explicitly control
@@ -105,6 +116,7 @@ public:
          */
 
         bool* p_ml_acceptable = ams::ResourceManager::allocate<bool>(num_data);
+        std::cout << "> \'p_ml_acceptable\' is on \'" << ams::ResourceManager::getDataAllocationName(p_ml_acceptable) << "\'\n";
 
         // -------------------------------------------------------------
         // STEP 1: call the hdcache to look at input uncertainties
@@ -164,6 +176,14 @@ public:
 
             bool* predicate = &p_ml_acceptable[pId];
 
+            std::cout << "> \'packed_energy\' is on \'" << ams::ResourceManager::getDataAllocationName(packed_energy) << "\'\n";
+            std::cout << "> \'packed_density\' is on \'" << ams::ResourceManager::getDataAllocationName(packed_density) << "\'\n";
+            std::cout << "> \'packed_pressure\' is on \'" << ams::ResourceManager::getDataAllocationName(packed_pressure) << "\'\n";
+            std::cout << "> \'packed_soundspeed2\' is on \'" << ams::ResourceManager::getDataAllocationName(packed_soundspeed2) << "\'\n";
+            std::cout << "> \'packed_bulkmod\' is on \'" << ams::ResourceManager::getDataAllocationName(packed_bulkmod) << "\'\n";
+            std::cout << "> \'packed_temperature\' is on \'" << ams::ResourceManager::getDataAllocationName(packed_temperature) << "\'\n";
+            std::cout << "> \'predicate\' is on \'" << ams::ResourceManager::getDataAllocationName(predicate) << "\'\n";
+
             // null surrogate means we should call physics module
             if (surrogate == nullptr) {
 
@@ -215,34 +235,22 @@ public:
             if (packedElements > 0) {
 
                 CALIPER(CALI_MARK_BEGIN("PHYSICS MODULE");)
-                std::cout << " call phys! : " << packedElements << " : " << eos << "\n";
-                std::cout << " : packed_energy is on " << ams::ResourceManager::is_on_device(packed_energy, "packed_energy") << "\n";
-                std::cout << " : packed_density is on " << ams::ResourceManager::is_on_device(packed_density, "packed_density") << "\n";
-                std::cout << " : packed_pressure is on " << ams::ResourceManager::is_on_device(packed_pressure, "packed_pressure") << "\n";
-                std::cout << " : packed_soundspeed2 is on " << ams::ResourceManager::is_on_device(packed_soundspeed2, "packed_soundspeed2") << "\n";
-                std::cout << " : packed_bulkmod is on " << ams::ResourceManager::is_on_device(packed_bulkmod, "packed_pressure") << "\n";
-                std::cout << " : packed_temperature is on " << ams::ResourceManager::is_on_device(packed_temperature, "packed_temperature") << "\n";
-
                 eos->Eval(packedElements,
                           packed_energy, packed_density,             // inputs
                           packed_pressure, packed_soundspeed2,       // outputs
                           packed_bulkmod, packed_temperature);       // outputs
-                std::cout << " done phys!\n";
+
                 CALIPER(CALI_MARK_END("PHYSICS MODULE");)
 
                 if (DB != nullptr) {
                     CALIPER(CALI_MARK_BEGIN("DBSTORE");)
-                    std::cout << " call db!\n";
                     DB->Store(packedElements, packed_inputs, packed_outputs);
                     CALIPER(CALI_MARK_END("DBSTORE");)
-                    std::cout << " done db!\n";
                 }
             }
 
             // ---- 3c: unpack the data
-            std::cout << " call unpack!\n";
             data_handler::unpack(predicate, elements, packed_outputs, sparse_outputs);
-            std::cout << " done unpack!\n";
 
             // -----------------------------------------------------------------
             // Deallocate temporal data

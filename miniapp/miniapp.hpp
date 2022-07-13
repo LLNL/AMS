@@ -10,7 +10,6 @@
 #include "mfem.hpp"
 #include "mfem/general/forall.hpp"
 #include "mfem/linalg/dtensor.hpp"
-#include "umpire/ResourceManager.hpp"
 
 using mfem::ForallWrap;
 
@@ -96,8 +95,9 @@ public:
         // setup resource manager (data allocators)
         // -------------------------------------------------------------------------
         // TODO: in case USE_AMS is false, should we worry about not relying on ams namespace?
-        // may be, but it's not really a use case so we can think about this later
-        ams::ResourceManager::setup(use_device);
+        // may be, but it's not really a use case right now so we can think about this later
+        ams::ResourceManager::setup(device_name);
+
         auto host_alloc_name = ams::ResourceManager::getHostAllocatorName();
         auto device_alloc_name = ams::ResourceManager::getDeviceAllocatorName();
 
@@ -112,7 +112,7 @@ public:
         std::cout << std::endl;
         device.Print();
         std::cout << std::endl;
-
+        ams::ResourceManager::list_allocators();
 
         // ---------------------------------------------------------------------
         // setup EOSes
@@ -207,7 +207,7 @@ public:
         mfem::DenseTensor bulkmod(num_qpts, num_elems, num_mats);
         mfem::DenseTensor temperature(num_qpts, num_elems, num_mats);
 
-        // -------------------------------------------------------------------------
+        // ---------------------------------------------------------------------
         // need a way to store indices of active elements for each material
         // will use a linearized array for this
         // first num_mat elements will store the total count of all elements thus far
@@ -226,7 +226,7 @@ public:
             sparse_elem_indices[mat_idx] = sparse_elem_indices.Size();
         }
 
-        // -------------------------------------------------------------------------
+        // ---------------------------------------------------------------------
         // run through the cycles (time-steps)
         for (int c = 0; c <= stop_cycle; ++c) {
             std::cout << "\n--> cycle " << c << std::endl;
@@ -234,7 +234,6 @@ public:
                      sparse_elem_indices,               // aux data
                      pressure, soundspeed2,             // outputs
                      bulkmod, temperature);             // outputs
-            // break;
         }
 
         // pressure.HostRead();
@@ -262,6 +261,10 @@ private:
         const auto d_temperature = mfemReshapeTensor3(temperature, Write);
 
         const auto d_sparse_elem_indices = mfemReshapeArray1(sparse_elem_indices, Write);
+
+
+        auto p = const_cast<double*>(&d_density(0, 0, 0));
+        std::cout << "> \'density\' is on \'" << ams::ResourceManager::getDataAllocationName(p) << "\'\n";
 
         // ---------------------------------------------------------------------
         // for each material
@@ -334,6 +337,8 @@ private:
 
             } else {
 #ifdef USE_AMS
+                std::cout << " material " << mat_idx << ": using dense packing for "
+                          << num_elems << " elems\n";
                 workflow->evaluate(num_elems * num_qpts,
                                    const_cast<TypeValue*>(&d_density(0, 0, mat_idx)),
                                    const_cast<TypeValue*>(&d_energy(0, 0, mat_idx)),
@@ -348,7 +353,6 @@ private:
 #endif
             }
         }
-
         CALIPER(CALI_MARK_FUNCTION_END);
     }
 };
