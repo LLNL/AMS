@@ -35,48 +35,36 @@ public:
     static ResourceType getDefaultDataAllocator();
     static void setDefaultDataAllocator(ResourceType location);*/
 
-
     static bool isDeviceExecution();
 
 
     //! ------------------------------------------------------------------------
     //! query an allocated array
     template<typename T>
+    static bool
+    hasAllocator(T* data) {
+      static auto& rm = umpire::ResourceManager::getInstance();
+      return rm.hasAllocator(data);
+    }
+
+    template<typename T>
     static int
     getDataAllocationId(T* data) {
       static auto& rm = umpire::ResourceManager::getInstance();
-      return rm.getAllocator(data).getId();
+      return rm.hasAllocator(data) ? rm.getAllocator(data).getId() : -1;
     }
 
     template<typename T>
     static const std::string
     getDataAllocationName(T* data) {
       static auto& rm = umpire::ResourceManager::getInstance();
-      return rm.getAllocator(data).getName();
+      return rm.hasAllocator(data) ? rm.getAllocator(data).getName() : "unknown";
     }
 
     template<typename T>
     static bool
-    is_on_device(T* data, const std::string &data_name="") {
-
-        static auto& rm = umpire::ResourceManager::getInstance();
-        return rm.getAllocator(data).getId() == allocator_ids[ResourceType::DEVICE];
-
-#if 0
-        try {
-          /*std::cout << "DEBUG: data ("<<data_name<< ":"<<data<<") ::";
-          fflush(stdout);
-          std::cout << rm.getAllocator(data).getName() << ", ";
-          fflush(stdout);
-          std::cout << rm.getAllocator(data).getId() << "\n";*/
-
-          return rm.getAllocator(data).getId() == allocator_ids[ResourceType::DEVICE];
-        }
-        catch (const std::exception& e) {
-          std::cerr << "WARNING: Failed to identify device location for ("<<data_name<<"). Assuming host!\n";
-          return false;
-        }
-#endif
+    is_on_device(T* data) {
+        return getDataAllocationId(data) == allocator_ids[ResourceType::DEVICE];
     }
 
     //! ------------------------------------------------------------------------
@@ -84,24 +72,18 @@ public:
     template<typename T>
     static T*
     allocate(size_t nvalues, ResourceType dev = default_resource) {
-
-        /*std::cout << " ---> allocating (" << nvalues << " values) of (size " << sizeof(T) << ") "
-                  << "on (" << dev << ": " << (dev == 0 ? "host" : dev == 1? "device" : "unknown") << ") :: ";
-        fflush(stdout);*/
-
         static auto& rm = umpire::ResourceManager::getInstance();
         auto alloc = rm.getAllocator(allocator_ids[dev]);
-        auto p = static_cast<T*>(alloc.allocate(nvalues * sizeof(T)));
-        //std::cout << p << "\n";
-        return p;
+        return static_cast<T*>(alloc.allocate(nvalues * sizeof(T)));
     }
 
     template<typename T>
     static void
     deallocate(T* data, ResourceType dev = default_resource) {
-        auto alloc = umpire::ResourceManager::getInstance().getAllocator(data);
-        //auto alloc = umpire::ResourceManager::getInstance().getAllocator(allocator_ids[dev]);
-        alloc.deallocate(data);
+        static auto& rm = umpire::ResourceManager::getInstance();
+        if (rm.hasAllocator(data) ) {
+            rm.getAllocator(data).deallocate(data);
+        }
     }
     //! ------------------------------------------------------------------------
 };
