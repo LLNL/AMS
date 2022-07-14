@@ -104,7 +104,7 @@ public:
         // set up mfem memory manager
         mfem::MemoryManager::SetUmpireHostAllocatorName(host_alloc_name.c_str());
         if (use_device) {
-            mfem::MemoryManager::SetUmpireDevice2AllocatorName(device_alloc_name.c_str());
+            mfem::MemoryManager::SetUmpireDeviceAllocatorName(device_alloc_name.c_str());
         }
         mfem::Device::SetMemoryTypes(mfem::MemoryType::HOST_UMPIRE, mfem::MemoryType::DEVICE_UMPIRE);
         mfem::Device device(device_name);
