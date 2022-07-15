@@ -192,9 +192,9 @@ public:
         if (!has_index())
             throw std::invalid_argument("HDCache does not have a valid and trained index!");
 
-        TypeValue* lin_data = data_handler::linearize_features_hd(ndata, inputs);
+        TypeValue* lin_data = data_handler::linearize_features(ndata, inputs);
         _add(ndata, lin_data);
-        delete [] lin_data;
+        ams::ResourceManager::deallocate(lin_data);
 
         std::cout << "Successfully added!";
         print();
@@ -235,9 +235,9 @@ public:
         if (has_index())
             throw std::invalid_argument("Already have a valid and trained index!");
 
-        TypeValue* lin_data = data_handler::linearize_features_hd(ndata, inputs);
+        TypeValue* lin_data = data_handler::linearize_features(ndata, inputs);
         _train(ndata, lin_data);
-        delete [] lin_data;
+        ams::ResourceManager::deallocate(lin_data);
 
         std::cout << "Successfully trained " << int(m_dim) << "-dim faiss index!\n";
     }

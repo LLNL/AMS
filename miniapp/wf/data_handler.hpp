@@ -119,7 +119,7 @@ class DataHandler {
           }
         }
         else {
-          npacked = ams::Device::pack(predicate, n, sparse.data(), dense.data(), dims);
+          npacked = ams::Device::pack(predicate, n, const_cast<TypeValue**>(sparse.data()), dense.data(), dims);
         }
         return npacked;
     }
