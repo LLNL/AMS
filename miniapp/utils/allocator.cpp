@@ -21,6 +21,12 @@ namespace ams {
   void
   ResourceManager::setDefaultDataAllocator(ResourceManager::ResourceType location) {
       ResourceManager::default_resource = location;
+
+      auto& rm = umpire::ResourceManager::getInstance();
+      auto alloc = rm.getAllocator(allocator_ids[location]);
+
+      std::cout << "  > Setting default allocator: " << alloc.getId() << " : " << alloc.getName() << "\n";
+      rm.setDefaultAllocator(alloc);
   }
 
   ResourceManager::ResourceType

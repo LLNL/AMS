@@ -39,29 +39,34 @@ public:
     //! query an allocated array
     template<typename T>
     static bool
-    hasAllocator(T* data) {
+    hasAllocator(const T* data) {
       static auto& rm = umpire::ResourceManager::getInstance();
-      return rm.hasAllocator(data);
+      void *vdata = static_cast<void*>(const_cast<T*>(data));
+      return rm.hasAllocator(vdata);
     }
 
     template<typename T>
     static int
-    getDataAllocationId(T* data) {
+    getDataAllocationId(const T* data) {
       static auto& rm = umpire::ResourceManager::getInstance();
-      return rm.hasAllocator(data) ? rm.getAllocator(data).getId() : -1;
+      void *vdata = static_cast<void*>(const_cast<T*>(data));
+      return rm.hasAllocator(vdata) ? rm.getAllocator(vdata).getId() : -1;
     }
 
     template<typename T>
     static const std::string
-    getDataAllocationName(T* data) {
+    getDataAllocationName(const T* data) {
       static auto& rm = umpire::ResourceManager::getInstance();
-      return rm.hasAllocator(data) ? rm.getAllocator(data).getName() : "unknown";
+      void *vdata = static_cast<void*>(const_cast<T*>(data));
+      return rm.hasAllocator(vdata) ? rm.getAllocator(vdata).getName() : "unknown";
     }
 
     template<typename T>
     static bool
-    is_on_device(T* data) {
-        return getDataAllocationId(data) == allocator_ids[ResourceType::DEVICE];
+    is_on_device(const T* data) {
+        auto alloc_id = getDataAllocationId(data);
+        return ResourceManager::isDeviceExecution() &&
+                alloc_id != -1 && alloc_id == allocator_ids[ResourceType::DEVICE];
     }
 
     //! ------------------------------------------------------------------------
@@ -78,7 +83,7 @@ public:
     static void
     deallocate(T* data, ResourceType dev = default_resource) {
         static auto& rm = umpire::ResourceManager::getInstance();
-        if (rm.hasAllocator(data) ) {
+        if (hasAllocator(data) ) {
             rm.getAllocator(data).deallocate(data);
         }
     }
