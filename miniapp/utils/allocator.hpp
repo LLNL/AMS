@@ -18,25 +18,22 @@ private:
     static int allocator_ids[ResourceType::RSEND];
 
 public:
-    //! names for these allocations
+    //! names for these allocators
     static const std::string getDeviceAllocatorName();
     static const std::string getHostAllocatorName();
-
 
     //! setup allocators in the resource manager
     static void setup(const std::string &device_name);
 
-
-    //! list the allocators
+    //! list allocators
     static void list_allocators();
 
-    /*
     //! get/set default allocator
     static ResourceType getDefaultDataAllocator();
-    static void setDefaultDataAllocator(ResourceType location);*/
+    static void setDefaultDataAllocator(ResourceType resource);
 
+    //! check if we are using device
     static bool isDeviceExecution();
-
 
     //! ------------------------------------------------------------------------
     //! query an allocated array

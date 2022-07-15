@@ -78,6 +78,7 @@ public:
 #endif
         CALIPER(mgr.start();)
     }
+
     ~MiniApp() {
 #ifdef USE_AMS
         delete workflow;
@@ -91,28 +92,7 @@ public:
     void setup(const std::string eos_name, const std::string model_path,
                const std::string hdcache_path) {
 
-        // -------------------------------------------------------------------------
-        // setup resource manager (data allocators)
-        // -------------------------------------------------------------------------
-        // TODO: in case USE_AMS is false, should we worry about not relying on ams namespace?
-        // may be, but it's not really a use case right now so we can think about this later
-        ams::ResourceManager::setup(device_name);
-
-        auto host_alloc_name = ams::ResourceManager::getHostAllocatorName();
-        auto device_alloc_name = ams::ResourceManager::getDeviceAllocatorName();
-
-        // set up mfem memory manager
-        mfem::MemoryManager::SetUmpireHostAllocatorName(host_alloc_name.c_str());
-        if (use_device) {
-            mfem::MemoryManager::SetUmpireDeviceAllocatorName(device_alloc_name.c_str());
-        }
-        mfem::Device::SetMemoryTypes(mfem::MemoryType::HOST_UMPIRE, mfem::MemoryType::DEVICE_UMPIRE);
-        mfem::Device device(device_name);
-
-        std::cout << std::endl;
-        device.Print();
-        std::cout << std::endl;
-        ams::ResourceManager::list_allocators();
+        const std::string &alloc_name_host = ams::ResourceManager::getHostAllocatorName();
 
         // ---------------------------------------------------------------------
         // setup EOSes
@@ -121,7 +101,7 @@ public:
             if (eos_name == "ideal_gas") {
                 eoses[mat_idx] = new IdealGas(1.6, 1.4);
             } else if (eos_name == "constant_host") {
-                eoses[mat_idx] = new ConstantEOSOnHost(host_alloc_name.c_str(), 1.0);
+                eoses[mat_idx] = new ConstantEOSOnHost(alloc_name_host.c_str(), 1.0);
             } else {
                 std::cerr << "unknown eos `" << eos_name << "'" << std::endl;
                 return;
