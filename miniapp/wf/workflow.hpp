@@ -91,7 +91,7 @@ public:
                   TypeValue* pBulkmod, TypeValue* pTemperature,     // outputs
                   const int mat_idx = 0) {
 
-        std::cout << " workflow.evaluate("<<pDensity<<", "<<pEnergy<<")\n";
+        //std::cout << " workflow.evaluate("<<pDensity<<", "<<pEnergy<<")\n";
 
         // we want to make this function equivalent to the eos call
         // the only difference is "mat_idx", which is now an optional parameters
@@ -100,23 +100,11 @@ public:
         auto hdcache = hdcaches[mat_idx];
         auto surrogate = surrogates[mat_idx];
 
-        // TODO: this is where the code fails right now
-        // umpire does not know about this allocation
-        // how can we link the mfem allocations with umpire allocations
-        std::cout << "> \'pDensity\' is on \'" << ams::ResourceManager::getDataAllocationName(pDensity) << "\'\n";
-        std::cout << "> \'pEnergy\' is on \'" << ams::ResourceManager::getDataAllocationName(pEnergy) << "\'\n";
-        std::cout << "> \'pPressure\' is on \'" << ams::ResourceManager::getDataAllocationName(pPressure) << "\'\n";
-        std::cout << "> \'pSoundSpeed2\' is on \'" << ams::ResourceManager::getDataAllocationName(pSoundSpeed2) << "\'\n";
-        std::cout << "> \'pBulkmod\' is on \'" << ams::ResourceManager::getDataAllocationName(pBulkmod) << "\'\n";
-        std::cout << "> \'pTemperature\' is on \'" << ams::ResourceManager::getDataAllocationName(pTemperature) << "\'\n";
-
         /* The allocate function always allocates on the default device. The default device
          * can be set by calling setDefaultDataAllocator. Otherwise we can explicitly control
          * the location of the data by calling allocate(size, AMSDevice).
          */
-
         bool* p_ml_acceptable = ams::ResourceManager::allocate<bool>(num_data);
-        std::cout << "> \'p_ml_acceptable\' is on \'" << ams::ResourceManager::getDataAllocationName(p_ml_acceptable) << "\'\n";
 
         // -------------------------------------------------------------
         // STEP 1: call the hdcache to look at input uncertainties
@@ -175,14 +163,6 @@ public:
                                                     packed_bulkmod, packed_temperature});
 
             bool* predicate = &p_ml_acceptable[pId];
-
-            std::cout << "> \'packed_energy\' is on \'" << ams::ResourceManager::getDataAllocationName(packed_energy) << "\'\n";
-            std::cout << "> \'packed_density\' is on \'" << ams::ResourceManager::getDataAllocationName(packed_density) << "\'\n";
-            std::cout << "> \'packed_pressure\' is on \'" << ams::ResourceManager::getDataAllocationName(packed_pressure) << "\'\n";
-            std::cout << "> \'packed_soundspeed2\' is on \'" << ams::ResourceManager::getDataAllocationName(packed_soundspeed2) << "\'\n";
-            std::cout << "> \'packed_bulkmod\' is on \'" << ams::ResourceManager::getDataAllocationName(packed_bulkmod) << "\'\n";
-            std::cout << "> \'packed_temperature\' is on \'" << ams::ResourceManager::getDataAllocationName(packed_temperature) << "\'\n";
-            std::cout << "> \'predicate\' is on \'" << ams::ResourceManager::getDataAllocationName(predicate) << "\'\n";
 
             // null surrogate means we should call physics module
             if (surrogate == nullptr) {

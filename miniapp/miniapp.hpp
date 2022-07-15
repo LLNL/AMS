@@ -242,10 +242,6 @@ private:
 
         const auto d_sparse_elem_indices = mfemReshapeArray1(sparse_elem_indices, Write);
 
-
-        auto p = const_cast<double*>(&d_density(0, 0, 0));
-        std::cout << "> \'density\' is on \'" << ams::ResourceManager::getDataAllocationName(p) << "\'\n";
-
         // ---------------------------------------------------------------------
         // for each material
         for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
