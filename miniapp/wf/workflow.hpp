@@ -11,9 +11,10 @@
 #include "ml/hdcache.hpp"
 #include "ml/surrogate.hpp"
 #include "wf/basedb.hpp"
-#include "utils/utils_data.hpp"
-#include "utils/utils_caliper.hpp"
-#include "utils/allocator.hpp"
+
+#include "wf/utils_caliper.hpp"
+#include "wf/data_handler.hpp"
+#include "wf/resource_manager.hpp"
 
 
 //! ----------------------------------------------------------------------------

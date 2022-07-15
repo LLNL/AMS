@@ -1,15 +1,12 @@
 #include <cstdio>
 #include <cstdlib>
 
+#include <mfem.hpp>
+
 #include "miniapp.hpp"
 #include "miniapp_lib.hpp"
+#include "wf/resource_manager.hpp"
 
-#include "mfem.hpp"
-#include "utils/allocator.hpp"
-
-#include <umpire/Umpire.hpp>
-#include <umpire/Allocator.hpp>
-#include <umpire/ResourceManager.hpp>
 
 //! ----------------------------------------------------------------------------
 //! the main miniapp function that is exposed to the shared lib

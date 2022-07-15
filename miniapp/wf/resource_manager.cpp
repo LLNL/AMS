@@ -1,5 +1,5 @@
-#include "allocator.hpp"
 #include <umpire/Umpire.hpp>
+#include "resource_manager.hpp"
 
 namespace ams {
 

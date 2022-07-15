@@ -1,12 +1,12 @@
-#ifndef __AMS_UTILS_CUDA_HPP__
-#define __AMS_UTILS_CUDA_HPP__
+#ifndef __AMS_DEVICE_HPP__
+#define __AMS_DEVICE_HPP__
 
 #include <cstddef>
 #include <cstring>
 #include <iostream>
 
 #ifdef __ENABLE_CUDA__
-#include "utils_cuda.cuh"
+#include "cuda/utilities.cuh"
 #endif
 
 namespace ams {

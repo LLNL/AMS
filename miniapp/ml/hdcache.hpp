@@ -24,8 +24,8 @@
   #endif
 #endif
 
-#include "utils/utils_data.hpp"
-#include "utils/allocator.hpp"
+#include "wf/resource_manager.hpp"
+#include "wf/data_handler.hpp"
 
 //! ----------------------------------------------------------------------------
 //! An implementation of FAISS-based HDCache

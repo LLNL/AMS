@@ -7,20 +7,15 @@
 #include <cstring>
 #include <vector>
 
-#include "mfem.hpp"
-#include "mfem/general/forall.hpp"
-#include "mfem/linalg/dtensor.hpp"
-
-using mfem::ForallWrap;
-
 #include "app/eos.hpp"
 #include "app/eos_constant_on_host.hpp"
 #include "app/eos_idealgas.hpp"
+#include "app/utils_mfem.hpp"
 
-#include "utils/utils_data.hpp"
-#include "utils/utils_mfem.hpp"
-#include "utils/utils_caliper.hpp"
-#include "utils/allocator.hpp"
+#include "wf/utils.hpp"
+#include "wf/utils_caliper.hpp"
+#include "wf/data_handler.hpp"
+#include "wf/resource_manager.hpp"
 
 
 // this macro completely bypasses all AMS functionality
@@ -293,9 +288,9 @@ private:
                 // -------------------------------------------------------------
                 // sparse -> dense
                 CALIPER(CALI_MARK_BEGIN("SPARSE_TO_DENSE");)
-                data_handler::pack_ij(mat_idx, num_qpts, num_elems_for_mat, offset_curr,
-                                      d_sparse_elem_indices, d_density, d_dense_density, d_energy,
-                                      d_dense_energy);
+                pack_ij(mat_idx, num_qpts, num_elems_for_mat, offset_curr,
+                          d_sparse_elem_indices, d_density, d_dense_density, d_energy,
+                          d_dense_energy);
                 CALIPER(CALI_MARK_END("SPARSE_TO_DENSE");)
                 // -------------------------------------------------------------
 
@@ -314,10 +309,10 @@ private:
                 // -------------------------------------------------------------
                 // dense -> sparse
                 CALIPER(CALI_MARK_BEGIN("DENSE_TO_SPARSE");)
-                data_handler::unpack_ij(mat_idx, num_qpts, num_elems_for_mat, offset_curr,
-                                        d_sparse_elem_indices, d_dense_pressure, d_pressure,
-                                        d_dense_soundspeed2, d_soundspeed2, d_dense_bulkmod,
-                                        d_bulkmod, d_dense_temperature, d_temperature);
+                unpack_ij(mat_idx, num_qpts, num_elems_for_mat, offset_curr,
+                          d_sparse_elem_indices, d_dense_pressure, d_pressure,
+                          d_dense_soundspeed2, d_soundspeed2, d_dense_bulkmod,
+                          d_bulkmod, d_dense_temperature, d_temperature);
                 CALIPER(CALI_MARK_END("DENSE_TO_SPARSE");)
                 // -------------------------------------------------------------
 

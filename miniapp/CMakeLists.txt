@@ -5,7 +5,7 @@ file(GLOB_RECURSE MINIAPP_INCLUDES "*.hpp")
 #set global library path to link with tests if necessary
 set(LIBRARY_OUTPUT_PATH ${AMS_LIB_OUT_PATH})
 
-set(AMS_LIB_SRC ${MINIAPP_INCLUDES} miniapp_lib.cpp utils/allocator.cpp)
+set(AMS_LIB_SRC ${MINIAPP_INCLUDES} miniapp_lib.cpp wf/resource_manager.cpp)
 set(AMS_EXE_SRC ${MINIAPP_INCLUDES} miniapp_exe.cpp)
 
 # two targets: a shared lib and an exec
