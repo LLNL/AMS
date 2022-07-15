@@ -60,13 +60,12 @@ class DataHandler {
         const size_t nfeatures = features.size();
         const size_t nvalues = ndata*nfeatures;
 
-        TypeValue *data = nullptr;
+        // output!
+        TypeValue *data = ams::ResourceManager::allocate<TypeValue>(nvalues);
 
         // features are on host
         const bool features_on_device = ams::ResourceManager::is_on_device(features[0]);
         if (!features_on_device) {
-
-            data = ams::ResourceManager::allocate<TypeValue>(nvalues);
 
             for (size_t d = 0; d < nfeatures; d++) {
             for (size_t i = 0; i < ndata; i++) {
@@ -80,19 +79,21 @@ class DataHandler {
             // move data to host, linearize, and move back
             // TODO: linearize directly on device as this is inefficient
 
-            data = ams::ResourceManager::allocate<TypeValue>(nvalues);
+            // host copies!
+            TypeValue *hdata = ams::ResourceManager::allocate<TypeValue>(nvalues, ams::ResourceManager::ResourceType::HOST);
+            T* hfeature = ams::ResourceManager::allocate<T>(ndata, ams::ResourceManager::ResourceType::HOST);
 
-            T* hfeature = new T[ndata];
             for (size_t d = 0; d < nfeatures; d++) {
                 DtoHMemcpy(hfeature, const_cast<T*>(features[d]), ndata*sizeof(T));
-
                 for (size_t i = 0; i < ndata; i++) {
-                    data[i*nfeatures + d] = static_cast<TypeValue>(hfeature[i]);
+                    hdata[i*nfeatures + d] = static_cast<TypeValue>(hfeature[i]);
                 }
             }
+            HtoDMemcpy(data, hdata, ndata*sizeof(TypeValue));
+            ams::ResourceManager::deallocate(hdata);
+            ams::ResourceManager::deallocate(hfeature);
         }
         return data;
-
     }
 
     //! -----------------------------------------------------------------------

@@ -364,7 +364,13 @@ private:
         static const TypeValue acceptable_error = 0.5;
         static const TypeValue ook = 1.0 / TypeValue(knbrs);
 
-        const bool data_on_device = ams::ResourceManager::is_on_device(data);
+        const bool input_on_device = ams::ResourceManager::is_on_device(data);
+        const bool output_on_device = ams::ResourceManager::is_on_device(is_acceptable);
+
+        if (input_on_device != output_on_device) {
+          std::cerr << "WARNING: input (on_device =" << input_on_device << ") "
+                    << "and output (on_device =" << output_on_device << ") have differnt locations!\n";
+        }
 
         // index on host
         if (!m_use_device) {
@@ -376,9 +382,8 @@ private:
             bool *h_is_acceptable = nullptr;
             TypeValue *h_data = nullptr;
 
-            if (data_on_device) {
+            if (input_on_device) {
                 h_is_acceptable = new bool [ndata];
-
                 h_data = new TypeValue[ndata];
                 DtoHMemcpy(h_data, data, ndata*sizeof(TypeValue));
             }
@@ -398,7 +403,7 @@ private:
             }
 
             // move output back to device
-            if (data_on_device) {
+            if (input_on_device) {
                 HtoDMemcpy(is_acceptable, h_is_acceptable, ndata*sizeof(bool));
                 delete [] h_is_acceptable;
                 delete [] h_data;
