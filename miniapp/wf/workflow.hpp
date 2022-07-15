@@ -86,9 +86,9 @@ public:
     // -------------------------------------------------------------------------
     // todo: inputs should be const!
     void evaluate(const int num_data,
-                  TypeValue* pDensity, TypeValue* pEnergy,          // inputs
-                  TypeValue* pPressure, TypeValue* pSoundSpeed2,    // outputs
-                  TypeValue* pBulkmod, TypeValue* pTemperature,     // outputs
+                  const TypeValue* pDensity, const TypeValue* pEnergy, // inputs
+                  TypeValue* pPressure, TypeValue* pSoundSpeed2,       // outputs
+                  TypeValue* pBulkmod, TypeValue* pTemperature,         // outputs
                   const int mat_idx = 0) {
 
         //std::cout << " workflow.evaluate("<<pDensity<<", "<<pEnergy<<")\n";
@@ -154,7 +154,7 @@ public:
             TypeValue *packed_bulkmod = ams::ResourceManager::allocate<TypeValue>(elements);
             TypeValue *packed_temperature = ams::ResourceManager::allocate<TypeValue>(elements);
 
-            std::vector<TypeValue*> sparse_inputs({&pDensity[pId], &pEnergy[pId]});
+            std::vector<const TypeValue*> sparse_inputs({&pDensity[pId], &pEnergy[pId]});
             std::vector<TypeValue*> sparse_outputs({&pPressure[pId], &pSoundSpeed2[pId],
                                                     &pBulkmod[pId], &pTemperature[pId]});
 

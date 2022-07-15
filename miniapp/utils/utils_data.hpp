@@ -100,10 +100,11 @@ class DataHandler {
     //! -----------------------------------------------------------------------
     //! linearize a set of features (vector of pointers) into
     //! a single vector of TypeValue (input can be another datatype)
+#if 0
     template<typename T>
     static inline
     TypeValue*
-    linearize_features(const size_t ndata, const std::vector<T*> &features) {
+    linearize_features(const size_t ndata, const std::vector<const T*> &features) {
 
         const size_t nfeatures = features.size();
 
@@ -144,29 +145,80 @@ class DataHandler {
         // TODO: this is incorrect ordering!
         // but lets get the data movement working
         for(size_t i = 0; i < nfeatures; i++) {
-          HtoDMemcpy(static_cast<void*>(data + i*ndata),
-                     static_cast<void*>(features[i]),
-                     ndata*sizeof(T));
+          //HtoDMemcpy(static_cast<void*>(data + i*ndata),
+          //           static_cast<void*>(features[i]),
+          //           ndata*sizeof(T));
         }
 
         //auto found_allocator = rm.getAllocator(data);
         //std::cout << " created linearized: " << found_allocator << "\n";
         return data;
     }
-
+#endif
 
     template<typename T>
     static inline
     TypeValue*
-    linearize_features_hd(const size_t ndata, const std::vector<T*> &features) {
+    linearize_features(const size_t ndata, const std::vector<const T*> &features) {
 
+        std::cout << " lineraize_hd\n";
+        for(int i = 0; i < ndata; i++) {
+            std::cout << "["<<i<<"] = " << features[0][i] << " : " << features[1][i] << "\n";
+        }
+
+        const size_t nfeatures = features.size();
+        const size_t nvalues = ndata*nfeatures;
+
+        TypeValue *data = nullptr;
+
+        // features are on host
+        const bool features_on_device = ams::ResourceManager::is_on_device(features[0]);
+        if (!features_on_device) {
+
+            data = ams::ResourceManager::allocate<TypeValue>(nvalues);
+
+            for (size_t d = 0; d < nfeatures; d++) {
+            for (size_t i = 0; i < ndata; i++) {
+                data[i*nfeatures + d] = static_cast<TypeValue>(features[d][i]);
+            }}
+        }
+
+        // features are on device
+        else {
+
+            // move data to host, linearize, and move back
+            // TODO: linearize directly on device as this is inefficient
+
+            data = ams::ResourceManager::allocate<TypeValue>(nvalues);
+
+            T* hfeature = new T[ndata];
+            for (size_t d = 0; d < nfeatures; d++) {
+                DtoHMemcpy(hfeature, const_cast<T*>(features[d]), ndata*sizeof(T));
+
+                for (size_t i = 0; i < ndata; i++) {
+                    data[i*nfeatures + d] = static_cast<TypeValue>(hfeature[i]);
+                }
+            }
+        }
+
+        /*
         // clean this and merge!
         if (ams::ResourceManager::is_on_device(features[0])) {
+            std::cout << " on device!\n";
             return linearize_features_device(ndata, features);
         }
         else {
+            std::cout << " on host!\n";
             return linearize_features(ndata, features);
+        }*/
+
+        std::cout << " final\n";
+        for(int i = 0; i < nvalues; i++) {
+            std::cout << "["<<i<<"] = " << data[i] << "\n";
         }
+
+        return data;
+
     }
 
     //! -----------------------------------------------------------------------
@@ -224,7 +276,7 @@ class DataHandler {
     //! since boolean predicate is likely to be sparse
     //! we pack the data based on the predicate value
     static inline size_t pack(const bool* predicate, const size_t n,
-                              std::vector<TypeValue*>& sparse, std::vector<TypeValue*>& dense,
+                              std::vector<const TypeValue*>& sparse, std::vector<TypeValue*>& dense,
                               bool denseVal = true) {
         if (sparse.size() != dense.size())
             throw std::invalid_argument("Packing arrays size mismatch");

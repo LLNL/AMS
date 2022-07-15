@@ -242,6 +242,16 @@ private:
 
         const auto d_sparse_elem_indices = mfemReshapeArray1(sparse_elem_indices, Write);
 
+
+        // TODO: cannot determine the allocation location of these device tensors!
+        // this is a problem because later code will want to condition accordingly
+        auto pd = &d_density;
+        if (ams::ResourceManager::getDataAllocationId(pd) == -1) {
+            std::cerr << "WARNING: Cannot detemine data location for device tensors! == "
+                      << ams::ResourceManager::getDataAllocationName(pd) <<" :: "
+                      << ams::ResourceManager::getDataAllocationId(pd)<<"\n";
+        }
+
         // ---------------------------------------------------------------------
         // for each material
         for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
@@ -316,8 +326,7 @@ private:
                 std::cout << " material " << mat_idx << ": using dense packing for "
                           << num_elems << " elems\n";
                 workflow->evaluate(num_elems * num_qpts,
-                                   const_cast<TypeValue*>(&d_density(0, 0, mat_idx)),
-                                   const_cast<TypeValue*>(&d_energy(0, 0, mat_idx)),
+                                   &d_density(0, 0, mat_idx), &d_energy(0, 0, mat_idx),
                                    &d_pressure(0, 0, mat_idx), &d_soundspeed2(0, 0, mat_idx),
                                    &d_bulkmod(0, 0, mat_idx), &d_temperature(0, 0, mat_idx),
                                    mat_idx);

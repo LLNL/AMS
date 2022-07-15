@@ -273,7 +273,7 @@ public:
     }
 
     //! train on data that comes separate features (a vector of pointers)
-    void evaluate(const size_t ndata, const std::vector<TypeInValue*> &inputs,
+    void evaluate(const size_t ndata, const std::vector<const TypeInValue*> &inputs,
                   bool *is_acceptable) const {
 
         if (!has_index()) {
@@ -290,9 +290,9 @@ public:
             _evaluate(ndata, is_acceptable);
         }
         else {
-            TypeValue* lin_data = data_handler::linearize_features_hd(ndata, inputs);
+            TypeValue* lin_data = data_handler::linearize_features(ndata, inputs);
             _evaluate(ndata, lin_data, is_acceptable);
-            //delete [] lin_data;
+            ams::ResourceManager::deallocate(lin_data);
         }
 
         std::cout << "Successfully evaluated " << ndata << " " << int(m_dim) << "-dim points!\n";
@@ -445,7 +445,9 @@ private:
 
 #if 1
         if (data_on_device) {
+#ifdef USE_CUDA
             random_uq_device<<<1,1>>>(is_acceptable, ndata, acceptable_error);
+#endif
         }
         else {
             random_uq_host(is_acceptable, ndata, acceptable_error);
