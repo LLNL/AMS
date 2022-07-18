@@ -35,8 +35,6 @@ private:
     // -------------------------------------------------------------------------
     torch::jit::script::Module module;
     c10::TensorOptions tensorOptions;
-#endif
-
 
 
     // -------------------------------------------------------------------------
@@ -89,9 +87,6 @@ private:
             exit(-1);
         }
     }
-#endif //__ENABLE_TORCH__
-
-
 
     template <typename T, std::enable_if_t<std::is_same<T, double>::value>* = nullptr>
     inline void _load(const std::string &model_path, const std::string &device_name) {
@@ -104,7 +99,6 @@ private:
         std::cout << "Loading torch model ("<<model_path << ") at single precision\n";
         _load_torch(model_path, torch::Device(device_name), torch::kFloat32);
     }
-
 
     // -------------------------------------------------------------------------
     // evaluate a torch model
@@ -120,7 +114,6 @@ private:
 
         std::cout << input.sizes() << " --> " << output.sizes() << "\n";
         tensorToArray(output, num_elements, num_out, outputs);
-#endif
     }
 
 #else

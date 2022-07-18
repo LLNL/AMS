@@ -22,13 +22,11 @@ source /usr/workspace/AMS/spack/share/spack/setup-env.sh
 spack load umpire caliper py-torch
 spack load mfem/dffe5gw
 spack load faiss/qems7pu
-#spack load faiss/4rkta7
 
 # export the paths (currently cmake needs these)
 export AMS_MFEM_PATH=`spack location -i mfem/dffe5gw`
 export AMS_TORCH_PATH=`spack location -i py-torch`
 export AMS_FAISS_PATH=`spack location -i faiss/qems7pu`
-#export AMS_FAISS_PATH=`spack location -i faiss/4rkta7`
 export AMS_UMPIRE_PATH=`spack location -i umpire`
 
 echo "AMS_MFEM_PATH   = $AMS_MFEM_PATH"
