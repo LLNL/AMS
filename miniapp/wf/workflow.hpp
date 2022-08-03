@@ -206,8 +206,8 @@ public:
                 data_handler::pack(predicate, elements, sparse_inputs, packed_inputs);
 
             std::cout << std::setprecision(2)
-                      << "Physics Computed elements / Surrogate computed elements "
-                         "(Fraction) ["
+                      << "[" << static_cast<int>(pId/partitionElements)  << "] Physics Computed elements / Surrogate computed elements "
+                         "(Fraction of Physysics elements) ["
                       << packedElements << "/" << elements - packedElements << " ("
                       << static_cast<double>(packedElements) / static_cast<double>(elements)
                       << ")]\n";

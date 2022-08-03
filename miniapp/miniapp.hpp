@@ -85,7 +85,7 @@ public:
     // setup the miniapp
     // -------------------------------------------------------------------------
     void setup(const std::string eos_name, const std::string model_path,
-               const std::string hdcache_path) {
+               const std::string hdcache_path, TypeValue threshold = 0.5) {
 
         const std::string &alloc_name_host = ams::ResourceManager::getHostAllocatorName();
 
@@ -128,10 +128,10 @@ public:
                 surrogate = new SurrogateModel<TypeValue>(model_path.c_str(), !use_device);
             }
             if (use_faiss) {
-                cache = new HDCache<TypeValue>(hdcache_path, 10, false);
+                cache = new HDCache<TypeValue>(hdcache_path, 10, false, threshold);
             }
             else {
-                cache = new HDCache<TypeValue>(2, 10, false);
+                cache = new HDCache<TypeValue>(2, 10, false, threshold);
             }
 
             workflow->set_eos(mat_idx, eoses[mat_idx]);

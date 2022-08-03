@@ -56,14 +56,12 @@ private:
         // perform single memcpy.
         tensor = tensor.transpose(1, 0);
         if (is_cpu) {
-            std::cout << "Copying Host Outputs\n";
             for (long j = 0; j < numCols; j++) {
                 auto tmp = tensor[j].contiguous();
                 TypeInValue* ptr = tmp.data_ptr<TypeInValue>();
                 HtoHMemcpy(array[j], ptr, sizeof(TypeInValue) * numRows);
             }
         } else {
-            std::cout << "Copying Device Outputs\n";
             for (long j = 0; j < numCols; j++) {
                 auto tmp = tensor[j].contiguous();
                 TypeInValue* ptr = tmp.data_ptr<TypeInValue>();

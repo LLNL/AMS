@@ -30,6 +30,7 @@ struct MiniAppArgs {
     int num_elems              = 10000;
     int num_qpts               = 64;
     bool pack_sparse_mats      = true;
+    TypeValue threshold = 0.5;
 
     bool parse(int argc, char** argv) {
 
@@ -62,6 +63,10 @@ struct MiniAppArgs {
                        "-np",
                        "--do-not-pack-sparse",
                        "pack sparse material data before evals (cpu only)");
+
+        args.AddOption(&threshold, "-t", "--threshold", 
+                        "Threshold value used to control selection of surrogate "
+                        "vs physics execution");
 
         args.Parse();
         if (!args.Good())
@@ -185,7 +190,7 @@ int main(int argc, char **argv) {
                 args.model_path, args.hdcache_path,
                 args.stop_cycle, args.pack_sparse_mats,
                 args.num_mats, args.num_elems, args.num_qpts,
-                density.data(), energy.data(), indicators);
+                args.threshold, density.data(), energy.data(), indicators);
 
     return EXIT_SUCCESS;
 }

@@ -54,6 +54,8 @@ class HDCache {
     const bool m_use_device;
     const uint8_t m_knbrs;
 
+    const TypeValue acceptable_error;
+
 
 #ifdef __ENABLE_FAISS__
     const char* index_key = "IVF4096,Flat";
@@ -71,9 +73,9 @@ public:
     //! ------------------------------------------------------------------------
     //! constructors
     //! ------------------------------------------------------------------------
-    HDCache(uint8_t dim, uint8_t knbrs, bool use_device) :
+    HDCache(uint8_t dim, uint8_t knbrs, bool use_device, TypeInValue threshold = 0.5) :
         m_index(nullptr), m_dim(dim), m_use_random(true),
-        m_knbrs(knbrs), m_use_device(use_device) {
+        m_knbrs(knbrs), m_use_device(use_device), acceptable_error(threshold) {
         if (use_device) {
             throw std::invalid_argument("HDCache is not functional on device!");
         }
@@ -81,18 +83,18 @@ public:
     }
 
 #ifdef __ENABLE_FAISS__
-    HDCache(const std::string &cache_path, uint8_t knbrs, bool use_device) :
+    HDCache(const std::string &cache_path, uint8_t knbrs, bool use_device, TypeInValue threshold = 0.5) :
         m_index(load_cache(cache_path)), m_dim(m_index->d), m_use_random(false),
-        m_knbrs(knbrs), m_use_device(use_device) {
+        m_knbrs(knbrs), m_use_device(use_device), acceptable_error(threshold) {
         if (use_device) {
             throw std::invalid_argument("HDCache is not functional on device!");
         }
         print();
     }
 #else
-    HDCache(const std::string &cache_path, uint8_t knbrs, bool use_device) :
+    HDCache(const std::string &cache_path, uint8_t knbrs, bool use_device, TypeInValue threshold = 0.5) :
         m_index(nullptr), m_dim(0), m_use_random(true),
-        m_knbrs(knbrs), m_use_device(use_device) {
+        m_knbrs(knbrs), m_use_device(use_device), acceptable_error(threshold) {
         if (use_device) {
             throw std::invalid_argument("HDCache is not functional on device!");
         }
@@ -361,7 +363,6 @@ private:
     _evaluate(const size_t ndata, T *data, bool *is_acceptable) const {
 
         const size_t knbrs = static_cast<size_t>(m_knbrs);
-        static const TypeValue acceptable_error = 0.5;
         static const TypeValue ook = 1.0 / TypeValue(knbrs);
 
         const bool input_on_device = ams::ResourceManager::is_on_device(data);
@@ -445,7 +446,6 @@ private:
     inline void
     _evaluate(const size_t ndata, bool *is_acceptable) const {
 
-        static const TypeInValue acceptable_error = 0.5;
         const bool data_on_device = ams::ResourceManager::is_on_device(is_acceptable);
 
 #if 1
