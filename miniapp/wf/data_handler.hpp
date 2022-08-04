@@ -120,7 +120,7 @@ class DataHandler {
           }
         }
         else {
-          npacked = ams::Device::pack(predicate, n, const_cast<TypeValue**>(sparse.data()), dense.data(), dims);
+          npacked = ams::Device::pack(denseVal, predicate, n, const_cast<TypeValue**>(sparse.data()), dense.data(), dims);
         }
         return npacked;
     }
@@ -148,7 +148,7 @@ class DataHandler {
           }
         }
         else{
-          npacked = ams::Device::unpack(predicate, n, sparse.data(), dense.data(), dims);
+          npacked = ams::Device::unpack(denseVal, predicate, n, sparse.data(), dense.data(), dims);
         }
         return;
     }
@@ -179,7 +179,7 @@ class DataHandler {
               }
           }
         } else {
-          npacked = ams::Device::pack(predicate, n, sparse.data(), dense.data(), sparse_indices, dims);
+          npacked = ams::Device::pack(denseVal, predicate, n, sparse.data(), dense.data(), sparse_indices, dims);
         }
 
         return npacked;
@@ -206,7 +206,7 @@ class DataHandler {
                   sparse[j][sparse_indices[i]] = dense[j][i];
         }
         else{
-          ams::Device::unpack(nPacked, sparse.data(), dense.data(), sparse_indices, dims);
+          ams::Device::unpack(denseVal, nPacked, sparse.data(), dense.data(), sparse_indices, dims);
         }
 
         return;

@@ -49,6 +49,11 @@ struct is_true {
     __host__ __device__ bool operator()(const int x) { return x; }
 };
 
+struct is_false {
+    __host__ __device__ bool operator()(const int x) { return !x; }
+};
+
+
 inline void __cudaCheckError(const char* file, const int line) {
 #ifdef CUDA_ERROR_CHECK
     cudaError err = cudaGetLastError();
@@ -105,10 +110,10 @@ __global__ void fillRandom(bool* predicate, const int total_threads, curandState
 }
 
 template <typename T>
-__global__ void computeBlockCounts(T* d_input, int length, int* d_BlockCounts) {
+__global__ void computeBlockCounts(bool cond, T* d_input, int length, int* d_BlockCounts) {
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
     if (idx < length) {
-        int pred = d_input[idx];
+        int pred = ( d_input[idx] == cond );
         int BC = __syncthreads_count(pred);
 
         if (threadIdx.x == 0) {
@@ -137,12 +142,12 @@ __global__ void assignK(T** sparse, T** dense, int* indices, size_t length, int 
 }
 
 template <typename T>
-__global__ void compactK(T** d_input, T** d_output, const bool* predicates, const size_t length,
+__global__ void compactK(bool cond, T** d_input, T** d_output, const bool* predicates, const size_t length,
                          int dims, int* d_BlocksOffset, bool reverse) {
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
     extern __shared__ int warpTotals[];
     if (idx < length) {
-        int pred = predicates[idx];
+        int pred = (predicates[idx] == cond);
         int w_i = threadIdx.x / warpSize;  //warp index
         int w_l = idx % warpSize;          //thread index within a warp
 
@@ -205,7 +210,7 @@ __global__ void compactK(T** d_input, T** d_output, const bool* predicates, cons
 }
 
 template <typename T>
-int compact(T** sparse, T** dense, const bool* dPredicate, const size_t length, int dims,
+int compact(bool cond, T** sparse, T** dense, const bool* dPredicate, const size_t length, int dims,
             int blockSize, bool isReverse = false) {
     int numBlocks = divup(length, blockSize);
     int* d_BlocksCount = ams::ResourceManager::allocate<int>(numBlocks);
@@ -214,13 +219,13 @@ int compact(T** sparse, T** dense, const bool* dPredicate, const size_t length, 
     thrust::device_ptr<int> thrustPrt_bOffset(d_BlocksOffset);
 
     //phase 1: count number of valid elements in each thread block
-    computeBlockCounts<<<numBlocks, blockSize>>>(dPredicate, length, d_BlocksCount);
+    computeBlockCounts<<<numBlocks, blockSize>>>(cond, dPredicate, length, d_BlocksCount);
 
     //phase 2: compute exclusive prefix sum of valid block counts to get output offset for each thread block in grid
     thrust::exclusive_scan(thrust::device, d_BlocksCount, d_BlocksCount + numBlocks, d_BlocksOffset);
 
     //phase 3: compute output offset for each thread in warp and each warp in thread block, then output valid elements
-    compactK<<<numBlocks, blockSize, sizeof(int) * (blockSize / warpSize)>>>(
+    compactK<<<numBlocks, blockSize, sizeof(int) * (blockSize / warpSize)>>>( cond,
         sparse, dense, dPredicate, length, dims, d_BlocksOffset, isReverse);
 
     // determine number of elements in the compacted list
@@ -233,16 +238,23 @@ int compact(T** sparse, T** dense, const bool* dPredicate, const size_t length, 
 }
 
 template <typename T>
-int compact(T** sparse, T** dense, int* indices, const size_t length, int dims, int blockSize,
+int compact(bool cond, T** sparse, T** dense, int* indices, const size_t length, int dims, int blockSize,
             const bool* dPredicate, bool isReverse = false) {
     int numBlocks = divup(length, blockSize);
     size_t sparseElements = length;
 
     if (!isReverse) {
         initIndices<<<numBlocks, blockSize>>>(indices, length);
-        auto last = thrust::copy_if(thrust::device, indices, indices + sparseElements, dPredicate,
-                                    indices, is_true());
-        sparseElements = last - indices;
+        if ( cond ){
+          auto last = thrust::copy_if(thrust::device, indices, indices + sparseElements, dPredicate,
+                                      indices, is_true());
+          sparseElements = last - indices;
+        }
+        else{
+          auto last = thrust::copy_if(thrust::device, indices, indices + sparseElements, dPredicate,
+                                      indices, is_false());
+          sparseElements = last - indices;
+        }
     }
 
     assignK<<<numBlocks, blockSize>>>(sparse, dense, indices, sparseElements, dims, isReverse);
