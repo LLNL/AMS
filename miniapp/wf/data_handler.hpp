@@ -103,7 +103,7 @@ class DataHandler {
     //! we pack the data based on the predicate value
     static inline size_t pack(const bool* predicate, const size_t n,
                               std::vector<const TypeValue*>& sparse, std::vector<TypeValue*>& dense,
-                              bool denseVal = true) {
+                              bool denseVal = false) {
         if (sparse.size() != dense.size())
             throw std::invalid_argument("Packing arrays size mismatch");
 
@@ -131,7 +131,7 @@ class DataHandler {
     //! Reverse packing. From the dense representation we copy data
     //! back to the sparse one based on the value of the predeicate.
     static inline void unpack(const bool* predicate, const size_t n, std::vector<TypeValue*>& dense,
-                              std::vector<TypeValue*>& sparse, bool denseVal = true) {
+                              std::vector<TypeValue*>& sparse, bool denseVal = false) {
 
         if (sparse.size() != dense.size())
             throw std::invalid_argument("Packing arrays size mismatch");
@@ -162,7 +162,7 @@ class DataHandler {
     //! reverse mapping into sparse_indices pointer.
     static inline size_t pack(const bool* predicate, int* sparse_indices, const size_t n,
                               std::vector<TypeValue*>& sparse, std::vector<TypeValue*>& dense,
-                              bool denseVal = true) {
+                              bool denseVal = false) {
 
         if (sparse.size() != dense.size())
             throw std::invalid_argument("Packing arrays size mismatch");
@@ -193,7 +193,7 @@ class DataHandler {
     //! dense representation to the sparse one
     static inline void unpack(int* sparse_indices, const size_t nPacked,
                               std::vector<TypeValue*>& dense, std::vector<TypeValue*>& sparse,
-                              bool denseVal = true) {
+                              bool denseVal = false) {
 
         if (sparse.size() != dense.size())
             throw std::invalid_argument("Packing arrays size mismatch");
