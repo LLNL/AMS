@@ -80,7 +80,8 @@ __global__ void random_uq_device(bool *uq_flags, int ndata, double acceptable_er
                 &state);
 
     for(int i = 0; i < ndata; i++) {
-      uq_flags[i] = ((double)curand(&state) / RAND_MAX) <= acceptable_error;
+      float x = curand_uniform(&state);
+      uq_flags[i] = (x <= acceptable_error);
     }
 }
 

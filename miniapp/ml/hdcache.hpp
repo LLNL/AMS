@@ -450,7 +450,7 @@ private:
 
 #if 1
         if (data_on_device) {
-#ifdef USE_CUDA
+#ifdef __ENABLE_CUDA__
             random_uq_device<<<1,1>>>(is_acceptable, ndata, acceptable_error);
 #endif
         }
