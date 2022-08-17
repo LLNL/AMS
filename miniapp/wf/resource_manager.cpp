@@ -1,4 +1,6 @@
 #include <umpire/Umpire.hpp>
+#include <umpire/strategy/QuickPool.hpp>
+
 #include "resource_manager.hpp"
 
 namespace ams {
