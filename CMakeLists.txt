@@ -116,14 +116,16 @@ if (WITH_FAISS)
   if (FAISS_DIR)
     message(STATUS "FAISS_DIR = ${FAISS_DIR}")
     set(FAISS_INCLUDE_DIRS "${FAISS_DIR}/include")
-    set(FAISS_LIB_DIR "${FAISS_DIR}/lib64")
+    set(FAISS_LIB_DIR "${FAISS_DIR}/lib")
+    set(FAISS_LIB64_DIR "${FAISS_DIR}/lib64")
     set(FAISS_LIBRARIES "faiss")
   else()
     message(FATAL_ERROR "Cannot find FAISS. FAISS_DIR is not defined.")
   endif()
 
+  ## TODO: we need to make a FindFaiss.cmake
   list(APPEND AMS_APP_INCLUDES "${FAISS_INCLUDE_DIRS}")
-  list(APPEND AMS_APP_LIB_DIRS "${FAISS_LIB_DIR}")
+  list(APPEND AMS_APP_LIB_DIRS "${FAISS_LIB_DIR}" "${FAISS_LIB64_DIR}")
   list(APPEND AMS_APP_LIBRARIES "${FAISS_LIBRARIES}")
   list(APPEND AMS_APP_DEFINES "-D__ENABLE_FAISS__")
 
@@ -154,6 +156,14 @@ if (WITH_RZ)
 endif()
 
 # ------------------------------------------------------------------------------
+
+# Needs to be exactly here to link properly
+# TODO: currently we are focusing on BLASS. E
+# We need to ensure this works with MKL and other math libraries.
+set(BLA_VENDER OpenBLAS)
+find_package(BLAS REQUIRED)
+list(APPEND AMS_APP_LIBRARIES "${BLAS_LIBRARIES}")
+
 add_subdirectory(miniapp)
 
 if (WITH_TESTS)
@@ -162,3 +172,4 @@ if (WITH_TESTS)
 endif()
 
 # ------------------------------------------------------------------------------
+
