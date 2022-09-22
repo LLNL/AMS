@@ -1,9 +1,9 @@
-FROM nvidia/cuda:11.4.3-cudnn8-devel-ubuntu20.04 as builder
+FROM docker.io/nvidia/cuda:11.4.3-cudnn8-devel-ubuntu20.04 as builder
 
 ENV NVIDIA_VISIBLE_DEVICES all
 ENV NVIDIA_DRIVER_CAPABILITIES compute,utility
 
-ARG spack_cpu_arch=sandybridge
+ARG spack_cpu_arch=power9le
 ARG build_jobs=16
 ARG cuda_arch=70
 
@@ -55,11 +55,11 @@ RUN mkdir /opt/spack-environment \
     &&   echo "    packages:" \
     &&   echo "      nccl:" \
     &&   echo "        externals:" \
-    &&   echo "        - spec: nccl@2.11.4 arch=linux-ubuntu20.04-${spack_cpu_arch}" \
+    &&   echo "        - spec: nccl@2.11.4 arch=linux-ubuntu20.04" \
     &&   echo "          prefix: /usr/lib/x86_64-linux-gnu/" \
     &&   echo "      buildable: False" \
     &&   echo "      cudnn:" \
-    &&   echo "        - spec: cudnn@8.2.4 arch=linux-ubuntu20.04-${spack_cpu_arch}" \
+    &&   echo "        - spec: cudnn@8.2.4 arch=linux-ubuntu20.04" \
     &&   echo "          prefix: /usr/lib/x86_64-linux-gnu/" \
     &&   echo "      buildable: False" \
     &&   echo "  view: /opt/view") > /opt/spack-environment/spack.yaml
@@ -69,8 +69,8 @@ RUN cd /opt/spack-environment \
     && git clone --single-branch --branch v0.18.1 https://github.com/spack/spack.git 
 
 # Need patched Spack for Faiss 1.7.2
-COPY package.py /opt/spack-environment/spack/var/spack/repos/builtin/packages/faiss/
-COPY fixes-in-v1.7.2.patch /opt/spack-environment/spack/var/spack/repos/builtin/packages/faiss/
+COPY docker/package.py /opt/spack-environment/spack/var/spack/repos/builtin/packages/faiss/
+COPY docker/fixes-in-v1.7.2.patch /opt/spack-environment/spack/var/spack/repos/builtin/packages/faiss/
 
 RUN cd /opt/spack-environment \
     && . spack/share/spack/setup-env.sh \
@@ -85,9 +85,9 @@ RUN cd /opt/spack-environment \
     && python -m ensurepip \
     && python -m pip install cmake ninja 
 
-# Get the Torch lib and put into /opt/view so the binaries are stripped
+# Get the Torch lib with --no-check-certificate due to LLNL cerfitificate man-in-the-middle
 RUN cd /opt/view \
-    && wget https://download.pytorch.org/libtorch/cu113/libtorch-cxx11-abi-shared-with-deps-1.12.1%2Bcu113.zip \
+    && wget --no-check-certificate https://download.pytorch.org/libtorch/cu113/libtorch-cxx11-abi-shared-with-deps-1.12.1%2Bcu113.zip \
     && unzip libtorch-cxx11-abi-shared-with-deps-1.12.1+cu113.zip \
     && rm libtorch-cxx11-abi-shared-with-deps-1.12.1+cu113.zip
 
@@ -96,8 +96,10 @@ RUN cd /opt/spack-environment \
     && . spack/share/spack/setup-env.sh \
     && spack env activate --sh -d . >> /etc/profile.d/z10_spack_environment.sh
 
-RUN mkdir -p /root/marbl-matprops-miniapp/build 
-COPY ../../marbl-matprops-miniapp/ /root/marbl-matprops-miniapp/
+RUN cd /root/
+WORKDIR /root/
+RUN mkdir -p /root/marbl-matprops-miniapp/build && ls -al /root/marbl-matprops-miniapp/
+COPY . /root/marbl-matprops-miniapp/
 RUN cd /root/marbl-matprops-miniapp/build
 WORKDIR /root/marbl-matprops-miniapp/build
 RUN . /etc/profile \
@@ -121,6 +123,9 @@ COPY --from=builder /opt/spack-environment /opt/spack-environment
 COPY --from=builder /opt/software /opt/software
 COPY --from=builder /opt/view /opt/view
 COPY --from=builder /etc/profile.d/z10_spack_environment.sh /etc/profile.d/z10_spack_environment.sh
+
+RUN touch /etc/apt/apt.conf.d/99verify-peer.conf \
+    && echo >>/etc/apt/apt.conf.d/99verify-peer.conf "Acquire { https::Verify-Peer false }"
 
 RUN apt-get update
 RUN DEBIAN_FRONTEND="noninteractive" apt-get -y install --no-install-recommends \

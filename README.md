@@ -145,6 +145,34 @@ cmake -DTorch_DIR=$(spack location -i py-torch)/lib/python3.8/site-packages/torc
 make
 ```
 
+## Build Proxy Application Container on LC Catalyst
+Container building on LC clusters requires using podman. Podman supports container builds using a Dockerfile, but needs some specific changes to the build environment to build the miniapp successfully. Currently the podman build works on Catalyst, although LC hopes to enable it on clusters like Quartz as well. 
+1. Set up the build environment based on [LC instructions](https://lc.llnl.gov/cloud/services/containers/Building_containers/#3-building-from-a-dockerfile-with-podman):
+Get an allocation on a compute node. The build will take > 2 hours:
+```bash
+salloc -N 1 -t 240 --userns
+```
+2. Verify that /var/tmp/<your LC username> is empty
+3. Verify that the output of `ps aux | grep podman` is empty (besides the grep command)
+4. Configure overlay FS and set ulimit:
+```bash 
+. /collab/usr/gapps/lcweg/containers/scripts/enable-podman.sh overlay
+sed -i "s/var/overlay/" ~/.config/containers/storage.conf
+ulimit -Ss 8192
+```
+5. Build the image with podman, tagging it with the GitLab CZ registry to enable subsequent image push:
+```bash
+cd marbl-matprops-miniapp/
+podman build -t czregistry.llnl.gov:5050/autonomous-multiscale-project/marbl-matprops-miniapp:<tagname> -f docker/Dockerfile .
+```
+6. Create a personal access token in the CZ GitLab with "api", "read_registry," and "write_registry" scopes.
+7. Log in to the GitLab CZ registry with you LC username and the personal access toaken generated in step 6 as the password. Then push the image to the registry:
+```bash
+podman login czregistry.llnl.gov:5050
+podman push czregistry.llnl.gov:5050/autonomous-multiscale-project/marbl-matprops-miniapp:<tagname>
+```
+ 
+
 ## running
 To run the proxy application please issue the following command inside the build directory:
 ```bash
