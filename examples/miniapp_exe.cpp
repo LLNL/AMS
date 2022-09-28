@@ -3,16 +3,17 @@
 #include <vector>
 #include <string>
 #include <unordered_set>
+#include <random>
 
 #include <mfem.hpp>
 
 #include "miniapp_lib.hpp"
-#include "wf/utils.hpp"
 
 
 //! ----------------------------------------------------------------------------
 const std::unordered_set<std::string> eos_options { "ideal_gas", "constant_host" };
 
+double unitrand() { return (double)rand() / RAND_MAX; }
 
 //! ----------------------------------------------------------------------------
 struct MiniAppArgs {

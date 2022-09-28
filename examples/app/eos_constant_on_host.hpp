@@ -39,6 +39,13 @@ class ConstantEOSOnHost : public EOS {
         : rm_(umpire::ResourceManager::getInstance()), host_allocator_name_(host_allocator_name),
           val_(val) {}
 
+
+    void Eval(const int length, const double **inputs, double **outputs) const override {
+      Eval(length, inputs[0], inputs[1],
+          outputs[0], outputs[1],
+          outputs[2], outputs[3]);
+    }
+
     void Eval(const int length, const double *density, const double *energy, double *pressure,
               double *soundspeed2, double *bulkmod, double *temperature) const override {
         Eval_with_filter(length, density, energy, nullptr, pressure, soundspeed2, bulkmod,
@@ -123,12 +130,6 @@ class ConstantEOSOnHost : public EOS {
             rm_.deallocate(h_energy);
             rm_.deallocate(h_density);
         }
-    }
-
-    void computeRMSE(const int length, const double *density, const double *energy,
-                     double *pressure, double *soundspeed2, double *bulkmod,
-                     double *temperature) const override {
-        std::cerr << "implement" << std::endl;
     }
 };
 

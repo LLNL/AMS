@@ -164,7 +164,36 @@ print_device_tensor(const std::string &label,
     }}}
 }
 
-//! ----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+
+template<typename T>
+static void
+print_tensor_array(const std::string &label,
+                   const T *values,
+                   const std::array<int,3> &sz) {
+
+    const int K = sz[0], J = sz[1], I = sz[2];
+    if (K == 1) {
+        std::cout << "--> printing ["<<J<<" x "<<I<<"] tensor \""<<label<<"\"\n";
+        for (int j = 0; j < J; ++j) {
+        for (int i = 0; i < I; ++i) {
+            int idx = i + I*j;
+            std::cout << label << "["<<j<<","<<i<<"] = " << idx << " = " << values[idx] << std::endl;
+        }}
+    }
+    else {
+        std::cout << "--> printing ["<<K<<" x "<<J<<" x "<<I<<"] tensor \""<<label<<"\"\n";
+        for (int k = 0; k < K; ++k) {
+        for (int j = 0; j < J; ++j) {
+        for (int i = 0; i < I; ++i) {
+            int idx = i + I*(j + k*J);
+            std::cout << label << "["<<k<<", "<<j<<","<<i<<"] = " << values[idx] << std::endl;
+        }}}
+    }
+}
+
+
 
 //!
 #endif

@@ -12,23 +12,13 @@
 #include "app/eos_idealgas.hpp"
 #include "app/utils_mfem.hpp"
 
-#include "wf/utils.hpp"
-#include "wf/utils_caliper.hpp"
-#include "wf/data_handler.hpp"
-#include "wf/resource_manager.hpp"
-
-
 // this macro completely bypasses all AMS functionality
 // this allows us to check how easy is it to test ams
 #define USE_AMS
 
-
 #ifdef USE_AMS
-#include "ml/hdcache.hpp"
-#include "ml/surrogate.hpp"
-#include "wf/workflow.hpp"
+#include "AMS.h"
 #endif
-
 
 //! ----------------------------------------------------------------------------
 //! mini app class
@@ -37,7 +27,6 @@ namespace ams {
 
 template <typename TypeValue = double>
 class MiniApp {
-    using data_handler = ams::DataHandler<TypeValue>;
 
 private:
     const int num_mats;
@@ -50,11 +39,10 @@ private:
     std::vector<EOS*> eoses;
 
 #ifdef USE_AMS
-    AMSWorkflow *workflow;
+    AMSExecutor* workflow;
 #endif
 
     CALIPER(cali::ConfigManager mgr;)
-
 
 public:
     // -------------------------------------------------------------------------
@@ -69,14 +57,19 @@ public:
         eoses.resize(num_mats, nullptr);
 
 #ifdef USE_AMS
-        workflow = new AMSWorkflow(_num_mats);
+        // We need a AMSExecutor for each material.
+        // This implicitly implies that we are going to
+        // have a differnt ml model for each type of material.
+        // If we have a single model for all materials then we
+        // need to make a single model here.
+        workflow = new AMSExecutor[num_mats]();
 #endif
         CALIPER(mgr.start();)
     }
 
     ~MiniApp() {
 #ifdef USE_AMS
-        delete workflow;
+        delete [] workflow;
 #endif
         CALIPER(mgr.flush());
     }
@@ -87,7 +80,7 @@ public:
     void setup(const std::string eos_name, const std::string model_path,
                const std::string hdcache_path, TypeValue threshold = 0.5) {
 
-        const std::string &alloc_name_host = ams::ResourceManager::getHostAllocatorName();
+        const std::string &alloc_name_host(AMSGetAllocatorName(AMSResourceType::HOST));
 
         // ---------------------------------------------------------------------
         // setup EOSes
@@ -107,36 +100,40 @@ public:
         // setup AMS workflow (surrogate and cache)
         // ---------------------------------------------------------------------
 #ifdef USE_AMS
+        char *uq_path = nullptr;
+        char *surrogate_path = nullptr;
+        char *db_path = nullptr;
+
 #ifdef __ENABLE_FAISS__
-        const bool use_faiss = hdcache_path.size() > 0;
-#else
-        const bool use_faiss = false;
+        if ( hdcache_path.size() > 0 )
+          uq_path = const_cast<char*>(hdcache_path.c_str());
 #endif
 
 #ifdef __ENABLE_TORCH__
-        const bool use_surrogate = model_path.size() > 0;
-#else
-        const bool use_surrogate = false;
+        if ( model_path.size() > 0 )
+          surrogate_path = const_cast<char*>(model_path.c_str());
 #endif
 
+#ifdef __ENABLE_DB__
+        db_path = "miniapp.txt";
+#endif
+        AMSResourceType device = AMSResourceType::HOST;
+        if ( use_device )
+          device = AMSResourceType::DEVICE;
+
+
+        AMSConfig amsConf = {
+        AMSExecPolicy::SinglePass,
+        AMSDType::Double,
+        device,
+        callBack,
+        surrogate_path,
+        uq_path,
+        db_path,
+        threshold};
+
         for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
-
-            HDCache<TypeValue> *cache = nullptr;
-            SurrogateModel<TypeValue> *surrogate = nullptr;
-
-            if (use_surrogate) {
-                surrogate = new SurrogateModel<TypeValue>(model_path.c_str(), !use_device);
-            }
-            if (use_faiss) {
-                cache = new HDCache<TypeValue>(hdcache_path, 10, false, threshold);
-            }
-            else {
-                cache = new HDCache<TypeValue>(2, 10, false, threshold);
-            }
-
-            workflow->set_eos(mat_idx, eoses[mat_idx]);
-            workflow->set_surrogate(mat_idx, surrogate);
-            workflow->set_hdcache(mat_idx, cache);
+          workflow[mat_idx] = AMSCreateExecutor(amsConf);
         }
 #endif
     }
@@ -238,15 +235,6 @@ private:
         const auto d_sparse_elem_indices = mfemReshapeArray1(sparse_elem_indices, Write);
 
 
-        // TODO: cannot determine the allocation location of these device tensors!
-        // this is a problem because later code will want to condition accordingly
-        auto pd = &d_density;
-        if (ams::ResourceManager::getDataAllocationId(pd) == -1) {
-            std::cerr << "WARNING: Cannot detemine data location for device tensors! == "
-                      << ams::ResourceManager::getDataAllocationName(pd) <<" :: "
-                      << ams::ResourceManager::getDataAllocationId(pd)<<"\n";
-        }
-
         // ---------------------------------------------------------------------
         // for each material
         for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
@@ -293,13 +281,15 @@ private:
                           d_dense_energy);
                 CALIPER(CALI_MARK_END("SPARSE_TO_DENSE");)
                 // -------------------------------------------------------------
+                std::vector<const double *> inputs = { &d_dense_density(0, 0), &d_dense_energy(0, 0) };
+                std::vector<double *> outputs = {&d_dense_pressure(0, 0), &d_dense_soundspeed2(0, 0), &d_dense_bulkmod(0, 0), &d_dense_temperature(0, 0)};
 
 #ifdef USE_AMS
-                workflow->evaluate(num_elems_for_mat * num_qpts,
-                                   &d_dense_density(0, 0), &d_dense_energy(0, 0),
-                                   &d_dense_pressure(0, 0), &d_dense_soundspeed2(0, 0),
-                                   &d_dense_bulkmod(0, 0), &d_dense_temperature(0, 0),
-                                   mat_idx);
+                AMSExecute(workflow[mat_idx], static_cast<void *>(eoses[mat_idx]),
+                                  num_elems_for_mat * num_qpts,
+                                  reinterpret_cast<const void **>(inputs.data()),
+                                  reinterpret_cast<void **>(outputs.data()),
+                                  inputs.size(), outputs.size());
 #else
                 eoses[mat_idx]->Eval(num_elems_for_mat * num_qpts,
                                      &d_dense_density(0, 0), &d_dense_energy(0, 0),
@@ -320,11 +310,17 @@ private:
 #ifdef USE_AMS
                 std::cout << " material " << mat_idx << ": using dense packing for "
                           << num_elems << " elems\n";
-                workflow->evaluate(num_elems * num_qpts,
-                                   &d_density(0, 0, mat_idx), &d_energy(0, 0, mat_idx),
-                                   &d_pressure(0, 0, mat_idx), &d_soundspeed2(0, 0, mat_idx),
-                                   &d_bulkmod(0, 0, mat_idx), &d_temperature(0, 0, mat_idx),
-                                   mat_idx);
+
+                std::vector<const double *> inputs = { &d_density(0, 0, mat_idx), &d_energy(0, 0, mat_idx) };
+                std::vector<double *> outputs = { &d_pressure(0, 0, mat_idx), &d_soundspeed2(0, 0, mat_idx),
+                                                  &d_bulkmod(0, 0, mat_idx), &d_temperature(0, 0, mat_idx)};
+
+                AMSExecute(workflow[mat_idx], static_cast<void*>(eoses[mat_idx]),
+                    num_elems_for_mat * num_qpts,
+                    reinterpret_cast<const void **>(inputs.data()),
+                    reinterpret_cast<void **>(outputs.data()),
+                    inputs.size(), outputs.size());
+
 #else
                 eoses[mat_idx]->Eval(num_elems * num_qpts,
                                      &d_density(0, 0, mat_idx), &d_energy(0, 0, mat_idx),

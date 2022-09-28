@@ -6,22 +6,37 @@
 namespace ams {
 
   //! --------------------------------------------------------------------------
-  const std::string
+  const char*
   ResourceManager::getDeviceAllocatorName() {  return "mmp-device-quickpool"; }
 
-  const std::string
+  const char*
   ResourceManager::getHostAllocatorName() {    return "mmp-host-quickpool";   }
+
+  const char *
+  ResourceManager::getAllocatorName(AMSResourceType Resource){
+    if ( Resource == AMSResourceType::HOST )
+      return ResourceManager::getHostAllocatorName();
+    else if ( Resource == AMSResourceType::DEVICE )
+      return ResourceManager::getDeviceAllocatorName();
+    else{
+      throw std::runtime_error("Request allocator for resource that does not exist\n");
+      return nullptr;
+    }
+  }
 
   //! --------------------------------------------------------------------------
   // maintain a list of allocator ids
-  int ResourceManager::allocator_ids[ResourceType::RSEND] = {-1, -1};
+  int ResourceManager::allocator_ids[AMSResourceType::RSEND] = {-1, -1};
+
+  // maintain a list of allocator names
+  std::string ResourceManager::allocator_names[AMSResourceType::RSEND] = { "HOST", "DEVICE" };
 
   // default allocator
-  ResourceManager::ResourceType ResourceManager::default_resource = ResourceManager::ResourceType::HOST;
+  AMSResourceType ResourceManager::default_resource = AMSResourceType::HOST;
 
   //! --------------------------------------------------------------------------
   void
-  ResourceManager::setDefaultDataAllocator(ResourceManager::ResourceType location) {
+  ResourceManager::setDefaultDataAllocator(AMSResourceType location) {
       ResourceManager::default_resource = location;
 
       auto& rm = umpire::ResourceManager::getInstance();
@@ -31,14 +46,14 @@ namespace ams {
       rm.setDefaultAllocator(alloc);
   }
 
-  ResourceManager::ResourceType
+  AMSResourceType
   ResourceManager::getDefaultDataAllocator() {
       return ResourceManager::default_resource;
   }
 
   bool
   ResourceManager::isDeviceExecution() {
-    return ResourceManager::default_resource == ResourceManager::ResourceType::DEVICE;
+    return ResourceManager::default_resource == AMSResourceType::DEVICE;
   }
 
 
@@ -75,36 +90,28 @@ ResourceManager::list_allocators() {
 // set up the resource manager
 // -----------------------------------------------------------------------------
 void
-ResourceManager::setup(const std::string &device_name) {
+ResourceManager::setup(const AMSResourceType Resource) {
+    if ( Resource < AMSResourceType::HOST || Resource >= AMSResourceType::RSEND ){
+      throw std::runtime_error("Resource does not exist\n");
+    }
 
-    std::cout << "\nSetting up ams::ResourceManager("<<device_name<<")\n";
-    const bool use_device = device_name != "cpu";
+    std::cout << "\nSetting up ams::ResourceManager("<<allocator_names[Resource]<<")\n";
 
     // use umpire resource manager
     auto& rm = umpire::ResourceManager::getInstance();
 
     // -------------------------------------------------------------------------
     // create host allocator
-    auto alloc_name_host = ResourceManager::getHostAllocatorName();
-    auto alloc_host = rm.makeAllocator<umpire::strategy::QuickPool, true>
-                                    (alloc_name_host, rm.getAllocator("HOST"));
+    auto alloc_name = ResourceManager::getAllocatorName(Resource);
+    auto alloc_resource = rm.makeAllocator<umpire::strategy::QuickPool, true>
+                                    (alloc_name, rm.getAllocator(allocator_names[Resource]));
 
-    std::cout << "  > Created allocator[" << ResourceType::HOST << "] = "
-              << alloc_host.getId() << ": " << alloc_host.getName() << "\n";
+    std::cout << "  > Created allocator[" << Resource << "] = "
+              << alloc_resource.getId() << ": " << alloc_resource.getName() << "\n";
 
-    allocator_ids[ResourceType::HOST] = alloc_host.getId();
-    setDefaultDataAllocator(ResourceType::HOST);
-
-    if (use_device) {
-        auto alloc_name_device = ResourceManager::getDeviceAllocatorName();
-        auto alloc_device = rm.makeAllocator<umpire::strategy::QuickPool, true>
-                                          (alloc_name_device, rm.getAllocator("DEVICE"));
-
-        std::cout << "  > Created allocator[" << ResourceType::DEVICE << "] = "
-                  << alloc_device.getId() << ": " << alloc_device.getName() << "\n";
-
-        allocator_ids[ResourceType::DEVICE] = alloc_device.getId();
-        setDefaultDataAllocator(ResourceType::DEVICE);
-    }
+    allocator_ids[Resource] = alloc_resource.getId();
+    // TODO: This implies that we should always set device as a resource type last.
+    // We should fix that and allow the resource allocator to not use any state.
+    setDefaultDataAllocator(Resource);
   }
 }  // namespace AMS

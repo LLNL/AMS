@@ -7,8 +7,6 @@
 #include <torch/script.h>  // One-stop header.
 #endif
 
-#include "app/eos.hpp"
-#include "app/eos_idealgas.hpp"
 #include "wf/data_handler.hpp"
 
 

@@ -231,8 +231,8 @@ int compact(bool cond, T** sparse, T** dense, const bool* dPredicate, const size
     // determine number of elements in the compacted list
     int compact_length = thrustPrt_bOffset[numBlocks - 1] + thrustPrt_bCount[numBlocks - 1];
 
-    ams::ResourceManager::deallocate(d_BlocksCount, ams::ResourceManager::ResourceType::DEVICE);
-    ams::ResourceManager::deallocate(d_BlocksOffset, ams::ResourceManager::ResourceType::DEVICE);
+    ams::ResourceManager::deallocate(d_BlocksCount, AMSResourceType::DEVICE);
+    ams::ResourceManager::deallocate(d_BlocksOffset, AMSResourceType::DEVICE);
 
     return compact_length;
 }

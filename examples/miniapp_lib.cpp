@@ -5,8 +5,6 @@
 
 #include "miniapp.hpp"
 #include "miniapp_lib.hpp"
-#include "wf/resource_manager.hpp"
-
 
 //! ----------------------------------------------------------------------------
 //! the main miniapp function that is exposed to the shared lib
@@ -17,21 +15,23 @@ extern "C" void miniapp_lib(const std::string& device_name,
                             const std::string &hdcache_path,
                             int stop_cycle, bool pack_sparse_mats,
                             int num_mats, int num_elems, int num_qpts,
-                            TypeValue threshold, TypeValue* density_in, 
+                            TypeValue threshold, TypeValue* density_in,
                             TypeValue* energy_in, bool* indicators_in) {
 
     // -------------------------------------------------------------------------
     // setting up data allocators
     // -------------------------------------------------------------------------
-    ams::ResourceManager::setup(device_name);
+    AMSSetupAllocator(AMSResourceType::HOST);
+    if ( device_name != "cpu" )
+      AMSSetupAllocator(AMSResourceType::DEVICE);
 
 
     // -------------------------------------------------------------------------
     // mfem memory manager
     // -------------------------------------------------------------------------
     // hardcoded names!
-    const std::string &alloc_name_host = ams::ResourceManager::getHostAllocatorName();
-    const std::string &alloc_name_device = ams::ResourceManager::getDeviceAllocatorName();
+    const std::string &alloc_name_host(AMSGetAllocatorName(AMSResourceType::HOST));
+    const std::string &alloc_name_device(AMSGetAllocatorName(AMSResourceType::DEVICE));
 
     mfem::MemoryManager::SetUmpireHostAllocatorName(alloc_name_host.c_str());
     if (device_name != "cpu")
@@ -44,8 +44,7 @@ extern "C" void miniapp_lib(const std::string& device_name,
     device.Print();
     std::cout << std::endl;
 
-    ams::ResourceManager::list_allocators();
-
+    AMSResourceInfo();
     // -------------------------------------------------------------------------
     // -------------------------------------------------------------------------
     ams::MiniApp<TypeValue> miniapp(num_mats, num_elems, num_qpts, device_name, pack_sparse_mats);

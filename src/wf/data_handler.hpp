@@ -80,8 +80,8 @@ class DataHandler {
             // TODO: linearize directly on device as this is inefficient
 
             // host copies!
-            TypeValue *hdata = ams::ResourceManager::allocate<TypeValue>(nvalues, ams::ResourceManager::ResourceType::HOST);
-            T* hfeature = ams::ResourceManager::allocate<T>(ndata, ams::ResourceManager::ResourceType::HOST);
+            TypeValue *hdata = ams::ResourceManager::allocate<TypeValue>(nvalues, AMSResourceType::HOST);
+            T* hfeature = ams::ResourceManager::allocate<T>(ndata, AMSResourceType::HOST);
 
             for (size_t d = 0; d < nfeatures; d++) {
                 DtoHMemcpy(hfeature, const_cast<T*>(features[d]), ndata*sizeof(T));
@@ -102,7 +102,7 @@ class DataHandler {
     //! since boolean predicate is likely to be sparse
     //! we pack the data based on the predicate value
     static inline size_t pack(const bool* predicate, const size_t n,
-                              std::vector<const TypeValue*>& sparse, std::vector<TypeValue*>& dense,
+                              std::vector<TypeValue*>& sparse, std::vector<TypeValue*>& dense,
                               bool denseVal = false) {
         if (sparse.size() != dense.size())
             throw std::invalid_argument("Packing arrays size mismatch");
