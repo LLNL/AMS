@@ -139,6 +139,10 @@ add_subdirectory(src)
 if (WITH_EXAMPLES)
   #The AMS Runtime does not depend on MFEM. The
   #examples we use do.
+
+  list(APPEND AMS_EXAMPLE_LIBRARIES umpire)
+  list(APPEND AMS_EXAMPLE_INCLUDES ${UMPIRE_INCLUDE_DIR})
+
   if (MFEM_DIR)
     include(${PROJECT_SOURCE_DIR}/cmake/FindMFEM.cmake)
   else()
