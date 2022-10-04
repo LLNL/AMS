@@ -163,6 +163,14 @@ if (WITH_EXAMPLES)
     list(APPEND AMS_EXAMPLE_DEFINES "-D__ENABLE_CALIPER__")
   endif()
 
+  if (WITH_FAISS)
+    list(APPEND AMS_EXAMPLE_DEFINES "-D__ENABLE_FAISS__")
+  endif()
+
+  if (WITH_TORCH)
+    list(APPEND AMS_EXAMPLE_DEFINES "-D__ENABLE_TORCH__")
+  endif()
+
   add_subdirectory(examples)
 endif()
 
