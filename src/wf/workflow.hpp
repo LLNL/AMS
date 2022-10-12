@@ -183,6 +183,7 @@ public:
 
     DB = nullptr;
     if (db_path != nullptr) {
+      DBG(Workflow, "Creating Database");
       DB = createDB<FPTypeValue>(db_path, dbType, rId);
     }
   }
@@ -366,6 +367,7 @@ public:
 
     if (DB != nullptr) {
       CALIPER(CALI_MARK_BEGIN("DBSTORE");)
+      DBG(Workflow, "Storing data to database");
       Store(packedElements, packedInputs, packedOutputs);
       CALIPER(CALI_MARK_END("DBSTORE");)
     }

@@ -204,6 +204,9 @@ public:
   //! add points to the faiss cache
   //! -----------------------------------------------------------------------
   //! add the data that comes as linearized features
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   void add(const size_t ndata, const size_t d, TypeInValue *data)
   {
     if (m_use_random) return;
@@ -216,6 +219,9 @@ public:
   }
 
   //! add the data that comes as separate features (a vector of pointers)
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   void add(const size_t ndata, const std::vector<TypeInValue *> &inputs)
   {
     if (m_use_random) return;
@@ -233,6 +239,9 @@ public:
   //! train a faiss cache
   //! -----------------------------------------------------------------------
   //! train on data that comes as linearized features
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   void train(const size_t ndata, const size_t d, TypeInValue *data)
   {
     if (m_use_random) return;
@@ -245,6 +254,9 @@ public:
   }
 
   //! train on data that comes separate features (a vector of pointers)
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   void train(const size_t ndata, const std::vector<TypeInValue *> &inputs)
   {
     if (m_use_random) return;
@@ -261,6 +273,9 @@ public:
   //! https://github.com/facebookresearch/faiss/wiki/Faiss-on-the-GPU#passing-in-pytorch-tensors
   //! so, we should use Dino's code to linearize data into torch tensor and then
   //! pass it here
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   void evaluate(const size_t ndata,
                 const size_t d,
                 TypeInValue *data,
@@ -281,6 +296,9 @@ public:
   }
 
   //! train on data that comes separate features (a vector of pointers)
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   void evaluate(const size_t ndata,
                 const std::vector<const TypeInValue *> &inputs,
                 bool *is_acceptable) const
@@ -300,8 +318,6 @@ public:
     }
   }
 
-  //! -----------------------------------------------------------------------
-
 private:
 #ifdef __ENABLE_FAISS__
   //! ------------------------------------------------------------------------
@@ -313,6 +329,9 @@ private:
   //! add points to index when  (data type = TypeValue)
   template <typename T,
             std::enable_if_t<std::is_same<TypeValue, T>::value> * = nullptr>
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   inline void _add(const size_t ndata, const T *data)
   {
     m_index->add(ndata, data);
@@ -321,6 +340,9 @@ private:
   //! add points to index when (data type != TypeValue)
   template <typename T,
             std::enable_if_t<!std::is_same<TypeValue, T>::value> * = nullptr>
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   inline void _add(const size_t ndata, const T *data)
   {
     TypeValue *vdata = data_handler::cast_to_typevalue(ndata, data);
@@ -332,6 +354,9 @@ private:
   //! train an index when (data type = TypeValue)
   template <typename T,
             std::enable_if_t<std::is_same<TypeValue, T>::value> * = nullptr>
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   inline void _train(const size_t ndata, const T *data)
   {
 
@@ -354,6 +379,9 @@ private:
   //! train an index when (data type != TypeValue)
   template <typename T,
             std::enable_if_t<!std::is_same<TypeValue, T>::value> * = nullptr>
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   inline void _train(const size_t ndata, const T *data)
   {
     TypeValue *vdata = data_handler::cast_to_typevalue(ndata, data);
@@ -365,6 +393,9 @@ private:
   //! evaluate cache uncertainty when  (data type = TypeValue)
   template <typename T,
             std::enable_if_t<std::is_same<TypeValue, T>::value> * = nullptr>
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   void _evaluate(const size_t ndata, T *data, bool *is_acceptable) const
   {
 
@@ -443,21 +474,32 @@ private:
   inline uint8_t _dim() const { return 0; }
 
   template <typename T>
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   inline void _add(const size_t, const T *)
   {
   }
 
   template <typename T>
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   inline void _train(const size_t, const T *)
   {
   }
 
   template <typename T>
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   inline void _evaluate(const size_t, T *, bool *) const
   {
   }
 #endif
-
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   inline void _evaluate(const size_t ndata, bool *is_acceptable) const
   {
     const bool data_on_device =

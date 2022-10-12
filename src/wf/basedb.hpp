@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "AMS.h"
+#include "wf/debug.h"
 
 namespace fs = std::experimental::filesystem;
 
@@ -135,6 +136,7 @@ public:
     dbfn += std::to_string(rId) + suffix;
     Path /= fs::path(dbfn);
     fn = Path.string();
+    DBG(DB, "File System DB writes to file %s", fn.c_str())
   }
 };
 
@@ -162,6 +164,7 @@ public:
     if (!fd.is_open()) {
       std::cerr << "Cannot open db file: " << this->fn << std::endl;
     }
+    DBG(DB, "DB Type: %s", type())
   }
 
   /**
@@ -185,10 +188,14 @@ public:
    * @param[in] outputs Vector of 1-D vectors, each 1-D vectors contains
    * 'num_elements'  values to be stored
    */
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   virtual void store(size_t num_elements,
                      std::vector<TypeValue*>& inputs,
                      std::vector<TypeValue*>& outputs) override
   {
+    DBG(DB, "DB of type %s stores %ld elements of input/output dimensions (%d, %d)", type().c_str(), num_elements, inputs.size(), outputs.size())
 
     const size_t num_in = inputs.size();
     const size_t num_out = outputs.size();
@@ -444,11 +451,15 @@ public:
    * @param[in] outputs Vector of 1-D vectors, each 1-D vectors contains
    * 'num_elements'  values to be stored
    */
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   virtual void store(size_t num_elements,
                      std::vector<TypeValue*>& inputs,
                      std::vector<TypeValue*>& outputs) override
   {
 
+    DBG(DB, "DB of type %s stores %ld elements of input/output dimensions (%d, %d)", type().c_str(), num_elements, inputs.size(), outputs.size())
     const size_t num_in = inputs.size();
     const size_t num_out = outputs.size();
 
@@ -633,6 +644,7 @@ public:
 template <typename TypeValue>
 BaseDB<TypeValue>* createDB(char* dbPath, AMSDBType dbType, uint64_t rId = 0)
 {
+  DBG(DB, "Instantiating data base");
 #ifdef __ENABLE_DB__
   if (dbPath == nullptr) {
     std::cerr << " [WARNING] Path of DB is NULL, Please provide a valid path "

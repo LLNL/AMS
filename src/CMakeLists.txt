@@ -19,6 +19,11 @@ if (WITH_CUDA)
     set_source_files_properties(AMS.cpp PROPERTIES LANGUAGE CUDA)
     set_source_files_properties(AMS.cpp PROPERTIES CUDA_ARCHITECTURES ${AMS_CUDA_ARCH})
     set_source_files_properties(AMS.cpp PROPERTIES COMPILE_FLAGS "--expt-extended-lambda")
+
+    if (WITH_PERFFLOWASPECT)
+        set_property(SOURCE AMS.cpp APPEND_STRING PROPERTY COMPILE_FLAGS " -ccbin clang++ -Xcompiler=-Xclang -Xcompiler=-load -Xcompiler=-Xclang -Xcompiler=${PERFFLOWASPECT_LIB_DIR}/libWeavePass.so")
+        set_source_files_properties(wf/resource_manager.cpp COMPILE_FLAGS "-Xclang -load -Xclang ${PERFFLOWASPECT_LIB_DIR}/libWeavePass.so")
+    endif()
 endif()
 
 # ------------------------------------------------------------------------------

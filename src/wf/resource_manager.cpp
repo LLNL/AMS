@@ -46,10 +46,8 @@ int ResourceManager::allocator_ids[AMSResourceType::RSEND] = {-1, -1, -1};
 
 // maintain a list of allocator names
 std::string ResourceManager::allocator_names[AMSResourceType::RSEND] = {"HOST",
-                                                                        "DEVIC"
-                                                                        "E",
-                                                                        "PINNE"
-                                                                        "D"};
+                                                                        "DEVICE",
+                                                                        "PINNED"};
 
 // default allocator
 AMSResourceType ResourceManager::default_resource = AMSResourceType::HOST;
@@ -62,8 +60,10 @@ void ResourceManager::setDefaultDataAllocator(AMSResourceType location)
   auto& rm = umpire::ResourceManager::getInstance();
   auto alloc = rm.getAllocator(allocator_ids[location]);
 
-  DBG(ResourceManager, "Setting Default Allocator: %d : %s",
-      alloc.getId(), alloc.getName().c_str());
+  DBG(ResourceManager,
+      "Setting Default Allocator: %d : %s",
+      alloc.getId(),
+      alloc.getName().c_str());
 
   rm.setDefaultAllocator(alloc);
 }
@@ -112,6 +112,9 @@ void ResourceManager::list_allocators()
 // -----------------------------------------------------------------------------
 // set up the resource manager
 // -----------------------------------------------------------------------------
+#ifdef __ENABLE_PERFFLOWASPECT__
+__attribute__((annotate("@critical_path(pointcut='around')")))
+#endif
 void ResourceManager::setup(const AMSResourceType Resource)
 {
   if (Resource < AMSResourceType::HOST || Resource >= AMSResourceType::RSEND) {
@@ -125,8 +128,10 @@ void ResourceManager::setup(const AMSResourceType Resource)
   auto alloc_resource = rm.makeAllocator<umpire::strategy::QuickPool, true>(
       alloc_name, rm.getAllocator(allocator_names[Resource]));
 
-  DBG(ResourceManager, "Setting up ams::ResourceManager::%s:%d",
-      allocator_names[Resource].c_str(), Resource);
+  DBG(ResourceManager,
+      "Setting up ams::ResourceManager::%s:%d",
+      allocator_names[Resource].c_str(),
+      Resource);
 
   allocator_ids[Resource] = alloc_resource.getId();
 }

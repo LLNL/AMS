@@ -40,6 +40,7 @@ option(WITH_TESTS       "Compile tests" OFF)
 option(WITH_REDIS       "Use REDIS as a database back end" OFF)
 option(WITH_HDF5        "Use HDF5 as a database back end" OFF)
 option(WITH_AMS_DEBUG   "Enable verbose messages" OFF)
+option(WITH_PERFFLOWASPECT "Use PerfFlowAspect for Profiling" OFF)
 
 if (WITH_MPI)
   #  SET(CMAKE_CXX_COMPILER "${MPI_CXX_COMPILER}" CACHE FILEPATH "CXX compiler overridden with MPI C++ wrapper")
@@ -52,7 +53,6 @@ if (WITH_MPI)
   message(STATUS "MPI Library used: " MPI::MPI_CXX)
   list(APPEND AMS_APP_DEFINES "-D__ENABLE_MPI__")
 endif()
-
 
 # ------------------------------------------------------------------------------
 if (WITH_CUDA)
@@ -197,6 +197,16 @@ if (WITH_RZ)
   list(APPEND AMS_APP_DEFINES "${RZ_AMS_DEFINES}")
 endif()
 
+if (WITH_PERFFLOWASPECT)
+  find_package(perfflowaspect CONFIG REQUIRED)
+
+  list(APPEND AMS_APP_DEFINES "-D__ENABLE_PERFFLOWASPECT__")
+  list(APPEND AMS_APP_LIB_DIRS "${PERFFLOWASPECT_LIB_DIR}")
+
+  add_library(perfflowaspect_full INTERFACE)
+  target_link_libraries(perfflowaspect_full INTERFACE perfflowaspect::perfflow_runtime)
+endif()
+
 # TODO: currently we are focusing only on BLASS. Try out other libraries.
 set(BLA_VENDER OpenBLAS)
 find_package(BLAS REQUIRED)
@@ -250,6 +260,10 @@ if (WITH_EXAMPLES)
 
   if (WITH_TORCH)
     list(APPEND AMS_EXAMPLE_DEFINES "-D__ENABLE_TORCH__")
+  endif()
+
+  if (WITH_PERFFLOWASPECT)
+    list(APPEND AMS_EXAMPLE_DEFINES "-D__ENABLE_PERFFLOWASPECT__")
   endif()
 
   add_subdirectory(examples)

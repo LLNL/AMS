@@ -158,3 +158,23 @@ If you rely on PDS at LC, you can get the password, the hostname and the port nu
 }
 ```
 > You will have to provide the path of the JSON configuration as follows `--dbconfig /usr/workspace/AMS/miniapp_resources/redis/redis-miniapp.json`.
+
+## Building the miniapp with PerfFlowAspect
+```
+$ cd $CODE_ROOT/setup
+$ source setup_env_with_pfa.sh
+$ mkdir build; cd build
+$  cmake \
+   -DCMAKE_CXX_COMPILER=/usr/tce/packages/clang/clang-10.0.1-gcc-8.3.1/bin/clang++ \
+   -DCMAKE_C_COMPILER=/usr/tce/packages/clang/clang-10.0.1-gcc-8.3.1/bin/clang \
+   -DMFEM_DIR=$AMS_MFEM_PATH \
+   -DUMPIRE_DIR=$AMS_UMPIRE_PATH \
+   -DWITH_CUDA=On \
+   -DWITH_CALIPER=On \
+   -DWITH_TORCH=On -DTorch_DIR=$AMS_TORCH_PATH \
+   -DWITH_FAISS=On -DFAISS_DIR=$AMS_FAISS_PATH \
+   -DWITH_PERFFLOWASPECT=On \
+   -Dperfflowaspect_DIR=$AMS_PFA_PATH/share \
+  ../
+$ make -j6
+```

@@ -51,7 +51,9 @@ public:
   {
   }
 
-
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path(pointcut='around')")))
+#endif
   void Eval(const int length,
             const double **inputs,
             double **outputs) const override
@@ -65,6 +67,9 @@ public:
          outputs[3]);
   }
 
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path(pointcut='around')")))
+#endif
   void Eval(const int length,
             const double *density,
             const double *energy,
@@ -83,6 +88,9 @@ public:
                      temperature);
   }
 
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path(pointcut='around')")))
+#endif
   void Eval_with_filter(const int length,
                         const double *density,
                         const double *energy,

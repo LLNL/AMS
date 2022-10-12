@@ -46,6 +46,9 @@ private:
   // -------------------------------------------------------------------------
   // conversion to and from torch
   // -------------------------------------------------------------------------
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   inline at::Tensor arrayToTensor(long numRows,
                                   long numCols,
                                   TypeInValue** array)
@@ -60,6 +63,9 @@ private:
     return tensor;
   }
 
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   inline at::Tensor arrayToTensor(long numRows,
                                   long numCols,
                                   const TypeInValue** array)
@@ -74,6 +80,9 @@ private:
     return tensor;
   }
 
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   inline void tensorToArray(at::Tensor tensor,
                             long numRows,
                             long numCols,
@@ -97,10 +106,12 @@ private:
     }
   }
 
-
   // -------------------------------------------------------------------------
   // loading a surrogate model!
   // -------------------------------------------------------------------------
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   void _load_torch(const std::string& model_path,
                    c10::Device&& device,
                    at::ScalarType dType)
@@ -117,6 +128,9 @@ private:
 
   template <typename T,
             std::enable_if_t<std::is_same<T, double>::value>* = nullptr>
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   inline void _load(const std::string& model_path,
                     const std::string& device_name)
   {
@@ -126,6 +140,9 @@ private:
 
   template <typename T,
             std::enable_if_t<std::is_same<T, float>::value>* = nullptr>
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   inline void _load(const std::string& model_path,
                     const std::string& device_name)
   {
@@ -136,6 +153,9 @@ private:
   // -------------------------------------------------------------------------
   // evaluate a torch model
   // -------------------------------------------------------------------------
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   inline void _evaluate(long num_elements,
                         long num_in,
                         size_t num_out,
@@ -152,11 +172,17 @@ private:
 
 #else
   template <typename T>
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   inline void _load(const std::string& model_path,
                     const std::string& device_name)
   {
   }
 
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   inline void _evaluate(long num_elements,
                         long num_in,
                         size_t num_out,
@@ -181,6 +207,9 @@ public:
       _load<TypeInValue>(model_path, "cuda");
   }
 
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   inline void evaluate(long num_elements,
                        long num_in,
                        size_t num_out,
@@ -190,6 +219,9 @@ public:
     _evaluate(num_elements, num_in, num_out, inputs, outputs);
   }
 
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   inline void evaluate(long num_elements,
                        std::vector<const TypeInValue*> inputs,
                        std::vector<TypeInValue*> outputs)

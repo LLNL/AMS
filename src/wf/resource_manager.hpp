@@ -134,6 +134,9 @@ public:
    *  @return Pointer to allocated elements.
    */
   template <typename TypeInValue>
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   static TypeInValue* allocate(size_t nvalues, AMSResourceType dev = default_resource)
   {
     static auto& rm = umpire::ResourceManager::getInstance();
@@ -151,6 +154,9 @@ public:
    *  @return void.
    */
   template <typename TypeInValue>
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   static void deallocate(TypeInValue* data, AMSResourceType dev = default_resource)
   {
     static auto& rm = umpire::ResourceManager::getInstance();
@@ -165,6 +171,9 @@ public:
    *  @param[in] dev resource to register the memory to.
    *  @return void.
    */
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   static void registerExternal(void* ptr,
                                size_t nBytes,
                                AMSResourceType dev = default_resource)
@@ -194,6 +203,9 @@ public:
    *  @return void.
    */
   template <typename TypeInValue>
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path()")))
+#endif
   static void copy(TypeInValue* src, TypeInValue* dest, size_t size = 0)
   {
     static auto& rm = umpire::ResourceManager::getInstance();
