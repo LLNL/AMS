@@ -60,9 +60,9 @@ public:
             surrogate = new SurrogateModel<FPTypeValue>(surrogate_path, is_cpu);
 
           if ( uq_path != nullptr )
-            hdcache = new HDCache<FPTypeValue>(uq_path, 10, false, threshold);
+            hdcache = new HDCache<FPTypeValue>(uq_path, 10, !is_cpu, threshold);
           else
-            hdcache = new HDCache<FPTypeValue>(2, 10, false, threshold);
+            hdcache = new HDCache<FPTypeValue>(2, 10, !is_cpu, threshold);
 
 #ifdef __ENABLE_DB__
           DB = nullptr;

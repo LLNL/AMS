@@ -209,6 +209,36 @@ __global__ void compactK(bool cond, T** d_input, T** d_output, const bool* predi
     }
 }
 
+
+template<typename TypeInValue, typename TypeOutValue>
+void __global__ linearizeK(TypeOutValue *output, const TypeInValue * const *inputs, size_t dims, size_t elements){
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    if ( idx >= elements )
+      return;
+
+    for (int i = 0; i < dims; i++ ){
+      output[ idx * dims + i] = static_cast<TypeOutValue>(inputs[i][idx]);
+    }
+
+}
+
+
+void __global__ compute_predicate( float *data, bool *predicate, size_t nData, const size_t kneigh, float threshold){
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    if ( idx >= nData )
+      return;
+
+    int index = idx * kneigh;
+    float acc = 0.0f;
+    for (int i = 0; i < kneigh; i++)
+      acc += data[index + i];
+    acc /= static_cast<float>(kneigh);
+
+    bool pred = acc < threshold ? true : false;
+
+    predicate[idx] = pred;
+}
+
 template <typename T>
 int compact(bool cond, T** sparse, T** dense, const bool* dPredicate, const size_t length, int dims,
             int blockSize, bool isReverse = false) {
@@ -262,6 +292,15 @@ int compact(bool cond, T** sparse, T** dense, int* indices, const size_t length,
     return sparseElements;
 }
 
+template<typename TypeInValue, typename TypeOutValue>
+void device_linearize(TypeOutValue *output, const TypeInValue * const *inputs, size_t dims, size_t elements){
+// TODO: Fix "magic number".
+  const int NT = 256;
+// TODO: We should add a max number of blocks typically this should be around 3K.
+  int NB = (elements + NT - 1 ) / NT;
+  linearizeK<<<NB, NT>>>(output, inputs, dims, elements);
+}
+
 template <typename T>
 void cuda_rand_init(bool* predicate, const size_t length, T threshold) {
     static curandState* dev_random = NULL;
@@ -274,6 +313,13 @@ void cuda_rand_init(bool* predicate, const size_t length, T threshold) {
     }
 
     fillRandom<<<numBlocks, BS>>>(predicate, TS, dev_random, length, threshold);
+}
+
+
+void device_compute_predicate( float *data, bool *predicate, size_t nData, const size_t kneigh, float threshold){
+  const int NT = 256;
+  int NB = (nData + NT - 1 ) / NT;
+  compute_predicate<<<NB, NT>>>(data, predicate, nData, kneigh, threshold);
 }
 
 #endif

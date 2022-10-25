@@ -40,6 +40,10 @@ class HDCache {
     using Index = faiss::Index;
     using TypeIndex = faiss::Index::idx_t;            // 64-bit int
     using TypeValue = float;                          // faiss uses floats
+#ifdef __ENABLE_CUDA__
+  faiss::gpu::StandardGpuResources res;
+  faiss::gpu::GpuClonerOptions copyOptions;
+#endif
 #else
     using Index = void;
     using TypeIndex = uint64_t;
@@ -53,6 +57,8 @@ class HDCache {
     const bool m_use_random;
     const bool m_use_device;
     const uint8_t m_knbrs;
+
+    AMSResourceType defaultRes;
 
     const TypeValue acceptable_error;
 
@@ -76,9 +82,7 @@ public:
     HDCache(uint8_t dim, uint8_t knbrs, bool use_device, TypeInValue threshold = 0.5) :
         m_index(nullptr), m_dim(dim), m_use_random(true),
         m_knbrs(knbrs), m_use_device(use_device), acceptable_error(threshold) {
-        if (use_device) {
-            throw std::invalid_argument("HDCache is not functional on device!");
-        }
+        defaultRes = (m_use_device) ? AMSResourceType::DEVICE : AMSResourceType::HOST;
         print();
     }
 
@@ -86,18 +90,22 @@ public:
     HDCache(const std::string &cache_path, uint8_t knbrs, bool use_device, TypeInValue threshold = 0.5) :
         m_index(load_cache(cache_path)), m_dim(m_index->d), m_use_random(false),
         m_knbrs(knbrs), m_use_device(use_device), acceptable_error(threshold) {
-        if (use_device) {
-            throw std::invalid_argument("HDCache is not functional on device!");
+          defaultRes = (m_use_device) ? AMSResourceType::DEVICE : AMSResourceType::HOST;
+#ifdef __ENABLE_CUDA__
+        // Copy index to device side
+        if (use_device){
+          faiss::gpu::GpuClonerOptions copyOptions;
+          faiss::gpu::ToGpuCloner cloner(&res, 0, copyOptions);
+          m_index = cloner.clone_Index(m_index);
         }
+#endif
         print();
     }
 #else
     HDCache(const std::string &cache_path, uint8_t knbrs, bool use_device, TypeInValue threshold = 0.5) :
         m_index(nullptr), m_dim(0), m_use_random(true),
         m_knbrs(knbrs), m_use_device(use_device), acceptable_error(threshold) {
-        if (use_device) {
-            throw std::invalid_argument("HDCache is not functional on device!");
-        }
+        defaultRes = (m_use_device) ? AMSResourceType::DEVICE : AMSResourceType::HOST;
         std::cerr << "WARNING: Ignoring cache path because FAISS is not available!\n";
         print();
     }
@@ -355,7 +363,6 @@ private:
         delete []  vdata;
     }
 
-
     // -------------------------------------------------------------------------
     //! evaluate cache uncertainty when  (data type = TypeValue)
     template <typename T, std::enable_if_t<std::is_same<TypeValue,T>::value>* = nullptr>
@@ -373,49 +380,32 @@ private:
                     << "and output (on_device =" << output_on_device << ") have differnt locations!\n";
         }
 
-        // index on host
-        if (!m_use_device) {
+        TypeValue* kdists = ams::ResourceManager::allocate<TypeValue>(ndata * knbrs, defaultRes);
+        TypeIndex* kidxs = ams::ResourceManager::allocate<TypeIndex>(ndata * knbrs, defaultRes);
 
-            TypeValue* kdists = new TypeValue[ndata*knbrs];
-            TypeIndex* kidxs = new TypeIndex[ndata*knbrs];
+        // query faiss
+        // TODO: This is a HACK. When searching more than 65535
+        // items in the GPU case, faiss is throwing an exception.
+        const unsigned int MAGIC_NUMBER = 65535;
+        for ( int start = 0; start < ndata; start += MAGIC_NUMBER){
+          unsigned int nElems = ( (ndata - start) < MAGIC_NUMBER) ? ndata - start : MAGIC_NUMBER;
+          m_index->search(nElems, &data[start], knbrs, &kdists[start], &kidxs[start]);
+        }
 
-            // host copies!
-            bool *h_is_acceptable = nullptr;
-            TypeValue *h_data = nullptr;
-
-            if (input_on_device) {
-                h_is_acceptable = new bool [ndata];
-                h_data = new TypeValue[ndata];
-                DtoHMemcpy(h_data, data, ndata*sizeof(TypeValue));
-            }
-            else {
-                h_is_acceptable = is_acceptable;
-                h_data = data;
-            }
-
-            // query faiss
-            m_index->search(ndata, h_data, knbrs, kdists, kidxs);
-
-            // compute means
-            TypeValue total_dist = 0;
-            for (size_t i = 0; i < ndata; ++i) {
-                total_dist = std::accumulate(kdists + i*knbrs, kdists + (i+1)*knbrs, 0.);
-                h_is_acceptable[i] = (ook * total_dist) < acceptable_error;
-            }
-
-            // move output back to device
-            if (input_on_device) {
-                HtoDMemcpy(is_acceptable, h_is_acceptable, ndata*sizeof(bool));
-                delete [] h_is_acceptable;
-                delete [] h_data;
-            }
-            delete [] kdists;
-            delete [] kidxs;
+        // compute means
+        if ( defaultRes == AMSResourceType::HOST ){
+          TypeValue total_dist = 0;
+          for (size_t i = 0; i < ndata; ++i) {
+              total_dist = std::accumulate(kdists + i*knbrs, kdists + (i+1)*knbrs, 0.);
+              is_acceptable[i] = (ook * total_dist) < acceptable_error;
+          }
         }
         else {
-            // https://github.com/kyamagu/faiss-wheels/issues/54
-            throw std::invalid_argument("FAISS evaluation on device is not implemented\n");
+          ams::Device::computePredicate(kdists, is_acceptable, ndata, knbrs, acceptable_error);
         }
+
+        ams::ResourceManager::deallocate(kdists);
+        ams::ResourceManager::deallocate(kidxs);
     }
 
     //! evaluate cache uncertainty when (data type != TypeValue)
@@ -445,10 +435,8 @@ private:
 
     inline void
     _evaluate(const size_t ndata, bool *is_acceptable) const {
-
         const bool data_on_device = ams::ResourceManager::is_on_device(is_acceptable);
 
-#if 1
         if (data_on_device) {
 #ifdef __ENABLE_CUDA__
             random_uq_device<<<1,1>>>(is_acceptable, ndata, acceptable_error);
@@ -457,29 +445,6 @@ private:
         else {
             random_uq_host(is_acceptable, ndata, acceptable_error);
         }
-#else
-        // use host for computation
-        if (!m_use_device) {
-            bool *h_is_acceptable = nullptr;
-            if (data_on_device) {
-                h_is_acceptable = ams::ResourceManager::allocate<bool>(ndata, ams::ResourceManager::ResourceType::HOST);
-            }
-            else {
-                h_is_acceptable = is_acceptable;
-            }
-
-            random_uq_host(h_is_acceptable, ndata, acceptable_error);
-            if (data_on_device) {
-              HtoDMemcpy(is_acceptable, h_is_acceptable, ndata*sizeof(bool));
-              ams::ResourceManager::deallocate(h_is_acceptable);
-            }
-        }
-
-        // compute random flags directly on host
-        else {
-          throw std::invalid_argument("HDCache is not functional on device!");
-        }
-#endif
     }
     // -------------------------------------------------------------------------
 };

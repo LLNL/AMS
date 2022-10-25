@@ -12,6 +12,23 @@
 namespace ams {
 namespace Device {
 
+void computePredicate( float *data, bool *predicate, size_t nData, const size_t kneigh, float threshold){
+#ifdef __ENABLE_CUDA__
+  return device_compute_predicate(data, predicate, nData, kneigh, threshold);
+#else
+  return;
+#endif
+}
+
+template<typename TypeInValue, typename TypeOutValue>
+void linearize(TypeOutValue *output, const TypeInValue * const *inputs, size_t dims, size_t elements){
+#ifdef __ENABLE_CUDA__
+  return device_linearize(output, inputs, dims, elements);
+#else
+  return;
+#endif
+}
+
 template <typename TypeValue>
 int pack(bool cond, const bool* predicate, const size_t n, TypeValue** sparse, TypeValue** dense, int dims) {
 #ifdef __ENABLE_CUDA__

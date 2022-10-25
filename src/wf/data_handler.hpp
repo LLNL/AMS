@@ -68,30 +68,14 @@ class DataHandler {
         if (!features_on_device) {
 
             for (size_t d = 0; d < nfeatures; d++) {
-            for (size_t i = 0; i < ndata; i++) {
+              for (size_t i = 0; i < ndata; i++) {
                 data[i*nfeatures + d] = static_cast<TypeValue>(features[d][i]);
-            }}
+              }
+            }
         }
-
         // features are on device
         else {
-
-            // move data to host, linearize, and move back
-            // TODO: linearize directly on device as this is inefficient
-
-            // host copies!
-            TypeValue *hdata = ams::ResourceManager::allocate<TypeValue>(nvalues, AMSResourceType::HOST);
-            T* hfeature = ams::ResourceManager::allocate<T>(ndata, AMSResourceType::HOST);
-
-            for (size_t d = 0; d < nfeatures; d++) {
-                DtoHMemcpy(hfeature, const_cast<T*>(features[d]), ndata*sizeof(T));
-                for (size_t i = 0; i < ndata; i++) {
-                    hdata[i*nfeatures + d] = static_cast<TypeValue>(hfeature[i]);
-                }
-            }
-            HtoDMemcpy(data, hdata, ndata*sizeof(TypeValue));
-            ams::ResourceManager::deallocate(hdata);
-            ams::ResourceManager::deallocate(hfeature);
+          ams::Device::linearize(data, features.data(), nfeatures, ndata);
         }
         return data;
     }
