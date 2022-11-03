@@ -31,13 +31,14 @@ $  cmake \
   -DWITH_CALIPER=On \  
   -DWITH_TORCH=On -DTorch_DIR=$AMS_TORCH_PATH \
   -DWITH_FAISS=On -DFAISS_DIR=$AMS_FAISS_PATH \
+  -DWITH_EXAMPLES=On \
   ../
 $ make -j6
 ```
 
 4. Running.
 ```
-$ ./build/miniapp/miniapp -S /usr/workspace/AMS/miniapp_resources/trained_models/debug_model.pt
+$ ./build/examples/ams_example -S /usr/workspace/AMS/miniapp_resources/trained_models/debug_model.pt
 ```
   **TODO:** add instructions on command line options!
 
@@ -141,7 +142,7 @@ spack load py-torch
 ```bash
 mkdir build/
 cd build
-cmake -DTorch_DIR=$(spack location -i py-torch)/lib/python3.8/site-packages/torch/share/cmake/Torch -DWITH_CALIPER=On -DWITH_CUDA=On -DWITH_TORCH=On  -DMFEM_DIR=$(spack location -i mfem) ../
+cmake -DWITH_EXAMPLES=On -DTorch_DIR=$(spack location -i py-torch)/lib/python3.8/site-packages/torch/share/cmake/Torch -DWITH_CALIPER=On -DWITH_CUDA=On -DWITH_TORCH=On  -DMFEM_DIR=$(spack location -i mfem) ../
 make
 ```
 
@@ -176,7 +177,7 @@ podman push czregistry.llnl.gov:5050/autonomous-multiscale-project/marbl-matprop
 ## running
 To run the proxy application please issue the following command inside the build directory:
 ```bash
-./build/miniapp/miniapp -S /usr/workspace/AMS/miniapp_resources/trained_models/debug_model.pt
+./build/examples/ams_example -S /usr/workspace/AMS/miniapp_resources/trained_models/debug_model.pt
 ```
 
 By default the evals will be on the cpu, if you want to run on the gpu add the option: ` -d cuda`
