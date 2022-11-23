@@ -9,7 +9,7 @@
 ## load relevant modules on lassen
 module load gcc/8.3.1
 module load cuda/11.1.0
-module load cmake/3.20.2
+module load cmake/3.23.1
 module load spectrum-mpi/2019.06.24
 
 

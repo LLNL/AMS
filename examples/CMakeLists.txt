@@ -17,6 +17,9 @@ if (WITH_CUDA)
     set_source_files_properties(miniapp_lib.cpp PROPERTIES LANGUAGE CUDA)
     set_source_files_properties(miniapp_lib.cpp PROPERTIES COMPILE_FLAGS "--expt-extended-lambda")
     set_source_files_properties(miniapp_exe.cpp PROPERTIES COMPILE_FLAGS "--expt-extended-lambda")
+    
+    # TODO: replace by "native" with cmake >= 3.24
+    set_property(TARGET ams_example PROPERTY CUDA_ARCHITECTURES "60;70")
 
     if (WITH_RZ)
         set_source_files_properties(${RZ_AMS_SOURCES} PROPERTIES LANGUAGE CUDA)

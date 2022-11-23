@@ -40,10 +40,6 @@ if (WITH_CUDA)
   enable_language(CUDA)
   set(CMAKE_CUDA_STANDARD 14)
 
-  if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-    message(FATAL_ERROR "Please Define CMAKE_CUDA_ARCHITECTURES")
-  endif()
-
   # Turn off message of mfem
   set(ENABLE_CUDA True)
   list(APPEND AMS_APP_LIBRARIES ${CUDA_LIBRARIES} cuda)
