@@ -1,6 +1,6 @@
 file(GLOB_RECURSE AMS_CURRENT_EXAMPLE_INCLUDES "*.hpp")
 
-set(AMS_EXAMPLE_SRC ${MINIAPP_INCLUDES} miniapp_lib.cpp miniapp_exe.cpp)
+set(AMS_EXAMPLE_SRC ${MINIAPP_INCLUDES} main.cpp)
 add_executable(ams_example ${AMS_EXAMPLE_SRC} ${MINIAPP_INCLUDES})
 
 if (WITH_RZ)
@@ -13,10 +13,8 @@ target_link_directories(ams_example PRIVATE ${AMS_EXAMPLE_LIB_DIRS})
 target_link_libraries(ams_example PUBLIC AMS ${AMS_EXAMPLE_LIBRARIES})
 
 if (WITH_CUDA)
-    set_source_files_properties(miniapp_exe.cpp PROPERTIES LANGUAGE CUDA)
-    set_source_files_properties(miniapp_lib.cpp PROPERTIES LANGUAGE CUDA)
-    set_source_files_properties(miniapp_lib.cpp PROPERTIES COMPILE_FLAGS "--expt-extended-lambda")
-    set_source_files_properties(miniapp_exe.cpp PROPERTIES COMPILE_FLAGS "--expt-extended-lambda")
+    set_source_files_properties(main.cpp PROPERTIES LANGUAGE CUDA)
+    set_source_files_properties(main.cpp PROPERTIES COMPILE_FLAGS "--expt-extended-lambda")
     
     # TODO: replace by "native" with cmake >= 3.24
     set_property(TARGET ams_example PROPERTY CUDA_ARCHITECTURES "60;70")

@@ -8,9 +8,10 @@
 #include "mfem/general/forall.hpp"
 
 //! -----------------------------------------------------------------------
-#define mfemReshapeTensor3(m, op)       mfem::Reshape(m.op(), m.SizeI(), m.SizeJ(), m.SizeK())
-#define mfemReshapeArray2(m, op, X, Y)  mfem::Reshape(m.op(), X, Y);
-#define mfemReshapeArray1(m, op)        mfem::Reshape(m.op(), m.Size());
+#define mfemReshapeTensor3(m, op)         mfem::Reshape(m.op(), m.SizeI(), m.SizeJ(), m.SizeK())
+#define mfemReshapeArray3(m, op, X, Y, Z) mfem::Reshape(m.op(), X, Y, Z);
+#define mfemReshapeArray2(m, op, X, Y)    mfem::Reshape(m.op(), X, Y);
+#define mfemReshapeArray1(m, op)          mfem::Reshape(m.op(), m.Size());
 
 //! -----------------------------------------------------------------------
 using mfem::ForallWrap;
@@ -36,7 +37,7 @@ using dt3 = mfem::DeviceTensor<3, T>;
 template <typename Tin, typename Tout>
 static inline void
 pack_ij(const int k, const int sz_i, const int sz_sparse_j,
-        const int offset_sparse_j, const dt1<int>& sparse_j_indices,
+        const int offset_sparse_j, const int * sparse_j_indices,
         const dt3<Tin>& a3, const dt2<Tout>& a2, const dt3<Tin>& b3,
         const dt2<Tout>& b2) {
 
@@ -52,7 +53,7 @@ pack_ij(const int k, const int sz_i, const int sz_sparse_j,
 template <typename Tin, typename Tout>
 static inline void
 unpack_ij(const int k, const int sz_i, const int sz_sparse_j,
-          const int offset_sparse_j, const dt1<int>& sparse_j_indices,
+          const int offset_sparse_j, const int * sparse_j_indices,
           const dt2<Tin>& a2, const dt3<Tout>& a3, const dt2<Tin>& b2,
           const dt3<Tout>& b3, const dt2<Tin>& c2, const dt3<Tout>& c3,
           const dt2<Tin>& d2, const dt3<Tout>& d3) {
