@@ -11,24 +11,23 @@ Steps to build the code.
 1. Clone the code repository.
 ```
 $ git clone ssh://git@czgitlab.llnl.gov:7999/autonomous-multiscale-project/marbl-matprops-miniapp.git
-$ CODE_ROOT=`pwd`/marbl-matprops-miniapp
+$ cd marbl-matprops-miniapp
 ```
 
 2. Setup the environment -- the following script will load all dependencies and
 setup some relevant paths.
 ```
-$ cd $CODE_ROOT/setup
-$ source setup_env.sh
+$ source setup/setup_env.sh
 ```
 
 3. Build the mini-app. Please note the optional features that can be turned off.
 ```
 $ mkdir build; cd build
-$  cmake \
+$ cmake \
   -DMFEM_DIR=$AMS_MFEM_PATH \
   -DUMPIRE_DIR=$AMS_UMPIRE_PATH \
   -DWITH_CUDA=On \
-  -DWITH_CALIPER=On \  
+  -DWITH_CALIPER=On \
   -DWITH_TORCH=On -DTorch_DIR=$AMS_TORCH_PATH \
   -DWITH_FAISS=On -DFAISS_DIR=$AMS_FAISS_PATH \
   -DWITH_EXAMPLES=On \
@@ -147,7 +146,7 @@ make
 ```
 
 ## Build Proxy Application Container on LC Catalyst
-Container building on LC clusters requires using podman. Podman supports container builds using a Dockerfile, but needs some specific changes to the build environment to build the miniapp successfully. Currently the podman build works on Catalyst, although LC hopes to enable it on clusters like Quartz as well. 
+Container building on LC clusters requires using podman. Podman supports container builds using a Dockerfile, but needs some specific changes to the build environment to build the miniapp successfully. Currently the podman build works on Catalyst, although LC hopes to enable it on clusters like Quartz as well.
 1. Set up the build environment based on [LC instructions](https://lc.llnl.gov/cloud/services/containers/Building_containers/#3-building-from-a-dockerfile-with-podman):
 Get an allocation on a compute node. The build will take > 2 hours:
 ```bash
@@ -156,7 +155,7 @@ salloc -N 1 -t 240 --userns
 2. Verify that /var/tmp/<your LC username> is empty
 3. Verify that the output of `ps aux | grep podman` is empty (besides the grep command)
 4. Configure overlay FS and set ulimit:
-```bash 
+```bash
 . /collab/usr/gapps/lcweg/containers/scripts/enable-podman.sh overlay
 sed -i "s/var/overlay/" ~/.config/containers/storage.conf
 ulimit -Ss 8192
@@ -172,7 +171,7 @@ podman build -t czregistry.llnl.gov:5050/autonomous-multiscale-project/marbl-mat
 podman login czregistry.llnl.gov:5050
 podman push czregistry.llnl.gov:5050/autonomous-multiscale-project/marbl-matprops-miniapp:<tagname>
 ```
- 
+
 
 ## running
 To run the proxy application please issue the following command inside the build directory:
