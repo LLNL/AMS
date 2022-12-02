@@ -85,8 +85,10 @@ class DataHandler {
     //! -----------------------------------------------------------------------
     //! since boolean predicate is likely to be sparse
     //! we pack the data based on the predicate value
-    static inline size_t pack(const bool* predicate, const size_t n,
-                              std::vector<TypeValue*>& sparse, std::vector<TypeValue*>& dense,
+    static inline size_t pack(const bool* predicate,
+                              const size_t n,
+                              std::vector<TypeValue*>& sparse,
+                              std::vector<TypeValue*>& dense,
                               bool denseVal = false) {
         if (sparse.size() != dense.size())
             throw std::invalid_argument("Packing arrays size mismatch");

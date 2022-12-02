@@ -30,7 +30,8 @@ void linearize(TypeOutValue *output, const TypeInValue * const *inputs, size_t d
 }
 
 template <typename TypeValue>
-int pack(bool cond, const bool* predicate, const size_t n, TypeValue** sparse, TypeValue** dense, int dims) {
+int pack(bool cond, const bool* predicate, const size_t n, TypeValue** sparse,
+         TypeValue** dense, int dims) {
 #ifdef __ENABLE_CUDA__
     return compact(cond, sparse, dense, predicate, n, dims, 1024);
 #else
@@ -39,8 +40,8 @@ int pack(bool cond, const bool* predicate, const size_t n, TypeValue** sparse, T
 }
 
 template <typename TypeValue>
-int pack(bool cond, const bool* predicate, const size_t n, TypeValue** sparse, TypeValue** dense,
-         int* sparse_indices, int dims) {
+int pack(bool cond, const bool* predicate, const size_t n, TypeValue** sparse,
+         TypeValue** dense, int* sparse_indices, int dims) {
 #ifdef __ENABLE_CUDA__
     return compact(cond, sparse, dense, sparse_indices, n, dims, 1024, predicate);
 #else

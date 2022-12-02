@@ -60,9 +60,6 @@ inline void __cudaCheckError(const char* file, const int line) {
     if (cudaSuccess != err) {
         fprintf(stderr, "cudaCheckError() failed at %s:%i : %s\n", file, line,
                 cudaGetErrorString(err));
-
-        fprintf(stdout, "cudaCheckError() failed at %s:%i : %s\n", file, line,
-                cudaGetErrorString(err));
         exit(-1);
     }
 
@@ -72,10 +69,6 @@ inline void __cudaCheckError(const char* file, const int line) {
     if (cudaSuccess != err) {
         fprintf(stderr, "cudaCheckError() with sync failed at %s:%i : %s\n", file, line,
                 cudaGetErrorString(err));
-
-        fprintf(stdout, "cudaCheckError() with sync failed at %s:%i : %s\n", file, line,
-                cudaGetErrorString(err));
-
         exit(-1);
     }
 #endif
@@ -142,8 +135,13 @@ __global__ void assignK(T** sparse, T** dense, int* indices, size_t length, int 
 }
 
 template <typename T>
-__global__ void compactK(bool cond, T** d_input, T** d_output, const bool* predicates, const size_t length,
-                         int dims, int* d_BlocksOffset, bool reverse) {
+__global__ void compactK(bool cond, T** d_input,
+                         T** d_output,
+                         const bool* predicates,
+                         const size_t length,
+                         int dims,
+                         int* d_BlocksOffset,
+                         bool reverse) {
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
     extern __shared__ int warpTotals[];
     if (idx < length) {
@@ -154,9 +152,9 @@ __global__ void compactK(bool cond, T** d_input, T** d_output, const bool* predi
         // compute exclusive prefix sum based on predicate validity to get output offset for thread in warp
         int t_m = fullMask >> (warpSize - w_l);  //thread mask
 #if (CUDART_VERSION < 9000)
-        int b =
-            __ballot(pred) &
-            t_m;  //ballot result = number whose ith bit is one if the ith's thread pred is true masked up to the current index in warp
+        int b = __ballot(pred) & t_m;  //ballot result = number whose ith bit
+                                       //is one if the ith's thread pred is true
+                                       //masked up to the current index in warp
 #else
         int b = __ballot_sync(fullMask, pred) & t_m;
 #endif
@@ -176,17 +174,13 @@ __global__ void compactK(bool cond, T** d_input, T** d_output, const bool* predi
         unsigned int numWarpsMask = fullMask >> (warpSize - numWarps);
         if (w_i == 0 && w_l < numWarps) {
             int w_i_u = 0;
-            for (
-                int j = 0; j <= 5;
-                j++) {  // must include j=5 in loop in case any elements of warpTotals are identically equal to 32
+            for ( int j = 0; j <= 5; j++) {
 #if (CUDART_VERSION < 9000)
-                int b_j = __ballot(warpTotals[w_l] &
-                                   pow2i(j));  //# of the ones in the j'th digit of the warp offsets
+                int b_j = __ballot(warpTotals[w_l] & pow2i(j));  //# of the ones in the j'th digit of the warp offsets
 #else
                 int b_j = __ballot_sync(numWarpsMask, warpTotals[w_l] & pow2i(j));
 #endif
                 w_i_u += (__popc(b_j & t_m)) << j;
-                //printf("indice %i t_m=%i,j=%i,b_j=%i,w_i_u=%i\n",w_l,t_m,j,b_j,w_i_u);
             }
             warpTotals[w_l] = w_i_u;
         }
@@ -240,11 +234,23 @@ void __global__ compute_predicate( float *data, bool *predicate, size_t nData, c
 }
 
 template <typename T>
-int compact(bool cond, T** sparse, T** dense, const bool* dPredicate, const size_t length, int dims,
-            int blockSize, bool isReverse = false) {
+int compact(bool cond,
+            T** sparse,
+            T** dense,
+            const bool* dPredicate,
+            const size_t length,
+            int dims,
+            int blockSize,
+            bool isReverse = false) {
     int numBlocks = divup(length, blockSize);
-    int* d_BlocksCount = ams::ResourceManager::allocate<int>(numBlocks);
-    int* d_BlocksOffset = ams::ResourceManager::allocate<int>(numBlocks);
+    int* d_BlocksCount = ams::ResourceManager::allocate<int>(numBlocks, AMSResourceType::DEVICE);
+    int* d_BlocksOffset = ams::ResourceManager::allocate<int>(numBlocks, AMSResourceType::DEVICE);
+    T** d_dense  = ams::ResourceManager::allocate<T*>(dims, AMSResourceType::DEVICE);
+    T** d_sparse = ams::ResourceManager::allocate<T*>(dims, AMSResourceType::DEVICE);
+    ams::ResourceManager::registerExternal(dense, sizeof(T*) * dims, AMSResourceType::HOST);
+    ams::ResourceManager::registerExternal(sparse, sizeof(T*) * dims, AMSResourceType::HOST);
+    ams::ResourceManager::copy(dense, d_dense);
+    ams::ResourceManager::copy(sparse, d_sparse);
     thrust::device_ptr<int> thrustPrt_bCount(d_BlocksCount);
     thrust::device_ptr<int> thrustPrt_bOffset(d_BlocksOffset);
 
@@ -256,13 +262,24 @@ int compact(bool cond, T** sparse, T** dense, const bool* dPredicate, const size
 
     //phase 3: compute output offset for each thread in warp and each warp in thread block, then output valid elements
     compactK<<<numBlocks, blockSize, sizeof(int) * (blockSize / warpSize)>>>( cond,
-        sparse, dense, dPredicate, length, dims, d_BlocksOffset, isReverse);
+        d_sparse, d_dense, dPredicate, length, dims, d_BlocksOffset, isReverse);
 
     // determine number of elements in the compacted list
-    int compact_length = thrustPrt_bOffset[numBlocks - 1] + thrustPrt_bCount[numBlocks - 1];
+    int* h_BlocksCount = ams::ResourceManager::allocate<int>(numBlocks, AMSResourceType::HOST);
+    int* h_BlocksOffset = ams::ResourceManager::allocate<int>(numBlocks, AMSResourceType::HOST);
+    ams::ResourceManager::copy(d_BlocksCount, h_BlocksCount);
+    ams::ResourceManager::copy(d_BlocksOffset, h_BlocksOffset);
+    int compact_length = h_BlocksOffset[numBlocks - 1] + thrustPrt_bCount[numBlocks - 1];
 
     ams::ResourceManager::deallocate(d_BlocksCount, AMSResourceType::DEVICE);
     ams::ResourceManager::deallocate(d_BlocksOffset, AMSResourceType::DEVICE);
+    ams::ResourceManager::deallocate(h_BlocksOffset, AMSResourceType::HOST);
+    ams::ResourceManager::deallocate(h_BlocksOffset, AMSResourceType::HOST);
+    ams::ResourceManager::deallocate(d_dense, AMSResourceType::DEVICE);
+    ams::ResourceManager::deallocate(d_sparse, AMSResourceType::DEVICE);
+    ams::ResourceManager::deregisterExternal(dense);
+    ams::ResourceManager::deregisterExternal(sparse);
+
 
     return compact_length;
 }

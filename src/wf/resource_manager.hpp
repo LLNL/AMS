@@ -89,6 +89,23 @@ public:
             rm.getAllocator(data).deallocate(data);
         }
     }
+
+    static void registerExternal(void* ptr, size_t nBytes, AMSResourceType dev = default_resource){
+      auto& rm = umpire::ResourceManager::getInstance();
+      auto alloc = rm.getAllocator(allocator_ids[dev]);
+      rm.registerAllocation(ptr, umpire::util::AllocationRecord(ptr, nBytes, alloc.getAllocationStrategy()));
+    }
+
+    static void deregisterExternal(void* ptr){
+      auto& rm = umpire::ResourceManager::getInstance();
+      rm.deregisterAllocation(ptr);
+    }
+
+    template<typename T>
+    static void copy(T *src, T *dest){
+      static auto& rm = umpire::ResourceManager::getInstance();
+      rm.copy(dest, src);
+    }
     //! ------------------------------------------------------------------------
 };
 
