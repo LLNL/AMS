@@ -38,6 +38,11 @@ class AMSWorkflow {
     // (currently implemented as a file)
     BaseDB* DB;
 
+    // process Id and total number of processes
+    // in this run
+    int pId;
+    int wSize;
+
 public:
     // -------------------------------------------------------------------------
     // constructor and destructor
@@ -53,8 +58,9 @@ public:
 
     AMSWorkflow(AMSPhysicFn _AppCall, char *uq_path,
         char *surrogate_path, char *db_path,
-        bool is_cpu, FPTypeValue threshold) :
-        AppCall(_AppCall) {
+        bool is_cpu, FPTypeValue threshold,
+        int _pId = 0, int _wSize = 1) :
+        AppCall(_AppCall), pId(_pId), wSize(_wSize) {
           surrogate = nullptr;
           if ( surrogate_path != nullptr )
             surrogate = new SurrogateModel<FPTypeValue>(surrogate_path, is_cpu);
@@ -69,6 +75,7 @@ public:
           if ( db_path != nullptr )
             DB = new BaseDB(db_path);
 #endif
+
     }
 
     void set_physics(AMSPhysicFn _AppCall){
@@ -100,7 +107,7 @@ public:
     // todo: inputs should be const!
     void evaluate(void *probDescr, const int num_data,
                   const FPTypeValue **inputs, FPTypeValue **outputs,
-                  int inputDim, int outputDim){
+                  int inputDim, int outputDim, MPI_Comm Comm=nullptr){
 
         std::vector<const FPTypeValue *> origInputs(inputs, inputs+inputDim);
         std::vector<FPTypeValue *> origOutputs(outputs, outputs + outputDim);
@@ -148,14 +155,15 @@ public:
             }
 
             bool* predicate = &p_ml_acceptable[pId];
-
             // null surrogate means we should call physics module
             if (surrogate == nullptr) {
+                std::cout << "Calling application cause I dont have model\n";
                 AppCall( probDescr, elements,
                           reinterpret_cast<void**>(sparseInputs.data()),
                           reinterpret_cast<void**>(sparseOutputs.data()));
             }
             else {
+                std::cout << "Calling model\n";
                 CALIPER(CALI_MARK_BEGIN("SURROGATE");)
                 //We need to call the model on all data values.
                 //Because we expect it to be faster.
@@ -168,10 +176,16 @@ public:
             // -----------------------------------------------------------------
             // STEP 3: call physics module only where d_dense_need_phys = true
             // -----------------------------------------------------------------
-
             // ---- 3a: we need to pack the sparse data based on the uq flag
             const long packedElements =
                 data_handler::pack(predicate, elements, sparseInputs, packedInputs);
+
+            // TODO: Here we need to load balance. Each rank may have a different
+            // number of PackedElemets. Thus we need to distribute the packedInputs
+            // to all ranks
+            if ( Comm ){
+              MPI_Barrier(Comm);
+            }
 
             std::cout << std::setprecision(2)
                       << "[" << static_cast<int>(pId/partitionElements)  << "] Physics Computed elements / Surrogate computed elements "
@@ -193,6 +207,13 @@ public:
                     DB->Store(packedElements, packedInputs, packedOutputs);
                     CALIPER(CALI_MARK_END("DBSTORE");)
                 }
+            }
+
+            // TODO: Here we need to load balance. Each rank may have a different
+            // number of PackedElemets. Thus we need to distribute the packedOutputs
+            // to all ranks
+            if ( Comm ){
+              MPI_Barrier(Comm);
             }
 
             // ---- 3c: unpack the data

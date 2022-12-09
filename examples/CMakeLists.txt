@@ -15,9 +15,8 @@ target_link_libraries(ams_example PUBLIC AMS ${AMS_EXAMPLE_LIBRARIES})
 if (WITH_CUDA)
     set_source_files_properties(main.cpp PROPERTIES LANGUAGE CUDA)
     set_source_files_properties(main.cpp PROPERTIES COMPILE_FLAGS "--expt-extended-lambda")
-    
-    # TODO: replace by "native" with cmake >= 3.24
-    set_property(TARGET ams_example PROPERTY CUDA_ARCHITECTURES "60;70")
+
+    set_target_properties(ams_example PROPERTIES CUDA_ARCHITECTURES "${AMS_CUDA_ARCH}")
 
     if (WITH_RZ)
         set_source_files_properties(${RZ_AMS_SOURCES} PROPERTIES LANGUAGE CUDA)

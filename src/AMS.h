@@ -1,7 +1,6 @@
 #ifndef __AMS__
 #define __AMS__
 
-#ifdef __cplusplus
 
 #ifdef __ENABLE_CALIPER__
 #include <caliper/cali-manager.h>
@@ -11,6 +10,17 @@
 #define CALIPER(stmt)
 #endif
 
+#ifdef __ENABLE_MPI__
+#include <mpi.h>
+#define MPI_CALL(stmt) \
+  if ( stmt != MPI_SUCCESS ){ \
+    fprintf(stderr, "Error in MPI-Call (File: %s, %d)\n", __FILE__, __LINE__); \
+  }
+#else   
+#define MPI_CALL(stm)
+#endif
+
+#ifdef __cplusplus
 extern "C" {
 #endif
 
@@ -45,13 +55,33 @@ typedef struct ams_conf{
   char *UQPath;
   char *DBPath;
   double threshold;
+  int pId;
+  int wSize;
 }AMSConfig;
 
 AMSExecutor AMSCreateExecutor(const AMSConfig config);
-void AMSExecute(AMSExecutor executor, void* probDescr, const int numElements,
+
+#ifdef __ENABLE_MPI__
+void AMSDistributedExecute(AMSExecutor executor, 
+             MPI_Comm Comm,
+             void* probDescr, 
+             const int numElements,
+             const void **input_data, 
+             void **output_data,
+             int inputDim,
+             int outputDim);
+#endif
+void AMSExecute(AMSExecutor executor, 
+                void* probDescr, const int numElements,
              const void **input_data, void **output_data,
-             int inputDim, int outputDim);
+             int inputDim,
+             int outputDim);
+
 void AMSDestroyExecutor(AMSExecutor executor);
+
+#ifdef __ENABLE_MPI__
+int AMSSetCommunicator(MPI_Comm Comm);
+#endif
 
 
 const char *AMSGetAllocatorName(AMSResourceType device);

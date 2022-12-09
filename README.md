@@ -24,24 +24,86 @@ $ source setup/setup_env.sh
 ```
 $ mkdir build; cd build
 $ cmake \
-  -DMFEM_DIR=$AMS_MFEM_PATH \
-  -DUMPIRE_DIR=$AMS_UMPIRE_PATH \
-  -DWITH_CUDA=On \
-  -DWITH_CALIPER=On \
-  -DWITH_TORCH=On -DTorch_DIR=$AMS_TORCH_PATH \
-  -DWITH_FAISS=On -DFAISS_DIR=$AMS_FAISS_PATH \
-  -DWITH_EXAMPLES=On \
-  ../
+-DWITH_REDIS=On \
+-DCMAKE_PREFIX_PATH=$INSTALL_DIR \
+-DWITH_DB=On \
+-DCMAKE_INSTALL_PREFIX=./install \
+-DCMAKE_BUILD_TYPE=Debug \
+-DWITH_EXAMPLES=On \
+-DWITH_CUDA=On \
+-DUMPIRE_DIR=$AMS_UMPIRE_PATH \
+-DWITH_MPI=On \
+-DMFEM_DIR=$AMS_MFEM_PATH \
+-DWITH_FAISS=On \
+-DWITH_CALIPER=On \
+-DWITH_MPI=On \
+-DFAISS_DIR=$AMS_FAISS_PATH \
+-DWITH_TORCH=On \
+-DTorch_DIR=$AMS_TORCH_PATH \
+-DAMS_CUDA_ARCH=${AMS_CUDA_ARCH} \
+../
+
 $ make -j6
 ```
+Most of the compile time options are optional. You can turn-off them to decrease the build time significantly.
 
-4. Running.
+### Issue with MPI on specturm-mpi systems (lassen)
+
+Enabling MPI and Torch at build time conflicts with the current
+installation of LSF. Torch depends on nccl which in turn depends
+on rdma. We have not add an external in spack for rdma as it seems it is
+not installed somewhere idependently. Thus py-torch installs their own
+rdma version which conflicts with the current one required from LSF. We are
+working for a fix.
+
+### Run Mini-app
+
+To run the mini-app use any of these options.
+```
+Usage: ./build/examples/ams_example [options] ...
+Options:
+   -h, --help
+  Print this help message and exit.
+   -d <string>, --device <string>, current value: cpu
+  Device config string
+   -S <string>, --surrogate <string>, current value:
+  Path to surrogate model
+   -H <string>, --hdcache <string>, current value:
+  Path to hdcache index
+   -z <string>, --eos <string>, current value: ideal_gas
+  EOS model type
+   -c <int>, --stop-cycle <int>, current value: 1
+  Stop cycle
+   -m <int>, --num-mats <int>, current value: 5
+  Number of materials
+   -e <int>, --num-elems <int>, current value: 10000
+  Number of elements
+   -q <int>, --num-qpts <int>, current value: 64
+  Number of quadrature points per element
+   -r <double>, --empty-element-ratio <double>, current value: -1
+  Fraction of elements that are empty for each material. If -1 use a random value for each.
+   -s <int>, --seed <int>, current value: 0
+  Seed for rand
+   -p, --pack-sparse, -np, --do-not-pack-sparse, current option: --pack-sparse
+  pack sparse material data before evals (cpu only)
+   -i, --with-imbalance, -ni, --without-imbalance, current option: --without-imbalance
+  Create artificial load imbalance across ranks
+   -avg <double>, --average <double>, current value: 0.5
+  Average value of random number generator of imbalance threshold
+   -std <double>, --stdev <double>, current value: 0.2
+  Standard deviation of random number generator of imbalance threshold
+   -t <double>, --threshold <double>, current value: 0.5
+  Threshold value used to control selection of surrogate vs physics execution
+   -v, --verbose, -qu, --quiet, current option: --quiet
+  Print extra stuff
+```
+
 ```
 $ ./build/examples/ams_example -S /usr/workspace/AMS/miniapp_resources/trained_models/debug_model.pt
 ```
   **TODO:** add instructions on command line options!
 
-## System Setup Using Spack
+## System Setup Using Spack (Deprecated)
 
 ** These are the instructions to create a new spack environment. not needed if
 you can simply use the shared installations from above.**

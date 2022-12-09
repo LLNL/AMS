@@ -1,6 +1,7 @@
 # ------------------------------------------------------------------------------
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.18)
 project(AMS VERSION 0.1.0 LANGUAGES CXX C)
+cmake_policy(SET CMP0074 NEW)
 
 set(CMAKE_CXX_STANDARD 14)
 
@@ -34,12 +35,38 @@ option(WITH_TORCH       "Use C/C++ Torch interface for Surrogate Model Inference
 option(WITH_TORCH_DEBUG "Compute RMSE of Surrogate Model and Physics Module" OFF)
 option(WITH_TESTS "Compile tests" OFF)
 
+if (WITH_MPI)
+  #  SET(CMAKE_CXX_COMPILER "${MPI_CXX_COMPILER}" CACHE FILEPATH "CXX compiler overridden with MPI C++ wrapper")
+  #SET(CMAKE_C_COMPILER "${MPI_C_COMPILER}" CACHE FILEPATH "CXX compiler overridden with MPI C++ wrapper")
+
+  find_package(MPI REQUIRED)
+  message(STATUS "AFTER MPICXX: ${MPI_CXX_COMPILER}")
+  message(STATUS "AFTER MPICC: ${MPI_C_COMPILER}")
+  message(STATUS "MPI INCLUDE: ${MPI_INCLUDE_DIRS}")
+  message(STATUS "MPI LIBRARIES: ${MPI_LIBRARIES}")
+  message(STATUS "MPI support found")
+  message(STATUS "MPI compile flags: " ${MPI_CXX_COMPILE_FLAGS})
+  message(STATUS "MPI include path: " ${MPI_CXX_INCLUDE_PATH})
+  message(STATUS "MPI LINK flags path: " ${MPI_C_LINK_FLAGS})
+  message(STATUS "MPI libraries: " ${MPI_CXX_LIBRARIES})
+
+  list(APPEND AMS_APP_INCLUDES "${MPI_C_INCLUDE_DIRS}")
+  list(APPEND AMS_APP_LIB_DIRS "${MPI_C_LIBRARIES}")
+  list(APPEND AMS_APP_LIBRARIES "${MPI_C_LINK_FLAGS}")
+  list(APPEND AMS_APP_DEFINES "-D__ENABLE_MPI__")
+endif()
+
+
 # ------------------------------------------------------------------------------
 if (WITH_CUDA)
+  if (NOT DEFINED AMS_CUDA_ARCH)
+    message(WARNING "CUDA ARCH IS NOT DEFINED, USING 70")
+    set(AMS_CUDA_ARCH 70)
+  endif()
+
   # we need to enable nvcc
   enable_language(CUDA)
   set(CMAKE_CUDA_STANDARD 14)
-
   # Turn off message of mfem
   set(ENABLE_CUDA True)
   list(APPEND AMS_APP_LIBRARIES ${CUDA_LIBRARIES} cuda)
@@ -53,7 +80,6 @@ if (WITH_CALIPER)
   list(APPEND AMS_APP_LIBRARIES caliper)
   list(APPEND AMS_APP_DEFINES "-D__ENABLE_CALIPER__")
 endif()
-
 
 # ------------------------------------------------------------------------------
 if (WITH_DB)
@@ -77,6 +103,10 @@ find_package(Threads REQUIRED)
 # ------------------------------------------------------------------------------
 if (WITH_TORCH)
   find_package(Torch REQUIRED)
+  # This is annoying, torch populates all my cuda flags
+  # and resets them
+  set(CMAKE_CUDA_FLAGS "")
+  set(CMAKE_CUDA_ARCHITECTURES ON)
 
   list(APPEND AMS_APP_INCLUDES "${TORCH_INCLUDE_DIRS}")
   list(APPEND AMS_APP_LIBRARIES "${TORCH_LIBRARIES}")
@@ -135,6 +165,11 @@ add_subdirectory(src)
 if (WITH_EXAMPLES)
   #The AMS Runtime does not depend on MFEM. The
   #examples we use do.
+  if (WITH_MPI)
+    list(APPEND AMS_EXAMPLE_INCLUDES "${MPI_INCLUDE_PATH}")
+    list(APPEND AMS_EXAMPLE_LIBRARIES "${MPI_C_LIBRARIES}")
+    list(APPEND AMS_EXAMPLE_DEFINES "-D__ENABLE_MPI__")
+  endif()
 
   list(APPEND AMS_EXAMPLE_LIBRARIES umpire)
   list(APPEND AMS_EXAMPLE_INCLUDES ${UMPIRE_INCLUDE_DIR})
