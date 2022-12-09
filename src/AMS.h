@@ -17,6 +17,7 @@
     fprintf(stderr, "Error in MPI-Call (File: %s, %d)\n", __FILE__, __LINE__); \
   }
 #else   
+typedef void* MPI_Comm;
 #define MPI_CALL(stm)
 #endif
 

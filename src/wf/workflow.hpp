@@ -183,9 +183,11 @@ public:
             // TODO: Here we need to load balance. Each rank may have a different
             // number of PackedElemets. Thus we need to distribute the packedInputs
             // to all ranks
+#ifdef __ENABLE_MPI__
             if ( Comm ){
               MPI_Barrier(Comm);
             }
+#endif
 
             std::cout << std::setprecision(2)
                       << "[" << static_cast<int>(pId/partitionElements)  << "] Physics Computed elements / Surrogate computed elements "
@@ -208,14 +210,14 @@ public:
                     CALIPER(CALI_MARK_END("DBSTORE");)
                 }
             }
-
+#ifdef __ENABLE_MPI__
             // TODO: Here we need to load balance. Each rank may have a different
             // number of PackedElemets. Thus we need to distribute the packedOutputs
             // to all ranks
             if ( Comm ){
               MPI_Barrier(Comm);
             }
-
+#endif
             // ---- 3c: unpack the data
             data_handler::unpack(predicate, elements, packedOutputs, sparseOutputs);
 

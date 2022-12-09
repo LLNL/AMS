@@ -3,10 +3,6 @@
 #include <vector>
 #include "wf/workflow.hpp"
 
-#ifndef __ENABLE_MPI__
-typedef MPI_Comm void*;
-#endif
-
 std::vector<std::pair<AMSDType, void *>> executors;
 
 void _AMSExecute(AMSExecutor executor, void *probDescr, const int numElements,
