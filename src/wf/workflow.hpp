@@ -10,8 +10,15 @@
 #include "AMS.h"
 #include "ml/surrogate.hpp"
 #include "ml/hdcache.hpp"
-#include "wf/basedb.hpp"
 
+#include "wf/basedb.hpp"
+#ifdef __ENABLE_DB__
+#ifdef __ENABLE_REDIS__
+#include "wf/redisdb.hpp"
+#else
+#include "wf/filedb.hpp"
+#endif // __ENABLE_REDIS__
+#endif // __ENABLE_DB__
 
 //! ----------------------------------------------------------------------------
 //! AMS Workflow class
@@ -35,8 +42,8 @@ class AMSWorkflow {
     SurrogateModel<FPTypeValue>* surrogate;
 
     // Added to include an offline DB
-    // (currently implemented as a file)
-    BaseDB* DB;
+    // (currently implemented as a file or a Redis backend)
+    BaseDB<FPTypeValue, FPTypeValue>* DB;
 
     // process Id and total number of processes
     // in this run
@@ -49,7 +56,7 @@ public:
     // -------------------------------------------------------------------------
     AMSWorkflow() : AppCall(nullptr), hdcache(nullptr), surrogate(nullptr), DB (nullptr) {
 #ifdef __ENABLE_DB__
-        DB = new BaseDB("miniApp_data.txt");
+        DB = new BaseDB<FPTypeValue,FPTypeValue>("miniApp_data.txt");
         if (!DB) {
             std::cout << "Cannot create static database\n";
         }
@@ -70,12 +77,16 @@ public:
           else
             hdcache = new HDCache<FPTypeValue>(2, 10, !is_cpu, threshold);
 
-#ifdef __ENABLE_DB__
           DB = nullptr;
-          if ( db_path != nullptr )
-            DB = new BaseDB(db_path);
-#endif
-
+          if ( db_path != nullptr ) {
+#ifdef __ENABLE_DB__
+#ifdef __ENABLE_REDIS__
+            DB = new RedisDB<FPTypeValue,FPTypeValue>(db_path);
+#else
+            DB = new FileDB<FPTypeValue, FPTypeValue>(db_path);
+#endif //__ENABLE_REDIS__
+#endif // __ENABLE_DB__
+          }
     }
 
     void set_physics(AMSPhysicFn _AppCall){
@@ -97,8 +108,10 @@ public:
       if ( surrogate )
         delete surrogate;
 
-      if ( DB )
+      if ( DB ){
+        //std::cerr << "Deleting DB\n";
         delete DB;
+      }
     }
 
     // -------------------------------------------------------------------------
@@ -191,12 +204,12 @@ public:
 
             std::cout << std::setprecision(2)
                       << "[" << static_cast<int>(pId/partitionElements)  << "] Physics Computed elements / Surrogate computed elements "
-                         "(Fraction of Physysics elements) ["
+                         "(Fraction of Physics elements) ["
                       << packedElements << "/" << elements - packedElements << " ("
                       << static_cast<double>(packedElements) / static_cast<double>(elements)
                       << ")]\n";
 
-            // ---- 3b: call the physics module and store in the dat base
+            // ---- 3b: call the physics module and store in the data base
             if (packedElements > 0) {
                 CALIPER(CALI_MARK_BEGIN("PHYSICS MODULE");)
                 AppCall(probDescr, elements,
@@ -206,8 +219,9 @@ public:
 
                 if (DB != nullptr) {
                     CALIPER(CALI_MARK_BEGIN("DBSTORE");)
-                    DB->Store(packedElements, packedInputs, packedOutputs);
+                    DB->store(pId, packedElements, packedInputs, packedOutputs);
                     CALIPER(CALI_MARK_END("DBSTORE");)
+                    std::cout << "Stored " << packedElements << " physics-computed elements in " << DB->type() << std::endl;
                 }
             }
 #ifdef __ENABLE_MPI__

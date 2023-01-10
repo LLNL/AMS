@@ -3,7 +3,16 @@
 
 #include "resource_manager.hpp"
 
+#ifdef __ENABLE_DB__
+#ifdef __ENABLE_REDIS__
+#include "wf/redisdb.hpp"
+#else
+#include "wf/filedb.hpp"
+#endif // __ENABLE_REDIS__
+#endif // __ENABLE_DB__
+
 namespace ams {
+
 
   //! --------------------------------------------------------------------------
   const char*

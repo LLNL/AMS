@@ -70,6 +70,7 @@ int main(int argc, char **argv)
   const char *eos_name     = "ideal_gas";
   const char *model_path   = "";
   const char *hdcache_path = "";
+  const char *db_config    = "";
 
   int seed                      = 0;
   TypeValue empty_element_ratio = -1;
@@ -145,6 +146,8 @@ int main(int argc, char **argv)
       "Threshold value used to control selection of surrogate "
       "vs physics execution");
 
+  args.AddOption(&db_config, "-db", "--dbconfig", "Path to DB configuration (e.g., Redis)");
+  
   args.AddOption(&verbose, "-v", "--verbose", "-qu", "--quiet", "Print extra stuff");
 
   // -------------------------------------------------------------------------
@@ -201,10 +204,10 @@ int main(int argc, char **argv)
   // setup
   // -------------------------------------------------------------------------
   CALIPER(cali::ConfigManager mgr;)
-    CALIPER(mgr.start();)
-    CALIPER(CALI_MARK_BEGIN("Setup");)
+  CALIPER(mgr.start();)
+  CALIPER(CALI_MARK_BEGIN("Setup");)
 
-    const bool use_device = device_name != "cpu";
+  const bool use_device = device_name != "cpu";
   // set up a randomization seed
   srand(seed + rId);
 
@@ -355,8 +358,21 @@ int main(int argc, char **argv)
 
 #ifdef __ENABLE_DB__
   db_path = "miniapp.txt";
-#endif
-
+#ifdef __ENABLE_REDIS__
+  /*
+  * A JSON that contains all Redis info (port, host, password, SSL certificate path)
+  * See README to generate the certificate (.crt file).
+  * {
+  *      "database-password": "mypassword",
+  *      "service-port": 32273,
+  *      "host": "cz-username-testredis1.apps.czapps.llnl.gov",
+  *      "cert": "redis_certificate.crt"
+  * }
+  */
+  //db_path = "test-config-redis.json";
+  db_path = (strlen(db_config) > 0) ? db_config : nullptr;
+#endif // __ENABLE_REDIS__
+#endif // __ENABLE_DB__
   AMSResourceType ams_device = AMSResourceType::HOST;
   if (use_device) ams_device = AMSResourceType::DEVICE;
 
@@ -373,11 +389,14 @@ int main(int argc, char **argv)
     wS
   };
 
-  for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx)
-  {
+  for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
+#ifndef __ENABLE_REDIS__
+    char name[100];
+    sprintf(name, "miniapp_%d.txt", mat_idx);
+    amsConf.DBPath = name;
+#endif // __ENABLE_REDIS__
     workflow[mat_idx] = AMSCreateExecutor(amsConf);
   }
-
 #endif
 
   // ---------------------------------------------------------------------
@@ -405,12 +424,12 @@ int main(int argc, char **argv)
   }
   CALIPER(CALI_MARK_END("Setup");)
 
-    // -------------------------------------------------------------------------
-    // run through the cycles (time-steps)
-    // -------------------------------------------------------------------------
-    CALIPER(CALI_MARK_BEGIN("TimeStepLoop");)
-    // inputs
-    mfem::Array<TypeValue> density(num_mats * num_elems * num_qpts);
+  // -------------------------------------------------------------------------
+  // run through the cycles (time-steps)
+  // -------------------------------------------------------------------------
+  CALIPER(CALI_MARK_BEGIN("TimeStepLoop");)
+  // inputs
+  mfem::Array<TypeValue> density(num_mats * num_elems * num_qpts);
   mfem::Array<TypeValue> energy(num_mats * num_elems * num_qpts);
 
   // outputs
@@ -524,8 +543,8 @@ int main(int argc, char **argv)
                 d_energy,
                 d_dense_energy);
           CALIPER(CALI_MARK_END("SPARSE_TO_DENSE");)
-            // -------------------------------------------------------------
-            std::vector<const double *> inputs = {&d_dense_density(0, 0), &d_dense_energy(0, 0)};
+          // -------------------------------------------------------------
+          std::vector<const double *> inputs = {&d_dense_density(0, 0), &d_dense_energy(0, 0)};
           std::vector<double *> outputs      = {&d_dense_pressure(0, 0),
             &d_dense_soundspeed2(0, 0),
             &d_dense_bulkmod(0, 0),
