@@ -15,6 +15,12 @@
 #include "AMS.h"
 #include "ml/hdcache.hpp"
 #include "ml/surrogate.hpp"
+
+#ifdef __ENABLE_RMQ__
+#include "wf/broker/data_broker.hpp"
+#include "wf/broker/rmq_broker.hpp"
+#endif
+
 #include "wf/basedb.hpp"
 
 #ifdef __ENABLE_MPI__
@@ -160,6 +166,7 @@ public:
     if (isCPU){
       mLoc = AMSResourceType::HOST;
     }
+
 #ifdef __ENABLE_DB__
     DB = createDB<FPTypeValue>("miniApp_data.txt", dbType, 0);
     CFATAL(WORKFLOW, !DB, "Cannot create database");

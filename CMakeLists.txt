@@ -165,6 +165,24 @@ if (WITH_TORCH)
 endif()
 
 # ------------------------------------------------------------------------------
+if (WITH_RMQ)
+  list(APPEND AMS_APP_DEFINES "-D__ENABLE_RMQ__")
+
+  find_package(amqpcpp REQUIRED)
+  get_target_property(amqpcpp_INCLUDE_DIR amqpcpp INTERFACE_INCLUDE_DIRECTORIES)
+  list(APPEND AMS_APP_INCLUDES ${amqpcpp_INCLUDE_DIR})
+
+  find_package(OpenSSL REQUIRED)
+  # if we use a custm OpenSSL
+  if (DEFINED OPENSSL_ROOT_DIR)
+      list(APPEND AMS_APP_INCLUDES ${OPENSSL_INCLUDE_DIR})
+      list(APPEND AMS_APP_LIBRARIES "${OPENSSL_LIBRARIES}")
+  endif()
+
+  find_package(libev REQUIRED) # event loop library 
+endif()
+
+# ------------------------------------------------------------------------------
 if (WITH_FAISS)
   ## TODO: still need to create FindFaiss.cmake
   #find_package(FAISS REQUIRED HINTS ${FAISS_DIR})
@@ -248,6 +266,11 @@ if (WITH_EXAMPLES)
 
   if (WITH_REDIS)
     list(APPEND AMS_EXAMPLE_DEFINES "-D__ENABLE_REDIS__")
+  endif()
+  
+  if (WITH_RMQ)
+    list(APPEND AMS_EXAMPLE_DEFINES "-D__ENABLE_RMQ__")
+    list(APPEND AMS_EXAMPLE_LIBRARIES OpenSSL::SSL amqpcpp ev pthread dl)
   endif()
 
   if (WITH_CUDA)
