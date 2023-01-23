@@ -75,6 +75,7 @@ int main(int argc, char **argv)
   const char *hdcache_path = "";
   const char *db_config = "";
   const char *db_type = "";
+  const char *rmq_config   = "";
 
   const char *uq_policy_opt = "mean";
   int k_nearest = 5;
@@ -163,7 +164,6 @@ int main(int argc, char **argv)
                  "--without-load-balance",
                  "Enable Load balance module in AMS");
 
-
   args.AddOption(&threshold,
                  "-t",
                  "--threshold",
@@ -196,6 +196,7 @@ int main(int argc, char **argv)
 
   args.AddOption(
       &verbose, "-v", "--verbose", "-qu", "--quiet", "Print extra stuff");
+  args.AddOption(&rmq_config, "-rmq", "--rabbitmq", "Path to Data Broker configuration (e.g., RabbitMQ)");
 
   // -------------------------------------------------------------------------
   // parse arguments
@@ -402,6 +403,7 @@ int main(int argc, char **argv)
   const char *uq_path = nullptr;
   const char *surrogate_path = nullptr;
   const char *db_path = nullptr;
+  const char *rmq_path       = nullptr;
 
 #ifdef __ENABLE_FAISS__
   uq_path = (strlen(hdcache_path) > 0) ? hdcache_path : nullptr;
@@ -411,6 +413,25 @@ int main(int argc, char **argv)
 #ifdef __ENABLE_TORCH__
   surrogate_path = (strlen(model_path) > 0) ? model_path : nullptr;
 #endif
+
+#ifdef __ENABLE_RMQ__
+  rmq_path = (strlen(rmq_config) > 0) ? rmq_config : nullptr;
+#endif
+
+#ifdef __ENABLE_DB__
+  db_path = "miniapp.txt";
+#ifdef __ENABLE_REDIS__
+  /*
+  * A JSON that contains all Redis info (port, host, password, SSL certificate path)
+  * See README to generate the certificate (.crt file).
+  * {
+  *      "database-password": "mypassword",
+  *      "service-port": 32273,
+  *      "host": "cz-username-testredis1.apps.czapps.llnl.gov",
+  *      "cert": "redis_certificate.crt"
+  * }
+  */
+  //db_path = "test-config-redis.json";
 
   db_path = (strlen(db_config) > 0) ? db_config : nullptr;
 

@@ -11,7 +11,7 @@ class DataBroker {
 public:
       /* Define the type of the broker (RabbitMQ etc) */
       virtual std::string type() const = 0;
-      virtual ~DataBroker();
+      virtual ~DataBroker() {}
 };
 
 } //namespace ams

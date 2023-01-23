@@ -96,7 +96,7 @@ public:
 
         // run the event loop
         ev_run(_loop, 0);
-        
+
         // close the channel
         channel.close().onSuccess([&connection, &channel]() {
             // report that channel was closed

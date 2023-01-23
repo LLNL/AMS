@@ -1,11 +1,15 @@
-#include <iostream>
+#ifndef __AMS_RMQ_HANDLER_HPP__
+#define __AMS_RMQ_HANDLER_HPP__
 
+#include <iostream>
 #include <ev.h>
 #include <amqpcpp.h>
 #include <amqpcpp/libev.h>
 #include <openssl/ssl.h>
 #include <openssl/opensslv.h>
 #include <openssl/err.h>
+
+namespace ams {
 
 class HandlerRMQ : public AMQP::LibEvHandler {
 private:
@@ -229,3 +233,6 @@ public:
         // @todo to be implemented
     }
 };
+
+} // namespace ams
+#endif
