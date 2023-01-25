@@ -551,7 +551,7 @@ int main(int argc, char **argv)
             &d_dense_temperature(0, 0)};
 
 #ifdef USE_AMS
-#ifdef __ENABLE__MPI__
+#ifdef __ENABLE_MPI__
           AMSDistributedExecute(workflow[mat_idx],
               MPI_COMM_WORLD,
               static_cast<void *>(eoses[mat_idx]),
@@ -609,7 +609,7 @@ int main(int argc, char **argv)
             &d_soundspeed2(0, 0, mat_idx),
             &d_bulkmod(0, 0, mat_idx),
             &d_temperature(0, 0, mat_idx)};
-#ifdef __ENABLE__MPI__
+#ifdef __ENABLE_MPI__
           AMSDistributedExecute(workflow[mat_idx],
               MPI_COMM_WORLD,
               static_cast<void *>(eoses[mat_idx]),

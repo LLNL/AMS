@@ -47,7 +47,7 @@ class AMSWorkflow {
 
     // process Id and total number of processes
     // in this run
-    int pId;
+    int rId;
     int wSize;
 
 public:
@@ -67,7 +67,7 @@ public:
         char *surrogate_path, char *db_path,
         bool is_cpu, FPTypeValue threshold,
         int _pId = 0, int _wSize = 1) :
-        AppCall(_AppCall), pId(_pId), wSize(_wSize) {
+        AppCall(_AppCall), rId(_pId), wSize(_wSize) {
           surrogate = nullptr;
           if ( surrogate_path != nullptr )
             surrogate = new SurrogateModel<FPTypeValue>(surrogate_path, is_cpu);
@@ -144,6 +144,13 @@ public:
         }
 
         int partitionElements = data_handler::computePartitionSize(2, 4);
+        // FIXME: We need to either remove the idea of partioning the outer data and parallelizing
+        // or take into account the implications of such an approach.
+        // The current implementation has bugs in the case of MPI execution. The for loop can execute
+        // A different number of times. Thus blocking any MPI all to all functions. The line below
+        // disables that feature. It still not bullet proof. There is some chance for some specific
+        // node to have a no element at all and it can result into a deadlock
+        partitionElements = num_data;
 
         for (int pId = 0; pId < num_data; pId += partitionElements) {
 
