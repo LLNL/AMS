@@ -6,19 +6,13 @@
 #include <cstdlib>
 #include <cstring>
 #include <vector>
+#include <iostream>
 
 #include "AMS.h"
 #include "ml/surrogate.hpp"
 #include "ml/hdcache.hpp"
 
 #include "wf/basedb.hpp"
-#ifdef __ENABLE_DB__
-#ifdef __ENABLE_REDIS__
-#include "wf/redisdb.hpp"
-#else
-#include "wf/filedb.hpp"
-#endif // __ENABLE_REDIS__
-#endif // __ENABLE_DB__
 
 //! ----------------------------------------------------------------------------
 //! AMS Workflow class
@@ -43,20 +37,90 @@ class AMSWorkflow {
 
     // Added to include an offline DB
     // (currently implemented as a file or a Redis backend)
-    BaseDB<FPTypeValue, FPTypeValue>* DB;
+    BaseDB<FPTypeValue>* DB;
+    AMSDBType dbType = AMSDBType::None;
 
     // process Id and total number of processes
     // in this run
     int rId;
     int wSize;
 
+    bool isCPU;
+
+    /** \brief Store the data in the database and copies
+     * data from the GPU to the CPU and then to the database.
+     * To store GPU resident data we use a 1MB of "pinned"
+     * memory as a buffer
+     * @param[in] num_elements Number of elements of each 1-D vector
+     * @param[in] inputs vector to 1-D vectors storing num_elements
+     * items to be stored in the database
+     * @param[in] outputs vector to 1-D vectors storing num_elements
+     * items to be stored in the database
+     */
+    void Store(size_t num_elements,
+               std::vector<FPTypeValue*>& inputs,
+               std::vector<FPTypeValue*>& outputs) {
+      // 1 MB of buffer size;
+      // TODO: Fix magic number
+      static const long bSize = 1 * 1024 * 1024;
+      const int numIn = inputs.size();
+      const int numOut = outputs.size();
+
+      // No database, so just de-allocate and return
+      if ( DB == nullptr ){
+        ams::ResourceManager::deallocate(inputs);
+        ams::ResourceManager::deallocate(outputs);
+        return;
+      }
+
+      std::vector<FPTypeValue *> hInputs, hOutputs;
+      if ( !isCPU ){
+        // Compute number of elements that fit inside the buffer
+        size_t bElements = bSize / sizeof(FPTypeValue);
+        FPTypeValue *pPtr = ams::ResourceManager::allocate<FPTypeValue>(bElements, AMSResourceType::PINNED);
+        // Total inner vector dimensions (inputs and outputs)
+        size_t totalDims = inputs.size() + outputs.size();
+        // Compute number of elements of each outer dimension that fit in buffer
+        size_t elPerDim = static_cast<int>(floor(bElements / totalDims));
+
+        for ( int i = 0 ; i < inputs.size(); i++)
+          hInputs.push_back(&pPtr[i*elPerDim]);
+
+        for ( int i = 0 ; i < outputs.size(); i++)
+          hOutputs.push_back(&pPtr[( i+inputs.size()) * elPerDim]);
+
+        // Iterate over all chunks
+        for ( int i = 0; i < num_elements; i+= bElements ){
+          size_t actualElems = std::min(bElements, num_elements - i );
+          // Copy input data
+          for ( int k = 0; k < numIn; k++ ){
+            ams::ResourceManager::copy(&inputs[k][i], hInputs[k], actualElems);
+          }
+
+          // Copy output data
+          for ( int k = 0; k < numIn; k++ ){
+            ams::ResourceManager::copy(&outputs[k][i], hOutputs[k], actualElems);
+          }
+
+          //Store to database
+          DB->store(actualElems, hInputs, hOutputs);
+        }
+        ams::ResourceManager::deallocate(pPtr);
+      }
+      else {
+        DB->store(num_elements, inputs, outputs);
+      }
+
+      return;
+    }
+
 public:
     // -------------------------------------------------------------------------
     // constructor and destructor
     // -------------------------------------------------------------------------
-    AMSWorkflow() : AppCall(nullptr), hdcache(nullptr), surrogate(nullptr), DB (nullptr) {
+    AMSWorkflow() : AppCall(nullptr), hdcache(nullptr), surrogate(nullptr), DB(nullptr), dbType(AMSDBType::None), isCPU(false) {
 #ifdef __ENABLE_DB__
-        DB = new BaseDB<FPTypeValue,FPTypeValue>("miniApp_data.txt");
+        DB = createDB<FPTypeValue>("miniApp_data.txt", dbType, 0);
         if (!DB) {
             std::cout << "Cannot create static database\n";
         }
@@ -64,10 +128,10 @@ public:
     }
 
     AMSWorkflow(AMSPhysicFn _AppCall, char *uq_path,
-        char *surrogate_path, char *db_path,
+        char *surrogate_path, char *db_path, const AMSDBType dbType,
         bool is_cpu, FPTypeValue threshold,
         int _pId = 0, int _wSize = 1) :
-        AppCall(_AppCall), rId(_pId), wSize(_wSize) {
+        AppCall(_AppCall), dbType(dbType), rId(_pId), wSize(_wSize) , isCPU(is_cpu){
           surrogate = nullptr;
           if ( surrogate_path != nullptr )
             surrogate = new SurrogateModel<FPTypeValue>(surrogate_path, is_cpu);
@@ -79,13 +143,7 @@ public:
 
           DB = nullptr;
           if ( db_path != nullptr ) {
-#ifdef __ENABLE_DB__
-#ifdef __ENABLE_REDIS__
-            DB = new RedisDB<FPTypeValue,FPTypeValue>(db_path);
-#else
-            DB = new FileDB<FPTypeValue, FPTypeValue>(db_path);
-#endif //__ENABLE_REDIS__
-#endif // __ENABLE_DB__
+            DB = createDB<FPTypeValue>(db_path, dbType, rId);
           }
     }
 
@@ -223,13 +281,6 @@ public:
                           reinterpret_cast<void **>(packedInputs.data()),
                           reinterpret_cast<void **>(packedOutputs.data()));
                 CALIPER(CALI_MARK_END("PHYSICS MODULE");)
-
-                if (DB != nullptr) {
-                    CALIPER(CALI_MARK_BEGIN("DBSTORE");)
-                    DB->store(pId, packedElements, packedInputs, packedOutputs);
-                    CALIPER(CALI_MARK_END("DBSTORE");)
-                    std::cout << "Stored " << packedElements << " physics-computed elements in " << DB->type() << std::endl;
-                }
             }
 #ifdef __ENABLE_MPI__
             // TODO: Here we need to load balance. Each rank may have a different
@@ -241,6 +292,13 @@ public:
 #endif
             // ---- 3c: unpack the data
             data_handler::unpack(predicate, elements, packedOutputs, sparseOutputs);
+
+            if (DB != nullptr) {
+                CALIPER(CALI_MARK_BEGIN("DBSTORE");)
+                Store(packedElements, packedInputs, packedOutputs);
+                CALIPER(CALI_MARK_END("DBSTORE");)
+                std::cout << "Stored " << packedElements << " physics-computed elements in " << DB->type() << std::endl;
+            }
 
             // -----------------------------------------------------------------
             // Deallocate temporal data

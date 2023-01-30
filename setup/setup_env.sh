@@ -40,6 +40,7 @@ export AMS_FAISS_PATH=`spack location -i faiss`
 export AMS_UMPIRE_PATH=`spack location -i umpire`
 export AMS_HIREDIS_PATH=`spack location -i hiredis`
 export AMS_REDIS_PLUS_PLUS_PATH=`spack location -i redis-plus-plus`
+export AMS_HDF5_PATH=`spack location -i hdf5`
 export AMS_CUDA_ARCH=${CUDA_ARCH}
 
 echo "AMS_MFEM_PATH              = $AMS_MFEM_PATH"
@@ -49,6 +50,7 @@ echo "AMS_UMPIRE_PATH            = $AMS_UMPIRE_PATH"
 echo "AMS_CUDA_ARCH              = $AMS_CUDA_ARCH"
 echo "AMS_HIREDIS_PATH           = $AMS_HIREDIS_PATH"
 echo "AMS_REDIS_PLUS_PLUS_PATH   = $AMS_REDIS_PLUS_PLUS_PATH"
+echo "AMS_HDF5_PATH              = $AMS_HDF5_PATH"
 
 export AMS_TORCH_PATH=$(echo $AMS_TORCH_PATH/lib/python3.*/site-packages/torch/share/cmake/Torch)
 

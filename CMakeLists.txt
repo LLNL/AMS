@@ -35,6 +35,7 @@ option(WITH_TORCH       "Use C/C++ Torch interface for Surrogate Model Inference
 option(WITH_TORCH_DEBUG "Compute RMSE of Surrogate Model and Physics Module" OFF)
 option(WITH_TESTS       "Compile tests" OFF)
 option(WITH_REDIS       "Use REDIS as a database back end" OFF)
+option(WITH_HDF5        "Use HDF5 as a database back end" OFF)
 
 if (WITH_MPI)
   #  SET(CMAKE_CXX_COMPILER "${MPI_CXX_COMPILER}" CACHE FILEPATH "CXX compiler overridden with MPI C++ wrapper")
@@ -117,8 +118,16 @@ if (WITH_DB)
     message(STATUS "Redis++ library is ${REDIS_PLUS_PLUS_LIB}")
     list(APPEND AMS_APP_INCLUDES ${REDIS_PLUS_PLUS_HEADER})
     list(APPEND AMS_APP_LIBRARIES ${REDIS_PLUS_PLUS_LIB})
-
   endif() # WITH_REDIS
+
+  if (WITH_HDF5)
+    find_package(HDF5 NAMES hdf5 COMPONENTS C shared REQUIRED NO_DEFAULT_PATH PATHS ${HDF5_Dir})
+    list(APPEND AMS_APP_INCLUDES ${HDF5_INCLUDE_DIR})
+    list(APPEND AMS_APP_LIBRARIES ${HDF5_C_SHARED_LIBRARY})
+    list(APPEND AMS_APP_DEFINES "-D__ENABLE_HDF5__")
+    message(STATUS "HDF5 Shared Library: ${HDF5_C_SHARED_LIBRARY}")
+    message(STATUS "HDF5 Include directories: ${HDF5_INCLUDE_DIR}")
+  endif() # WITH_HDF5
 endif() # WITH_DB
 
 # ------------------------------------------------------------------------------

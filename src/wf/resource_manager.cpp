@@ -3,16 +3,7 @@
 
 #include "resource_manager.hpp"
 
-#ifdef __ENABLE_DB__
-#ifdef __ENABLE_REDIS__
-#include "wf/redisdb.hpp"
-#else
-#include "wf/filedb.hpp"
-#endif // __ENABLE_REDIS__
-#endif // __ENABLE_DB__
-
 namespace ams {
-
 
   //! --------------------------------------------------------------------------
   const char*
@@ -21,12 +12,17 @@ namespace ams {
   const char*
   ResourceManager::getHostAllocatorName() {    return "mmp-host-quickpool";   }
 
+  const char*
+  ResourceManager::getPinnedAllocatorName() {    return "mmp-pinned-quickpool";   }
+
   const char *
   ResourceManager::getAllocatorName(AMSResourceType Resource){
     if ( Resource == AMSResourceType::HOST )
       return ResourceManager::getHostAllocatorName();
     else if ( Resource == AMSResourceType::DEVICE )
       return ResourceManager::getDeviceAllocatorName();
+    else if ( Resource == AMSResourceType::PINNED)
+      return ResourceManager::getPinnedAllocatorName();
     else{
       throw std::runtime_error("Request allocator for resource that does not exist\n");
       return nullptr;
@@ -35,10 +31,10 @@ namespace ams {
 
   //! --------------------------------------------------------------------------
   // maintain a list of allocator ids
-  int ResourceManager::allocator_ids[AMSResourceType::RSEND] = {-1, -1};
+  int ResourceManager::allocator_ids[AMSResourceType::RSEND] = {-1, -1, -1};
 
   // maintain a list of allocator names
-  std::string ResourceManager::allocator_names[AMSResourceType::RSEND] = { "HOST", "DEVICE" };
+  std::string ResourceManager::allocator_names[AMSResourceType::RSEND] = { "HOST", "DEVICE", "PINNED" };
 
   // default allocator
   AMSResourceType ResourceManager::default_resource = AMSResourceType::HOST;
@@ -119,8 +115,5 @@ ResourceManager::setup(const AMSResourceType Resource) {
               << alloc_resource.getId() << ": " << alloc_resource.getName() << "\n";
 
     allocator_ids[Resource] = alloc_resource.getId();
-    // TODO: This implies that we should always set device as a resource type last.
-    // We should fix that and allow the resource allocator to not use any state.
-    setDefaultDataAllocator(Resource);
   }
 }  // namespace AMS

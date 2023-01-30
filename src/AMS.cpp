@@ -45,6 +45,7 @@ AMSExecutor AMSCreateExecutor(const AMSConfig config){
           config.UQPath,
           config.SPath,
           config.DBPath,
+          config.dbType,
           config.device == AMSResourceType::HOST,
           config.threshold,
           config.pId,
@@ -58,6 +59,7 @@ AMSExecutor AMSCreateExecutor(const AMSConfig config){
         config.UQPath,
         config.SPath,
         config.DBPath,
+        config.dbType,
         config.device == AMSResourceType::HOST,
         static_cast<float>(config.threshold),
         config.pId,
@@ -114,6 +116,10 @@ void AMSResourceInfo(){
 
 int AMSGetLocationId(void *ptr){
   return ams::ResourceManager::getDataAllocationId(ptr);
+}
+
+void AMSSetDefaultAllocator(const AMSResourceType device) {
+  ams::ResourceManager::setDefaultDataAllocator(device);
 }
 
 #ifdef __cplusplus

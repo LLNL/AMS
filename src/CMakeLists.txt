@@ -6,6 +6,7 @@ set(LIBRARY_OUTPUT_PATH ${AMS_LIB_OUT_PATH})
 set(AMS_LIB_SRC ${MINIAPP_INCLUDES} AMS.cpp wf/resource_manager.cpp)
 # two targets: a shared lib and an exec
 add_library(AMS SHARED ${AMS_LIB_SRC} ${MINIAPP_INCLUDES})
+link_libraries()
 
 # ------------------------------------------------------------------------------
 if (WITH_CUDA)
@@ -26,7 +27,7 @@ target_include_directories(AMS PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/>
   $<INSTALL_INTERFACE:include/>)
 target_link_directories(AMS PRIVATE ${AMS_APP_LIB_DIRS})
-target_link_libraries(AMS PRIVATE ${AMS_APP_LIBRARIES})
+target_link_libraries(AMS PRIVATE ${AMS_APP_LIBRARIES} stdc++fs)
 
 # setup the exec
 #SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath -Wl,$ORIGIN")

@@ -22,6 +22,7 @@ public:
     //! names for these allocators
     static const char* getDeviceAllocatorName();
     static const char* getHostAllocatorName();
+    static const char* getPinnedAllocatorName();
     static const char* getAllocatorName(AMSResourceType Resource);
 
     //! setup allocators in the resource manager
@@ -85,7 +86,7 @@ public:
     static void
     deallocate(T* data, AMSResourceType dev = default_resource) {
         static auto& rm = umpire::ResourceManager::getInstance();
-        if (hasAllocator(data) ) {
+        if ( hasAllocator(data) ) {
             rm.getAllocator(data).deallocate(data);
         }
     }
@@ -102,9 +103,15 @@ public:
     }
 
     template<typename T>
-    static void copy(T *src, T *dest){
+    static void copy(T *src, T *dest, size_t size = 0 ){
       static auto& rm = umpire::ResourceManager::getInstance();
-      rm.copy(dest, src);
+      rm.copy(dest, src, size);
+    }
+
+    template<typename T>
+    static void deallocate(std::vector<T *>& dPtr){
+      for ( auto *I : dPtr )
+        deallocate(I);
     }
     //! ------------------------------------------------------------------------
 };

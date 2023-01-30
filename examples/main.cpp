@@ -86,6 +86,11 @@ int main(int argc, char **argv)
   TypeValue threshold = 0.5;
   TypeValue avg = 0.5;
   TypeValue stdDev = 0.2;
+  bool reqDB = false;
+
+#ifdef __ENABLE_DB__
+  reqDB = true;
+#endif
 
 
   bool verbose = false;
@@ -146,8 +151,17 @@ int main(int argc, char **argv)
       "Threshold value used to control selection of surrogate "
       "vs physics execution");
 
-  args.AddOption(&db_config, "-db", "--dbconfig", "Path to DB configuration (e.g., Redis)");
-  
+  args.AddOption(&db_config, "-db",
+      "--dbconfig",
+      "Path to directory where applications will store their data", reqDB);
+
+//  args.AddOption(&db_config, "-db",
+//      "--dbconfig",
+//      "Configuration option of the different DB types:\n"
+//      "\t CSV: directory storing files\n"
+//      "\t REDIS: Configuration file of redis db\n"
+//      "\t HDF5: directory storing the files\n", reqDB);
+
   args.AddOption(&verbose, "-v", "--verbose", "-qu", "--quiet", "Print extra stuff");
 
   // -------------------------------------------------------------------------
@@ -242,6 +256,11 @@ int main(int argc, char **argv)
   if (use_device)
   {
     AMSSetupAllocator(AMSResourceType::DEVICE);
+    AMSSetupAllocator(AMSResourceType::PINNED);
+    AMSSetDefaultAllocator(AMSResourceType::DEVICE);
+  }
+  else{
+    AMSSetDefaultAllocator(AMSResourceType::HOST);
   }
 
   // -------------------------------------------------------------------------
@@ -356,9 +375,7 @@ int main(int argc, char **argv)
   surrogate_path = (strlen(model_path) > 0) ? model_path : nullptr;
 #endif
 
-#ifdef __ENABLE_DB__
-  db_path = "miniapp.txt";
-#ifdef __ENABLE_REDIS__
+  db_path = (strlen(db_config) > 0) ? db_config : nullptr;
   /*
   * A JSON that contains all Redis info (port, host, password, SSL certificate path)
   * See README to generate the certificate (.crt file).
@@ -370,9 +387,7 @@ int main(int argc, char **argv)
   * }
   */
   //db_path = "test-config-redis.json";
-  db_path = (strlen(db_config) > 0) ? db_config : nullptr;
-#endif // __ENABLE_REDIS__
-#endif // __ENABLE_DB__
+  //
   AMSResourceType ams_device = AMSResourceType::HOST;
   if (use_device) ams_device = AMSResourceType::DEVICE;
 
@@ -380,6 +395,7 @@ int main(int argc, char **argv)
     AMSExecPolicy::SinglePass,
     AMSDType::Double,
     ams_device,
+    AMSDBType::HDF5,
     callBack,
     (char *)surrogate_path,
     (char *)uq_path,
@@ -388,14 +404,15 @@ int main(int argc, char **argv)
     rId,
     wS
   };
+  AMSExecutor wf = AMSCreateExecutor(amsConf);
 
   for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
-#ifndef __ENABLE_REDIS__
-    char name[100];
-    sprintf(name, "miniapp_%d.txt", mat_idx);
-    amsConf.DBPath = name;
-#endif // __ENABLE_REDIS__
-    workflow[mat_idx] = AMSCreateExecutor(amsConf);
+//#ifndef __ENABLE_REDIS__
+//    char name[100];
+//    sprintf(name, "miniapp_%d.txt", mat_idx);
+//    amsConf.DBPath = name;
+//#endif // __ENABLE_REDIS__
+    workflow[mat_idx] = wf;
   }
 #endif
 
