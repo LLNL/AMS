@@ -179,7 +179,9 @@ if (WITH_RMQ)
       list(APPEND AMS_APP_LIBRARIES "${OPENSSL_LIBRARIES}")
   endif()
 
-  find_package(libev REQUIRED) # event loop library 
+  find_package(libevent REQUIRED) # event loop library
+  list(APPEND AMS_APP_INCLUDES ${LIBEVENT_INCLUDE_DIR})
+  list(APPEND AMS_APP_LIBRARIES "${LIBEVENT_LIBRARIES}")
 endif()
 
 # ------------------------------------------------------------------------------
@@ -272,7 +274,8 @@ if (WITH_EXAMPLES)
     list(APPEND AMS_EXAMPLE_DEFINES "-D__ENABLE_RMQ__")
     list(APPEND AMS_EXAMPLE_INCLUDES ${amqpcpp_INCLUDE_DIR})
     list(APPEND AMS_EXAMPLE_INCLUDES ${OPENSSL_INCLUDE_DIR})
-    list(APPEND AMS_EXAMPLE_LIBRARIES OpenSSL::SSL amqpcpp ev pthread dl)
+    list(APPEND AMS_EXAMPLE_INCLUDES ${LIBEVENT_INCLUDE_DIR})
+    list(APPEND AMS_EXAMPLE_LIBRARIES OpenSSL::SSL amqpcpp pthread event_pthreads event dl)
   endif()
 
   if (WITH_CUDA)

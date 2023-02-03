@@ -8,8 +8,8 @@
 
 #include <amqpcpp.h>
 #include <amqpcpp/linux_tcp.h>
-#include <ev.h>
-#include <amqpcpp/libev.h>
+#include <event2/event.h>
+#include <amqpcpp/libevent.h>
 #include <openssl/ssl.h>
 #include <openssl/opensslv.h>
 
@@ -24,11 +24,11 @@ class BrokerRMQ : public DataBroker {
 private:
     std::string _config;
     HandlerRMQ* _handler;
-    struct ev_loop* _loop; // Default event loop
+    struct ev_base* _loop; // Default event loop
 public:
     BrokerRMQ(std::string config) : _config(config), _handler(nullptr) {
         // access to the event loop
-        _loop = EV_DEFAULT;
+        _loop = event_base_new();
         json rmq_config = read_json(_config);
 
         // init the SSL library
@@ -95,7 +95,7 @@ public:
         });
 
         // run the event loop
-        ev_run(_loop, 0);
+        event_base_dispatch(_loop);
 
         // close the channel
         channel.close().onSuccess([&connection, &channel]() {
@@ -107,6 +107,7 @@ public:
     }
 
     ~BrokerRMQ() {
+        event_base_free(loop);
         delete _handler;
     }
 
