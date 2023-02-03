@@ -166,6 +166,9 @@ endif()
 
 # ------------------------------------------------------------------------------
 if (WITH_RMQ)
+  if (WITH_CUDA)
+    add_compile_definitions(THRUST_IGNORE_CUB_VERSION_CHECK)
+  endif()
   list(APPEND AMS_APP_DEFINES "-D__ENABLE_RMQ__")
 
   find_package(amqpcpp REQUIRED)
@@ -173,7 +176,7 @@ if (WITH_RMQ)
   list(APPEND AMS_APP_INCLUDES ${amqpcpp_INCLUDE_DIR})
 
   find_package(OpenSSL REQUIRED)
-  # if we use a custm OpenSSL
+  # if we use a custom OpenSSL
   if (DEFINED OPENSSL_ROOT_DIR)
       list(APPEND AMS_APP_INCLUDES ${OPENSSL_INCLUDE_DIR})
       list(APPEND AMS_APP_LIBRARIES "${OPENSSL_LIBRARIES}")

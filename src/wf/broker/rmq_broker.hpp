@@ -24,7 +24,7 @@ class BrokerRMQ : public DataBroker {
 private:
     std::string _config;
     HandlerRMQ* _handler;
-    struct ev_base* _loop; // Default event loop
+    struct event_base* _loop; // Default event loop
 public:
     BrokerRMQ(std::string config) : _config(config), _handler(nullptr) {
         // access to the event loop
@@ -107,7 +107,7 @@ public:
     }
 
     ~BrokerRMQ() {
-        event_base_free(loop);
+        event_base_free(_loop);
         delete _handler;
     }
 
