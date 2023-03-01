@@ -1,3 +1,7 @@
+// Copyright (c) Lawrence Livermore National Security, LLC and other AMS
+// Project developers. See top-level LICENSE AND COPYRIGHT files for dates and
+// other details. No copyright assignment is required to contribute
+
 #ifndef EOS_CONSTANT_ON_HOST_HPP
 #define EOS_CONSTANT_ON_HOST_HPP
 

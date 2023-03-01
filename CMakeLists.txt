@@ -1,4 +1,7 @@
-# ------------------------------------------------------------------------------
+# Copyright (c) Lawrence Livermore National Security, LLC and other AMS
+# Project developers. See top-level LICENSE AND COPYRIGHT files for dates and
+# other details. No copyright assignment is required to contribute
+
 cmake_minimum_required(VERSION 3.18)
 project(AMS VERSION 0.1.0 LANGUAGES CXX C)
 cmake_policy(SET CMP0074 NEW)

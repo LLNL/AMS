@@ -1,3 +1,7 @@
+// Copyright (c) Lawrence Livermore National Security, LLC and other AMS
+// Project developers. See top-level LICENSE AND COPYRIGHT files for dates and
+// other details. No copyright assignment is required to contribute
+
 #ifndef __AMS_DEVICE_HPP__
 #define __AMS_DEVICE_HPP__
 

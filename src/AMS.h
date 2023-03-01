@@ -1,6 +1,9 @@
+// Copyright (c) Lawrence Livermore National Security, LLC and other AMS
+// Project developers. See top-level LICENSE AND COPYRIGHT files for dates and
+// other details. No copyright assignment is required to contribute
+
 #ifndef __AMS__
 #define __AMS__
-
 
 #ifdef __ENABLE_CALIPER__
 #include <caliper/cali-manager.h>
