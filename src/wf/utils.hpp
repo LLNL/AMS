@@ -7,9 +7,9 @@
 
 #include <algorithm>
 #include <array>
-#include <vector>
-#include <random>
 #include <iostream>
+#include <random>
+#include <vector>
 
 
 // -----------------------------------------------------------------------------
@@ -27,10 +27,11 @@ const int partitionSize = 1 << 24;
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
 
-void random_uq_host(bool *uq_flags, int ndata, double acceptable_error) {
+void random_uq_host(bool *uq_flags, int ndata, double acceptable_error)
+{
 
-  for(int i = 0; i < ndata; i++) {
-      uq_flags[i] = ((double)rand() / RAND_MAX) <= acceptable_error;
+  for (int i = 0; i < ndata; i++) {
+    uq_flags[i] = ((double)rand() / RAND_MAX) <= acceptable_error;
   }
 }
 

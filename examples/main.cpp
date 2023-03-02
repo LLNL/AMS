@@ -2,17 +2,14 @@
 // Project developers. See top-level LICENSE AND COPYRIGHT files for dates and
 // other details. No copyright assignment is required to contribute
 
-#include <iostream>
-#include <string>
-#include <vector>
 #include <cstdio>
 #include <cstdlib>
-#include <vector>
+#include <iostream>
+#include <mfem.hpp>
+#include <random>
 #include <string>
 #include <unordered_set>
-#include <random>
-
-#include <mfem.hpp>
+#include <vector>
 
 #include "app/eos.hpp"
 #include "app/eos_constant_on_host.hpp"
@@ -30,9 +27,10 @@
 using TypeValue = double;
 using mfem::ForallWrap;
 
-int computeNumElements(int globalNumElements, int id, int numRanks){
+int computeNumElements(int globalNumElements, int id, int numRanks)
+{
   int lElements = (globalNumElements + numRanks - 1) / numRanks;
-  lElements = std::min(lElements, globalNumElements - id*lElements);
+  lElements = std::min(lElements, globalNumElements - id * lElements);
   return lElements;
 }
 
@@ -41,11 +39,11 @@ const std::unordered_set<std::string> eos_options{"ideal_gas", "constant_host"};
 double unitrand() { return (double)rand() / RAND_MAX; }
 
 // TODO: we could to this on the device but need something more than `rand'
-template <typename T> void random_init(mfem::Array<T> &arr)
+template <typename T>
+void random_init(mfem::Array<T> &arr)
 {
   T *h_arr = arr.HostWrite();
-  for (int i = 0; i < arr.Size(); ++i)
-  {
+  for (int i = 0; i < arr.Size(); ++i) {
     h_arr[i] = unitrand();
   }
 }
@@ -66,24 +64,24 @@ int main(int argc, char **argv)
   MPI_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &rId));
   // FIXME: Create a logger class to write
   // depending on rank id and severity.
-  if (  rId != 0 ){
+  if (rId != 0) {
     std::cout.setstate(std::ios::failbit);
   }
 
-  const char *device_name  = "cpu";
-  const char *eos_name     = "ideal_gas";
-  const char *model_path   = "";
+  const char *device_name = "cpu";
+  const char *eos_name = "ideal_gas";
+  const char *model_path = "";
   const char *hdcache_path = "";
-  const char *db_config    = "";
+  const char *db_config = "";
 
-  int seed                      = 0;
+  int seed = 0;
   TypeValue empty_element_ratio = -1;
 
   int stop_cycle = 1;
 
-  int num_mats          = 5;
-  int num_elems         = 10000;
-  int num_qpts          = 64;
+  int num_mats = 5;
+  int num_elems = 10000;
+  int num_qpts = 64;
   bool pack_sparse_mats = true;
 
   bool imbalance = false;
@@ -116,69 +114,76 @@ int main(int argc, char **argv)
   // data parameters
   args.AddOption(&num_mats, "-m", "--num-mats", "Number of materials");
   args.AddOption(&num_elems, "-e", "--num-elems", "Number of elements");
-  args.AddOption(&num_qpts, "-q", "--num-qpts", "Number of quadrature points per element");
+  args.AddOption(&num_qpts,
+                 "-q",
+                 "--num-qpts",
+                 "Number of quadrature points per element");
   args.AddOption(&empty_element_ratio,
-      "-r",
-      "--empty-element-ratio",
-      "Fraction of elements that are empty "
-      "for each material. If -1 use a random value for each. ");
+                 "-r",
+                 "--empty-element-ratio",
+                 "Fraction of elements that are empty "
+                 "for each material. If -1 use a random value for each. ");
 
   // random speed and packing
   args.AddOption(&seed, "-s", "--seed", "Seed for rand");
   args.AddOption(&pack_sparse_mats,
-      "-p",
-      "--pack-sparse",
-      "-np",
-      "--do-not-pack-sparse",
-      "pack sparse material data before evals (cpu only)");
+                 "-p",
+                 "--pack-sparse",
+                 "-np",
+                 "--do-not-pack-sparse",
+                 "pack sparse material data before evals (cpu only)");
 
   args.AddOption(&imbalance,
-      "-i",
-      "--with-imbalance",
-      "-ni",
-      "--without-imbalance",
-      "Create artificial load imbalance across ranks");
+                 "-i",
+                 "--with-imbalance",
+                 "-ni",
+                 "--without-imbalance",
+                 "Create artificial load imbalance across ranks");
 
   args.AddOption(&avg,
-      "-avg",
-      "--average",
-      "Average value of random number generator of imbalance threshold");
+                 "-avg",
+                 "--average",
+                 "Average value of random number generator of imbalance "
+                 "threshold");
 
   args.AddOption(&stdDev,
-      "-std",
-      "--stdev",
-      "Standard deviation of random number generator of imbalance threshold");
+                 "-std",
+                 "--stdev",
+                 "Standard deviation of random number generator of imbalance "
+                 "threshold");
 
   args.AddOption(&threshold,
-      "-t",
-      "--threshold",
-      "Threshold value used to control selection of surrogate "
-      "vs physics execution");
+                 "-t",
+                 "--threshold",
+                 "Threshold value used to control selection of surrogate "
+                 "vs physics execution");
 
-  args.AddOption(&db_config, "-db",
-      "--dbconfig",
-      "Path to directory where applications will store their data", reqDB);
+  args.AddOption(&db_config,
+                 "-db",
+                 "--dbconfig",
+                 "Path to directory where applications will store their data",
+                 reqDB);
 
-//  args.AddOption(&db_config, "-db",
-//      "--dbconfig",
-//      "Configuration option of the different DB types:\n"
-//      "\t CSV: directory storing files\n"
-//      "\t REDIS: Configuration file of redis db\n"
-//      "\t HDF5: directory storing the files\n", reqDB);
+  //  args.AddOption(&db_config, "-db",
+  //      "--dbconfig",
+  //      "Configuration option of the different DB types:\n"
+  //      "\t CSV: directory storing files\n"
+  //      "\t REDIS: Configuration file of redis db\n"
+  //      "\t HDF5: directory storing the files\n", reqDB);
 
-  args.AddOption(&verbose, "-v", "--verbose", "-qu", "--quiet", "Print extra stuff");
+  args.AddOption(
+      &verbose, "-v", "--verbose", "-qu", "--quiet", "Print extra stuff");
 
   // -------------------------------------------------------------------------
   // parse arguments
   // -------------------------------------------------------------------------
   args.Parse();
-  if ( !args.Good() )
-  {
+  if (!args.Good()) {
     args.PrintUsage(std::cout);
     return false;
   }
 
-  if ( rId == 0 ){
+  if (rId == 0) {
     args.PrintOptions(std::cout);
     std::cout << std::endl;
   }
@@ -186,16 +191,13 @@ int main(int argc, char **argv)
   // -------------------------------------------------------------------------
   // additional argument validation
   // -------------------------------------------------------------------------
-  if (eos_options.find(eos_name) != eos_options.end() )
-  {
+  if (eos_options.find(eos_name) != eos_options.end()) {
     std::cout << "Using eos = '" << eos_name << "'" << std::endl;
-  }
-  else
-  {
-    std::cerr << "Unsupported eos '" << eos_name << "'" << std::endl << "Available options: " << std::endl;
+  } else {
+    std::cerr << "Unsupported eos '" << eos_name << "'" << std::endl
+              << "Available options: " << std::endl;
 
-    for (const auto &s : eos_options)
-    {
+    for (const auto &s : eos_options) {
       std::cerr << " - " << s << std::endl;
     }
     return false;
@@ -208,15 +210,18 @@ int main(int argc, char **argv)
   assert(num_qpts > 0);
 
 #ifdef __ENABLE_TORCH__
-  if (model_path == nullptr)
-  {
-    std::cerr << "Compiled with Py-Torch enabled. It is mandatory to provide a surrogate model" << std::endl;
+  if (model_path == nullptr) {
+    std::cerr << "Compiled with Py-Torch enabled. It is mandatory to provide a "
+                 "surrogate model"
+              << std::endl;
     exit(-1);
   }
 #endif
-  assert((empty_element_ratio >= 0 && empty_element_ratio < 1) || empty_element_ratio == -1);
+  assert((empty_element_ratio >= 0 && empty_element_ratio < 1) ||
+         empty_element_ratio == -1);
 
-  std::cout<< "Total computed elements across all ranks: " << wS * num_elems << "(Weak Scaling)\n"; 
+  std::cout << "Total computed elements across all ranks: " << wS * num_elems
+            << "(Weak Scaling)\n";
 
   // -------------------------------------------------------------------------
   // setup
@@ -229,20 +234,20 @@ int main(int argc, char **argv)
   // set up a randomization seed
   srand(seed + rId);
 
-  if (imbalance ){
+  if (imbalance) {
     // I need to select a threshold for my specific rank
     // Out of this distribution
     std::default_random_engine generator;
-    std::normal_distribution<double> distribution(avg,stdDev);
+    std::normal_distribution<double> distribution(avg, stdDev);
     threshold = distribution(generator);
 #ifdef __ENABLE_MPI__
-    if ( wS > 1 ) {
-      if ( rId == 0 ){
-        for ( int i = 1; i < wS; i++ ){
+    if (wS > 1) {
+      if (rId == 0) {
+        for (int i = 1; i < wS; i++) {
           double tmp = distribution(generator);
           MPI_Send(&tmp, 1, MPI_DOUBLE, i, 0, MPI_COMM_WORLD);
         }
-      }else{
+      } else {
         double tmp;
         MPI_Recv(&tmp, 1, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         threshold = static_cast<TypeValue>(tmp);
@@ -251,19 +256,17 @@ int main(int argc, char **argv)
 #endif
   }
 
-  std::cerr<< "Rank:"<< rId << " Threshold " << threshold << "\n";
+  std::cerr << "Rank:" << rId << " Threshold " << threshold << "\n";
 
   // -------------------------------------------------------------------------
   // setup data allocators
   // -------------------------------------------------------------------------
   AMSSetupAllocator(AMSResourceType::HOST);
-  if (use_device)
-  {
+  if (use_device) {
     AMSSetupAllocator(AMSResourceType::DEVICE);
     AMSSetupAllocator(AMSResourceType::PINNED);
     AMSSetDefaultAllocator(AMSResourceType::DEVICE);
-  }
-  else{
+  } else {
     AMSSetDefaultAllocator(AMSResourceType::HOST);
   }
 
@@ -271,16 +274,19 @@ int main(int argc, char **argv)
   // setup mfem memory manager
   // -------------------------------------------------------------------------
   // hardcoded names!
-  const std::string &alloc_name_host(AMSGetAllocatorName(AMSResourceType::HOST));
-  const std::string &alloc_name_device(AMSGetAllocatorName(AMSResourceType::DEVICE));
+  const std::string &alloc_name_host(
+      AMSGetAllocatorName(AMSResourceType::HOST));
+  const std::string &alloc_name_device(
+      AMSGetAllocatorName(AMSResourceType::DEVICE));
 
   mfem::MemoryManager::SetUmpireHostAllocatorName(alloc_name_host.c_str());
-  if (use_device)
-  {
-    mfem::MemoryManager::SetUmpireDeviceAllocatorName(alloc_name_device.c_str());
+  if (use_device) {
+    mfem::MemoryManager::SetUmpireDeviceAllocatorName(
+        alloc_name_device.c_str());
   }
 
-  mfem::Device::SetMemoryTypes(mfem::MemoryType::HOST_UMPIRE, mfem::MemoryType::DEVICE_UMPIRE);
+  mfem::Device::SetMemoryTypes(mfem::MemoryType::HOST_UMPIRE,
+                               mfem::MemoryType::DEVICE_UMPIRE);
 
   mfem::Device device(device_name);
   std::cout << std::endl;
@@ -296,26 +302,24 @@ int main(int argc, char **argv)
   std::cout << "Setting up indicators" << std::endl;
   bool indicators[num_mats * num_elems];
 
-  for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx)
-  {
+  for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
     // min ratio if empty_element_ratio is -1
     const TypeValue min_ratio = 0.2;
-    const TypeValue ratio = empty_element_ratio == -1 ? unitrand() * (1 - min_ratio) + min_ratio
-      : 1 - empty_element_ratio;
+    const TypeValue ratio = empty_element_ratio == -1
+                                ? unitrand() * (1 - min_ratio) + min_ratio
+                                : 1 - empty_element_ratio;
     const int num_nonzero_elems = ratio * num_elems;
-    std::cout << "  using " << num_nonzero_elems << "/" << num_elems << " for material "
-        << mat_idx << std::endl;
+    std::cout << "  using " << num_nonzero_elems << "/" << num_elems
+              << " for material " << mat_idx << std::endl;
 
     int nz = 0;
-    for (int elem_idx = 0; elem_idx < num_elems; ++elem_idx)
-    {
-      const int me   = elem_idx + mat_idx * num_elems;
+    for (int elem_idx = 0; elem_idx < num_elems; ++elem_idx) {
+      const int me = elem_idx + mat_idx * num_elems;
       indicators[me] = false;
 
-      if (nz < num_nonzero_elems)
-      {
-        if (((num_nonzero_elems - nz) == (num_elems - elem_idx)) || unitrand() <= ratio)
-        {
+      if (nz < num_nonzero_elems) {
+        if (((num_nonzero_elems - nz) == (num_elems - elem_idx)) ||
+            unitrand() <= ratio) {
           indicators[me] = true;
           nz++;
         }
@@ -323,8 +327,7 @@ int main(int argc, char **argv)
     }
   }
 
-  if (verbose)
-  {
+  if (verbose) {
     print_tensor_array("indicators", indicators, {1, num_mats, num_elems});
   }
 
@@ -345,18 +348,12 @@ int main(int argc, char **argv)
   // setup EOS models
   // ---------------------------------------------------------------------
   std::vector<EOS *> eoses(num_mats, nullptr);
-  for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx)
-  {
-    if (eos_name == "ideal_gas")
-    {
+  for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
+    if (eos_name == "ideal_gas") {
       eoses[mat_idx] = new IdealGas(1.6, 1.4);
-    }
-    else if (eos_name == "constant_host")
-    {
+    } else if (eos_name == "constant_host") {
       eoses[mat_idx] = new ConstantEOSOnHost(alloc_name_host.c_str(), 1.0);
-    }
-    else
-    {
+    } else {
       std::cerr << "unknown eos `" << eos_name << "'" << std::endl;
       return 1;
     }
@@ -366,9 +363,9 @@ int main(int argc, char **argv)
   // setup AMS workflow (surrogate and cache)
   // ---------------------------------------------------------------------
 #ifdef USE_AMS
-  const char *uq_path        = nullptr;
+  const char *uq_path = nullptr;
   const char *surrogate_path = nullptr;
-  const char *db_path        = nullptr;
+  const char *db_path = nullptr;
 
 #ifdef __ENABLE_FAISS__
   uq_path = (strlen(hdcache_path) > 0) ? hdcache_path : nullptr;
@@ -381,41 +378,39 @@ int main(int argc, char **argv)
 
   db_path = (strlen(db_config) > 0) ? db_config : nullptr;
   /*
-  * A JSON that contains all Redis info (port, host, password, SSL certificate path)
-  * See README to generate the certificate (.crt file).
-  * {
-  *      "database-password": "mypassword",
-  *      "service-port": 32273,
-  *      "host": "cz-username-testredis1.apps.czapps.llnl.gov",
-  *      "cert": "redis_certificate.crt"
-  * }
-  */
-  //db_path = "test-config-redis.json";
+   * A JSON that contains all Redis info (port, host, password, SSL certificate
+   * path) See README to generate the certificate (.crt file).
+   * {
+   *      "database-password": "mypassword",
+   *      "service-port": 32273,
+   *      "host": "cz-username-testredis1.apps.czapps.llnl.gov",
+   *      "cert": "redis_certificate.crt"
+   * }
+   */
+  // db_path = "test-config-redis.json";
   //
   AMSResourceType ams_device = AMSResourceType::HOST;
   if (use_device) ams_device = AMSResourceType::DEVICE;
 
-  AMSConfig amsConf = {
-    AMSExecPolicy::SinglePass,
-    AMSDType::Double,
-    ams_device,
-    AMSDBType::HDF5,
-    callBack,
-    (char *)surrogate_path,
-    (char *)uq_path,
-    (char *)db_path,
-    threshold,
-    rId,
-    wS
-  };
+  AMSConfig amsConf = {AMSExecPolicy::SinglePass,
+                       AMSDType::Double,
+                       ams_device,
+                       AMSDBType::HDF5,
+                       callBack,
+                       (char *)surrogate_path,
+                       (char *)uq_path,
+                       (char *)db_path,
+                       threshold,
+                       rId,
+                       wS};
   AMSExecutor wf = AMSCreateExecutor(amsConf);
 
   for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
-//#ifndef __ENABLE_REDIS__
-//    char name[100];
-//    sprintf(name, "miniapp_%d.txt", mat_idx);
-//    amsConf.DBPath = name;
-//#endif // __ENABLE_REDIS__
+    // #ifndef __ENABLE_REDIS__
+    //     char name[100];
+    //     sprintf(name, "miniapp_%d.txt", mat_idx);
+    //     amsConf.DBPath = name;
+    // #endif // __ENABLE_REDIS__
     workflow[mat_idx] = wf;
   }
 #endif
@@ -432,12 +427,9 @@ int main(int argc, char **argv)
   sparse_elem_indices.SetSize(num_mats);
   sparse_elem_indices.Reserve(num_mats * num_elems);
 
-  for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx)
-  {
-    for (int elem_idx = 0; elem_idx < num_elems; ++elem_idx)
-    {
-      if (indicators[elem_idx + num_elems * mat_idx])
-      {
+  for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
+    for (int elem_idx = 0; elem_idx < num_elems; ++elem_idx) {
+      if (indicators[elem_idx + num_elems * mat_idx]) {
         sparse_elem_indices.Append(elem_idx);
       }
     }
@@ -463,8 +455,7 @@ int main(int argc, char **argv)
   const int *h_sparse_elem_indices = sparse_elem_indices.HostRead();
   const int *d_sparse_elem_indices = sparse_elem_indices.Read();
 
-  for (int c = 0; c <= stop_cycle; ++c)
-  {
+  for (int c = 0; c <= stop_cycle; ++c) {
     std::cout << std::endl << "--> cycle: " << c << std::endl;
 
     CALIPER(CALI_MARK_BEGIN("Randomize Inputs");)
@@ -472,10 +463,13 @@ int main(int argc, char **argv)
     random_init(energy);
     CALIPER(CALI_MARK_END("Randomize Inputs");)
 
-    if (verbose)
-    {
-      print_tensor_array("density", density.HostRead(), {num_mats, num_elems, num_qpts});
-      print_tensor_array("energy", energy.HostRead(), {num_mats, num_elems, num_qpts});
+    if (verbose) {
+      print_tensor_array("density",
+                         density.HostRead(),
+                         {num_mats, num_elems, num_qpts});
+      print_tensor_array("energy",
+                         energy.HostRead(),
+                         {num_mats, num_elems, num_qpts});
     }
 
     CALIPER(CALI_MARK_BEGIN("Cycle");)
@@ -483,36 +477,40 @@ int main(int argc, char **argv)
       // move/allocate data on the device.
       // if the data is already on the device this is basically a noop
 
-      const auto d_density = mfemReshapeArray3(density, Read, num_qpts, num_elems, num_mats);
-      const auto d_energy  = mfemReshapeArray3(energy, Read, num_qpts, num_elems, num_mats);
+      const auto d_density =
+          mfemReshapeArray3(density, Read, num_qpts, num_elems, num_mats);
+      const auto d_energy =
+          mfemReshapeArray3(energy, Read, num_qpts, num_elems, num_mats);
 
-      auto d_pressure    = mfemReshapeArray3(pressure, Write, num_qpts, num_elems, num_mats);
-      auto d_soundspeed2 = mfemReshapeArray3(soundspeed2, Write, num_qpts, num_elems, num_mats);
-      auto d_bulkmod     = mfemReshapeArray3(bulkmod, Write, num_qpts, num_elems, num_mats);
-      auto d_temperature = mfemReshapeArray3(temperature, Write, num_qpts, num_elems, num_mats);
+      auto d_pressure =
+          mfemReshapeArray3(pressure, Write, num_qpts, num_elems, num_mats);
+      auto d_soundspeed2 =
+          mfemReshapeArray3(soundspeed2, Write, num_qpts, num_elems, num_mats);
+      auto d_bulkmod =
+          mfemReshapeArray3(bulkmod, Write, num_qpts, num_elems, num_mats);
+      auto d_temperature =
+          mfemReshapeArray3(temperature, Write, num_qpts, num_elems, num_mats);
 
       // ---------------------------------------------------------------------
       // for each material
-      for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx)
-      {
-        const int offset_curr = mat_idx == 0 ? num_mats : h_sparse_elem_indices[mat_idx - 1];
+      for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
+        const int offset_curr =
+            mat_idx == 0 ? num_mats : h_sparse_elem_indices[mat_idx - 1];
         const int offset_next = h_sparse_elem_indices[mat_idx];
 
         const int num_elems_for_mat = offset_next - offset_curr;
-        if (num_elems_for_mat == 0)
-        {
+        if (num_elems_for_mat == 0) {
           continue;
         }
 
         // -----------------------------------------------------------------
-        // NOTE: we've found it's faster to do sparse lookups on GPUs but on CPUs
-        // the dense packing->looked->unpacking is better if we're using expensive
-        // eoses. in the future we may just use dense representations everywhere
-        // but for now we use sparse ones.
-        if (pack_sparse_mats && num_elems_for_mat < num_elems)
-        {
+        // NOTE: we've found it's faster to do sparse lookups on GPUs but on
+        // CPUs the dense packing->looked->unpacking is better if we're using
+        // expensive eoses. in the future we may just use dense representations
+        // everywhere but for now we use sparse ones.
+        if (pack_sparse_mats && num_elems_for_mat < num_elems) {
           std::cout << " material " << mat_idx << ": using sparse packing for "
-              << num_elems_for_mat << " elems" << std::endl;
+                    << num_elems_for_mat << " elems" << std::endl;
 
           // -------------------------------------------------------------
           // TODO: I think Tom mentiond we can allocate these outside the loop
@@ -521,141 +519,142 @@ int main(int argc, char **argv)
           mfem::Array<TypeValue> dense_density(num_elems_for_mat * num_qpts);
           mfem::Array<TypeValue> dense_energy(num_elems_for_mat * num_qpts);
           mfem::Array<TypeValue> dense_pressure(num_elems_for_mat * num_qpts);
-          mfem::Array<TypeValue> dense_soundspeed2(num_elems_for_mat * num_qpts);
+          mfem::Array<TypeValue> dense_soundspeed2(num_elems_for_mat *
+                                                   num_qpts);
           mfem::Array<TypeValue> dense_bulkmod(num_elems_for_mat * num_qpts);
-          mfem::Array<TypeValue> dense_temperature(num_elems_for_mat * num_qpts);
+          mfem::Array<TypeValue> dense_temperature(num_elems_for_mat *
+                                                   num_qpts);
 
           // these are device tensors!
-          auto d_dense_density     = mfemReshapeArray2(dense_density,
-              Write,
-              num_qpts,
-              num_elems_for_mat);
-          auto d_dense_energy      = mfemReshapeArray2(dense_energy,
-              Write,
-              num_qpts,
-              num_elems_for_mat);
-          auto d_dense_pressure    = mfemReshapeArray2(dense_pressure,
-              Write,
-              num_qpts,
-              num_elems_for_mat);
+          auto d_dense_density = mfemReshapeArray2(dense_density,
+                                                   Write,
+                                                   num_qpts,
+                                                   num_elems_for_mat);
+          auto d_dense_energy = mfemReshapeArray2(dense_energy,
+                                                  Write,
+                                                  num_qpts,
+                                                  num_elems_for_mat);
+          auto d_dense_pressure = mfemReshapeArray2(dense_pressure,
+                                                    Write,
+                                                    num_qpts,
+                                                    num_elems_for_mat);
           auto d_dense_soundspeed2 = mfemReshapeArray2(dense_soundspeed2,
-              Write,
-              num_qpts,
-              num_elems_for_mat);
-          auto d_dense_bulkmod     = mfemReshapeArray2(dense_bulkmod,
-              Write,
-              num_qpts,
-              num_elems_for_mat);
+                                                       Write,
+                                                       num_qpts,
+                                                       num_elems_for_mat);
+          auto d_dense_bulkmod = mfemReshapeArray2(dense_bulkmod,
+                                                   Write,
+                                                   num_qpts,
+                                                   num_elems_for_mat);
           auto d_dense_temperature = mfemReshapeArray2(dense_temperature,
-              Write,
-              num_qpts,
-              num_elems_for_mat);
+                                                       Write,
+                                                       num_qpts,
+                                                       num_elems_for_mat);
 
           // -------------------------------------------------------------
           // sparse -> dense
           CALIPER(CALI_MARK_BEGIN("SPARSE_TO_DENSE");)
-            pack_ij(mat_idx,
-                num_qpts,
-                num_elems_for_mat,
-                offset_curr,
-                d_sparse_elem_indices,
-                d_density,
-                d_dense_density,
-                d_energy,
-                d_dense_energy);
+          pack_ij(mat_idx,
+                  num_qpts,
+                  num_elems_for_mat,
+                  offset_curr,
+                  d_sparse_elem_indices,
+                  d_density,
+                  d_dense_density,
+                  d_energy,
+                  d_dense_energy);
           CALIPER(CALI_MARK_END("SPARSE_TO_DENSE");)
           // -------------------------------------------------------------
-          std::vector<const double *> inputs = {&d_dense_density(0, 0), &d_dense_energy(0, 0)};
-          std::vector<double *> outputs      = {&d_dense_pressure(0, 0),
-            &d_dense_soundspeed2(0, 0),
-            &d_dense_bulkmod(0, 0),
-            &d_dense_temperature(0, 0)};
+          std::vector<const double *> inputs = {&d_dense_density(0, 0),
+                                                &d_dense_energy(0, 0)};
+          std::vector<double *> outputs = {&d_dense_pressure(0, 0),
+                                           &d_dense_soundspeed2(0, 0),
+                                           &d_dense_bulkmod(0, 0),
+                                           &d_dense_temperature(0, 0)};
 
 #ifdef USE_AMS
 #ifdef __ENABLE_MPI__
           AMSDistributedExecute(workflow[mat_idx],
-              MPI_COMM_WORLD,
-              static_cast<void *>(eoses[mat_idx]),
-              num_elems_for_mat * num_qpts,
-              reinterpret_cast<const void **>(inputs.data()),
-              reinterpret_cast<void **>(outputs.data()),
-              inputs.size(),
-              outputs.size());
+                                MPI_COMM_WORLD,
+                                static_cast<void *>(eoses[mat_idx]),
+                                num_elems_for_mat * num_qpts,
+                                reinterpret_cast<const void **>(inputs.data()),
+                                reinterpret_cast<void **>(outputs.data()),
+                                inputs.size(),
+                                outputs.size());
 #else
           AMSExecute(workflow[mat_idx],
-              static_cast<void *>(eoses[mat_idx]),
-              num_elems_for_mat * num_qpts,
-              reinterpret_cast<const void **>(inputs.data()),
-              reinterpret_cast<void **>(outputs.data()),
-              inputs.size(),
-              outputs.size());
+                     static_cast<void *>(eoses[mat_idx]),
+                     num_elems_for_mat * num_qpts,
+                     reinterpret_cast<const void **>(inputs.data()),
+                     reinterpret_cast<void **>(outputs.data()),
+                     inputs.size(),
+                     outputs.size());
 #endif
 #else
           eoses[mat_idx]->Eval(num_elems_for_mat * num_qpts,
-              &d_dense_density(0, 0),
-              &d_dense_energy(0, 0),
-              &d_dense_pressure(0, 0),
-              &d_dense_soundspeed2(0, 0),
-              &d_dense_bulkmod(0, 0),
-              &d_dense_temperature(0, 0));
+                               &d_dense_density(0, 0),
+                               &d_dense_energy(0, 0),
+                               &d_dense_pressure(0, 0),
+                               &d_dense_soundspeed2(0, 0),
+                               &d_dense_bulkmod(0, 0),
+                               &d_dense_temperature(0, 0));
 #endif
           // -------------------------------------------------------------
           // dense -> sparse
           CALIPER(CALI_MARK_BEGIN("DENSE_TO_SPARSE");)
-            unpack_ij(mat_idx,
-                num_qpts,
-                num_elems_for_mat,
-                offset_curr,
-                d_sparse_elem_indices,
-                d_dense_pressure,
-                d_pressure,
-                d_dense_soundspeed2,
-                d_soundspeed2,
-                d_dense_bulkmod,
-                d_bulkmod,
-                d_dense_temperature,
-                d_temperature);
+          unpack_ij(mat_idx,
+                    num_qpts,
+                    num_elems_for_mat,
+                    offset_curr,
+                    d_sparse_elem_indices,
+                    d_dense_pressure,
+                    d_pressure,
+                    d_dense_soundspeed2,
+                    d_soundspeed2,
+                    d_dense_bulkmod,
+                    d_bulkmod,
+                    d_dense_temperature,
+                    d_temperature);
           CALIPER(CALI_MARK_END("DENSE_TO_SPARSE");)
-            // -------------------------------------------------------------
-        }
-        else
-        {
+          // -------------------------------------------------------------
+        } else {
 #ifdef USE_AMS
-          std::cout << " material " << mat_idx << ": using dense packing for " << num_elems
-              << " elems" << std::endl;
+          std::cout << " material " << mat_idx << ": using dense packing for "
+                    << num_elems << " elems" << std::endl;
 
           std::vector<const double *> inputs = {&d_density(0, 0, mat_idx),
-            &d_energy(0, 0, mat_idx)};
-          std::vector<double *> outputs      = {&d_pressure(0, 0, mat_idx),
-            &d_soundspeed2(0, 0, mat_idx),
-            &d_bulkmod(0, 0, mat_idx),
-            &d_temperature(0, 0, mat_idx)};
+                                                &d_energy(0, 0, mat_idx)};
+          std::vector<double *> outputs = {&d_pressure(0, 0, mat_idx),
+                                           &d_soundspeed2(0, 0, mat_idx),
+                                           &d_bulkmod(0, 0, mat_idx),
+                                           &d_temperature(0, 0, mat_idx)};
 #ifdef __ENABLE_MPI__
           AMSDistributedExecute(workflow[mat_idx],
-              MPI_COMM_WORLD,
-              static_cast<void *>(eoses[mat_idx]),
-              num_elems_for_mat * num_qpts,
-              reinterpret_cast<const void **>(inputs.data()),
-              reinterpret_cast<void **>(outputs.data()),
-              inputs.size(),
-              outputs.size());
+                                MPI_COMM_WORLD,
+                                static_cast<void *>(eoses[mat_idx]),
+                                num_elems_for_mat * num_qpts,
+                                reinterpret_cast<const void **>(inputs.data()),
+                                reinterpret_cast<void **>(outputs.data()),
+                                inputs.size(),
+                                outputs.size());
 #else
           AMSExecute(workflow[mat_idx],
-              static_cast<void *>(eoses[mat_idx]),
-              num_elems * num_qpts,
-              reinterpret_cast<const void **>(inputs.data()),
-              reinterpret_cast<void **>(outputs.data()),
-              inputs.size(),
-              outputs.size());
+                     static_cast<void *>(eoses[mat_idx]),
+                     num_elems * num_qpts,
+                     reinterpret_cast<const void **>(inputs.data()),
+                     reinterpret_cast<void **>(outputs.data()),
+                     inputs.size(),
+                     outputs.size());
 #endif
 #else
           eoses[mat_idx]->Eval(num_elems * num_qpts,
-              &d_density(0, 0, mat_idx),
-              &d_energy(0, 0, mat_idx),
-              &d_pressure(0, 0, mat_idx),
-              &d_soundspeed2(0, 0, mat_idx),
-              &d_bulkmod(0, 0, mat_idx),
-              &d_temperature(0, 0, mat_idx));
+                               &d_density(0, 0, mat_idx),
+                               &d_energy(0, 0, mat_idx),
+                               &d_pressure(0, 0, mat_idx),
+                               &d_soundspeed2(0, 0, mat_idx),
+                               &d_bulkmod(0, 0, mat_idx),
+                               &d_temperature(0, 0, mat_idx));
 #endif
         }
       }
