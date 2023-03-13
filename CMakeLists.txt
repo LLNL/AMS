@@ -121,7 +121,7 @@ if (WITH_DB)
   endif() # WITH_REDIS
 
   if (WITH_HDF5)
-    find_package(HDF5 NAMES hdf5 COMPONENTS C shared REQUIRED NO_DEFAULT_PATH PATHS ${HDF5_Dir})
+    find_package(HDF5 NAMES hdf5 COMPONENTS C shared REQUIRED NO_DEFAULT_PATH PATHS ${HDF5_Dir} ${HDF5_Dir}/share/cmake)
     list(APPEND AMS_APP_INCLUDES ${HDF5_INCLUDE_DIR})
     list(APPEND AMS_APP_LIBRARIES ${HDF5_C_SHARED_LIBRARY})
     list(APPEND AMS_APP_DEFINES "-D__ENABLE_HDF5__")
@@ -263,4 +263,3 @@ if (WITH_TESTS)
 endif()
 
 # ------------------------------------------------------------------------------
-
