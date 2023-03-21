@@ -35,22 +35,32 @@ class AMSWorkflow
 
   using data_handler = ams::DataHandler<FPTypeValue>;
 
+  /** @brief The application call back to perform the original SPMD physics
+   * execution */
   AMSPhysicFn AppCall;
 
-  // added to include ML
+  /** @brief The module that performs uncertainty quantification (UQ) */
   HDCache<FPTypeValue> *hdcache;
+
+  /** @brief The torch surrogate model to replace the original physics function
+   */
   SurrogateModel<FPTypeValue> *surrogate;
 
-  // Added to include an offline DB
-  // (currently implemented as a file or a Redis backend)
+  /** @brief The database to store data for which we cannot apply the current
+   * model */
   BaseDB<FPTypeValue> *DB;
+
+  /** @brief The type of the database we will use (HDF5, CSV, etc) */
   AMSDBType dbType = AMSDBType::None;
 
-  // process Id and total number of processes
-  // in this run
+  /** @brief The process id. For MPI runs this is the rank */
   int rId;
+
+  /** @brief The total number of processes participating in the simulation
+   * (world_size for MPI) */
   int wSize;
 
+  /** @brief  Whether data and simulation takes place on CPU or GPU*/
   bool isCPU;
 
   /** \brief Store the data in the database and copies
@@ -81,51 +91,47 @@ class AMSWorkflow
     }
 
     std::vector<FPTypeValue *> hInputs, hOutputs;
-    if (!isCPU) {
-      // Compute number of elements that fit inside the buffer
-      size_t bElements = bSize / sizeof(FPTypeValue);
-      FPTypeValue *pPtr =
-          ams::ResourceManager::allocate<FPTypeValue>(bElements,
-                                                      AMSResourceType::PINNED);
-      // Total inner vector dimensions (inputs and outputs)
-      size_t totalDims = inputs.size() + outputs.size();
-      // Compute number of elements of each outer dimension that fit in buffer
-      size_t elPerDim = static_cast<int>(floor(bElements / totalDims));
 
-      for (int i = 0; i < inputs.size(); i++)
-        hInputs.push_back(&pPtr[i * elPerDim]);
+    if (isCPU) return DB->store(num_elements, inputs, outputs);
 
-      for (int i = 0; i < outputs.size(); i++)
-        hOutputs.push_back(&pPtr[(i + inputs.size()) * elPerDim]);
+    // Compute number of elements that fit inside the buffer
+    size_t bElements = bSize / sizeof(FPTypeValue);
+    FPTypeValue *pPtr =
+        ams::ResourceManager::allocate<FPTypeValue>(bElements,
+                                                    AMSResourceType::PINNED);
+    // Total inner vector dimensions (inputs and outputs)
+    size_t totalDims = inputs.size() + outputs.size();
+    // Compute number of elements of each outer dimension that fit in buffer
+    size_t elPerDim = static_cast<int>(floor(bElements / totalDims));
 
-      // Iterate over all chunks
-      for (int i = 0; i < num_elements; i += bElements) {
-        size_t actualElems = std::min(bElements, num_elements - i);
-        // Copy input data
-        for (int k = 0; k < numIn; k++) {
-          ams::ResourceManager::copy(&inputs[k][i], hInputs[k], actualElems);
-        }
+    for (int i = 0; i < inputs.size(); i++)
+      hInputs.push_back(&pPtr[i * elPerDim]);
 
-        // Copy output data
-        for (int k = 0; k < numIn; k++) {
-          ams::ResourceManager::copy(&outputs[k][i], hOutputs[k], actualElems);
-        }
+    for (int i = 0; i < outputs.size(); i++)
+      hOutputs.push_back(&pPtr[(i + inputs.size()) * elPerDim]);
 
-        // Store to database
-        DB->store(actualElems, hInputs, hOutputs);
+    // Iterate over all chunks
+    for (int i = 0; i < num_elements; i += bElements) {
+      size_t actualElems = std::min(bElements, num_elements - i);
+      // Copy input data to host
+      for (int k = 0; k < numIn; k++) {
+        ams::ResourceManager::copy(&inputs[k][i], hInputs[k], actualElems);
       }
-      ams::ResourceManager::deallocate(pPtr);
-    } else {
-      DB->store(num_elements, inputs, outputs);
+
+      // Copy output data to host
+      for (int k = 0; k < numIn; k++) {
+        ams::ResourceManager::copy(&outputs[k][i], hOutputs[k], actualElems);
+      }
+
+      // Store to database
+      DB->store(actualElems, hInputs, hOutputs);
     }
+    ams::ResourceManager::deallocate(pPtr);
 
     return;
   }
 
 public:
-  // -------------------------------------------------------------------------
-  // constructor and destructor
-  // -------------------------------------------------------------------------
   AMSWorkflow()
       : AppCall(nullptr),
         hdcache(nullptr),
@@ -161,9 +167,12 @@ public:
     if (surrogate_path != nullptr)
       surrogate = new SurrogateModel<FPTypeValue>(surrogate_path, is_cpu);
 
+    // TODO: Fix magic number. 10 represents the number of neighbours I am
+    // looking at.
     if (uq_path != nullptr)
       hdcache = new HDCache<FPTypeValue>(uq_path, 10, !is_cpu, threshold);
     else
+      // This is a random hdcache returning true %threshold queries
       hdcache = new HDCache<FPTypeValue>(2, 10, !is_cpu, threshold);
 
     DB = nullptr;
@@ -187,18 +196,58 @@ public:
 
     if (surrogate) delete surrogate;
 
-    if (DB) {
-      // std::cerr << "Deleting DB\n";
-      delete DB;
-    }
+    if (DB) delete DB;
   }
 
-  // -------------------------------------------------------------------------
-  // the main evaluate function of the ams workflow
-  // -------------------------------------------------------------------------
-  // todo: inputs should be const!
+
+  /** @brief This is the main entry point of AMSLib and replaces the original
+   * execution path of the application.
+   * @param[in] probDescr an opaque type that will be forwarded to the
+   * application upcall
+   * @param[in] totalElements the total number of elements to apply the SPMD
+   * function on
+   * @param[in] inputs the inputs of the computation.
+   * @param[out] outputs the computed outputs.
+   * @param[in] Comm The MPI Communicatotor for all ranks participating in the
+   * SPMD execution.
+   *
+   * @details The function corresponds to the main driver of the AMSLib.
+   * Assuming an original 'foo' function void foo ( void *cls, int numElements,
+   * void **inputs, void **outputs){ parallel_for(I : numElements){
+   *       cls->physics(inputs[0][I], outputs[0][I]);
+   *    }
+   * }
+   *
+   * The AMS transformation would functionaly look like this:
+   * void AMSfoo ( void *cls, int numElements, void **inputs, void **outputs){
+   *    parallel_for(I : numElements){
+   *       if ( UQ (I) ){
+   *          Surrogate(inputs[0][I], outputs[0][I])
+   *       }
+   *       else{
+   *        cls->physics(inputs[0][I], outputs[0][I]);
+   *        DB->Store(inputs[0][I], outputs[0][I]);
+   *       }
+   *    }
+   * }
+   *
+   * Yet, AMS assumes a SPMD physics function (in the example cls->physics).
+   * Therefore, the AMS transformation is taking place at the level of the SPMD
+   * execution. The following transformation is equivalent void AMSfoo( void
+   * *cls, int numElements, void **inputs, void **outputs){ predicates =
+   * UQ(inputs, numElements); modelInputs, physicsInputs = partition(predicates,
+   * inputs); modelOuputs, physicsOutputs = partition(predicates, output);
+   *    foo(cls, physicsInputs.size(), physicsInputs, physicsOutputs);
+   *    surrogate(modelInputs, modelOuputs, modelOuputs.size());
+   *    DB->Store(physicsInputs, physicsOutputs);
+   *    concatenate(outptuts, modelOuputs, predicate);
+   * }
+   *
+   * This transformation can exploit the parallel nature of all the required
+   * steps.
+   */
   void evaluate(void *probDescr,
-                const int num_data,
+                const int totalElements,
                 const FPTypeValue **inputs,
                 FPTypeValue **outputs,
                 int inputDim,
@@ -206,144 +255,118 @@ public:
                 MPI_Comm Comm = nullptr)
   {
 
+    // To move around the inputs, outputs we bundle them as std::vectors
     std::vector<const FPTypeValue *> origInputs(inputs, inputs + inputDim);
     std::vector<FPTypeValue *> origOutputs(outputs, outputs + outputDim);
 
-    /* The allocate function always allocates on the default device. The default
-     * device can be set by calling setDefaultDataAllocator. Otherwise we can
-     * explicitly control the location of the data by calling allocate(size,
-     * AMSDevice).
-     */
-    bool *p_ml_acceptable = ams::ResourceManager::allocate<bool>(num_data);
+    // The predicate with which we will split the data on a later step
+    bool *p_ml_acceptable = ams::ResourceManager::allocate<bool>(totalElements);
 
     // -------------------------------------------------------------
     // STEP 1: call the hdcache to look at input uncertainties
     //         to decide if making a ML inference makes sense
     // -------------------------------------------------------------
-    // ideally, we should do step 1 and step 2 async!
-
     if (hdcache != nullptr) {
       CALIPER(CALI_MARK_BEGIN("UQ_MODULE");)
-      hdcache->evaluate(num_data, origInputs, p_ml_acceptable);
+      hdcache->evaluate(totalElements, origInputs, p_ml_acceptable);
       CALIPER(CALI_MARK_END("UQ_MODULE");)
     }
 
-    int partitionElements = data_handler::computePartitionSize(2, 4);
-    // FIXME: We need to either remove the idea of partioning the outer data and
-    // parallelizing or take into account the implications of such an approach.
-    // The current implementation has bugs in the case of MPI execution. The for
-    // loop can execute A different number of times. Thus blocking any MPI all
-    // to all functions. The line below disables that feature. It still not
-    // bullet proof. There is some chance for some specific node to have a no
-    // element at all and it can result into a deadlock
-    partitionElements = num_data;
+    // Pointer values which store data values
+    // to be computed using the eos function.
+    std::vector<FPTypeValue *> packedInputs;
+    // TODO: Do not drop the const modifier here.
+    // I am using const cast later
+    std::vector<FPTypeValue *> sparseInputs;
 
-    for (int pId = 0; pId < num_data; pId += partitionElements) {
-
-      // Pointer values which store data values
-      // to be computed using the eos function.
-      const int elements = std::min(partitionElements, num_data - pId);
-      std::vector<FPTypeValue *> packedInputs;
-      // TODO: Do not drop the const modifier here.
-      // I am using const cast later
-      std::vector<FPTypeValue *> sparseInputs;
-
-      for (int i = 0; i < inputDim; i++) {
-        packedInputs.emplace_back(
-            ams::ResourceManager::allocate<FPTypeValue>(elements));
-        sparseInputs.emplace_back(
-            const_cast<FPTypeValue *>(&origInputs[i][pId]));
-      }
-
-      std::vector<FPTypeValue *> packedOutputs;
-      std::vector<FPTypeValue *> sparseOutputs;
-      for (int i = 0; i < outputDim; i++) {
-        packedOutputs.emplace_back(
-            ams::ResourceManager::allocate<FPTypeValue>(elements));
-        sparseOutputs.emplace_back(&origOutputs[i][pId]);
-      }
-
-      bool *predicate = &p_ml_acceptable[pId];
-      // null surrogate means we should call physics module
-      if (surrogate == nullptr) {
-        std::cout << "Calling application cause I dont have model\n";
-        AppCall(probDescr,
-                elements,
-                reinterpret_cast<void **>(sparseInputs.data()),
-                reinterpret_cast<void **>(sparseOutputs.data()));
-      } else {
-        std::cout << "Calling model\n";
-        CALIPER(CALI_MARK_BEGIN("SURROGATE");)
-        // We need to call the model on all data values.
-        // Because we expect it to be faster.
-        // I guess we may need to add some policy to do this
-        surrogate->evaluate(elements, sparseInputs, sparseOutputs);
-        CALIPER(CALI_MARK_END("SURROGATE");)
-      }
-
-
-      // -----------------------------------------------------------------
-      // STEP 3: call physics module only where d_dense_need_phys = true
-      // -----------------------------------------------------------------
-      // ---- 3a: we need to pack the sparse data based on the uq flag
-      const long packedElements =
-          data_handler::pack(predicate, elements, sparseInputs, packedInputs);
-
-      // TODO: Here we need to load balance. Each rank may have a different
-      // number of PackedElemets. Thus we need to distribute the packedInputs
-      // to all ranks
-#ifdef __ENABLE_MPI__
-      if (Comm) {
-        MPI_Barrier(Comm);
-      }
-#endif
-
-      std::cout << std::setprecision(2) << "["
-                << static_cast<int>(pId / partitionElements)
-                << "] Physics Computed elements / Surrogate computed elements "
-                   "(Fraction of Physics elements) ["
-                << packedElements << "/" << elements - packedElements << " ("
-                << static_cast<double>(packedElements) /
-                       static_cast<double>(elements)
-                << ")]\n";
-
-      // ---- 3b: call the physics module and store in the data base
-      if (packedElements > 0) {
-        CALIPER(CALI_MARK_BEGIN("PHYSICS MODULE");)
-        AppCall(probDescr,
-                elements,
-                reinterpret_cast<void **>(packedInputs.data()),
-                reinterpret_cast<void **>(packedOutputs.data()));
-        CALIPER(CALI_MARK_END("PHYSICS MODULE");)
-      }
-#ifdef __ENABLE_MPI__
-      // TODO: Here we need to load balance. Each rank may have a different
-      // number of PackedElemets. Thus we need to distribute the packedOutputs
-      // to all ranks
-      if (Comm) {
-        MPI_Barrier(Comm);
-      }
-#endif
-      // ---- 3c: unpack the data
-      data_handler::unpack(predicate, elements, packedOutputs, sparseOutputs);
-
-      if (DB != nullptr) {
-        CALIPER(CALI_MARK_BEGIN("DBSTORE");)
-        Store(packedElements, packedInputs, packedOutputs);
-        CALIPER(CALI_MARK_END("DBSTORE");)
-        std::cout << "Stored " << packedElements
-                  << " physics-computed elements in " << DB->type()
-                  << std::endl;
-      }
-
-      // -----------------------------------------------------------------
-      // Deallocate temporal data
-      // -----------------------------------------------------------------
-      for (int i = 0; i < inputDim; i++)
-        ams::ResourceManager::deallocate(packedInputs[i]);
-      for (int i = 0; i < outputDim; i++)
-        ams::ResourceManager::deallocate(packedOutputs[i]);
+    for (int i = 0; i < inputDim; i++) {
+      packedInputs.emplace_back(
+          ams::ResourceManager::allocate<FPTypeValue>(totalElements));
+      sparseInputs.emplace_back(const_cast<FPTypeValue *>(origInputs[i]));
     }
+
+    std::vector<FPTypeValue *> packedOutputs;
+    std::vector<FPTypeValue *> sparseOutputs;
+    for (int i = 0; i < outputDim; i++) {
+      packedOutputs.emplace_back(
+          ams::ResourceManager::allocate<FPTypeValue>(totalElements));
+      sparseOutputs.emplace_back(origOutputs[i]);
+    }
+
+    bool *predicate = p_ml_acceptable;
+    // null surrogate means we should call physics module
+    if (surrogate == nullptr) {
+      std::cout << "Calling application cause I dont have model\n";
+      AppCall(probDescr,
+              totalElements,
+              reinterpret_cast<void **>(sparseInputs.data()),
+              reinterpret_cast<void **>(sparseOutputs.data()));
+    } else {
+      std::cout << "Calling model\n";
+      CALIPER(CALI_MARK_BEGIN("SURROGATE");)
+      // We need to call the model on all data values.
+      // Because we expect it to be faster.
+      // I guess we may need to add some policy to do this
+      surrogate->evaluate(totalElements, sparseInputs, sparseOutputs);
+      CALIPER(CALI_MARK_END("SURROGATE");)
+    }
+
+
+    // -----------------------------------------------------------------
+    // STEP 3: call physics module only where d_dense_need_phys = true
+    // -----------------------------------------------------------------
+    // ---- 3a: we need to pack the sparse data based on the uq flag
+    const long packedElements =
+        data_handler::pack(predicate, totalElements, sparseInputs, packedInputs);
+
+#ifdef __ENABLE_MPI__
+    if (Comm) {
+      MPI_Barrier(Comm);
+    }
+#endif
+
+    std::cout << std::setprecision(2) << "Physics Computed elements / Surrogate computed elements "
+                 "(Fraction of Physics elements) ["
+              << packedElements << "/" << totalElements - packedElements << " ("
+              << static_cast<double>(packedElements) / static_cast<double>(totalElements)
+              << ")]\n";
+
+    // ---- 3b: call the physics module and store in the data base
+    if (packedElements > 0 ) {
+      CALIPER(CALI_MARK_BEGIN("PHYSICS MODULE");)
+      AppCall(probDescr,
+              packedElements,
+              reinterpret_cast<void **>(packedInputs.data()),
+              reinterpret_cast<void **>(packedOutputs.data()));
+      CALIPER(CALI_MARK_END("PHYSICS MODULE");)
+    }
+#ifdef __ENABLE_MPI__
+    // TODO: Here we need to load balance. Each rank may have a different
+    // number of PackedElemets. Thus we need to distribute the packedOutputs
+    // to all ranks
+    if (Comm) {
+      MPI_Barrier(Comm);
+    }
+#endif
+    // ---- 3c: unpack the data
+    data_handler::unpack(predicate, totalElements, packedOutputs, sparseOutputs);
+
+    if (DB != nullptr) {
+      CALIPER(CALI_MARK_BEGIN("DBSTORE");)
+      Store(packedElements, packedInputs, packedOutputs);
+      CALIPER(CALI_MARK_END("DBSTORE");)
+      std::cout << "Stored " << packedElements
+                << " physics-computed elements in " << DB->type() << std::endl;
+    }
+
+    // -----------------------------------------------------------------
+    // Deallocate temporal data
+    // -----------------------------------------------------------------
+    for (int i = 0; i < inputDim; i++)
+      ams::ResourceManager::deallocate(packedInputs[i]);
+    for (int i = 0; i < outputDim; i++)
+      ams::ResourceManager::deallocate(packedOutputs[i]);
+
     ams::ResourceManager::deallocate(p_ml_acceptable);
   }
 };

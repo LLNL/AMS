@@ -431,7 +431,7 @@ public:
   std::string type() override { return "hdf5"; }
 
   /**
-   * Takes an input and an output vector each holding 1-D vectors data, and
+   * @brief Takes an input and an output vector each holding 1-D vectors data, and
    * store them into a hdf5 file delimited by ':'. This should never be used for
    * large scale simulations as txt/hdf5 format will be extremely slow.
    * @param[in] num_elements Number of elements of each 1-D vector

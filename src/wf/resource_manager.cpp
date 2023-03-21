@@ -124,8 +124,6 @@ void ResourceManager::setup(const AMSResourceType Resource)
   // use umpire resource manager
   auto& rm = umpire::ResourceManager::getInstance();
 
-  // -------------------------------------------------------------------------
-  // create host allocator
   auto alloc_name = ResourceManager::getAllocatorName(Resource);
   auto alloc_resource = rm.makeAllocator<umpire::strategy::QuickPool, true>(
       alloc_name, rm.getAllocator(allocator_names[Resource]));

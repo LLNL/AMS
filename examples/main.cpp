@@ -230,7 +230,7 @@ int main(int argc, char **argv)
   CALIPER(mgr.start();)
   CALIPER(CALI_MARK_BEGIN("Setup");)
 
-  const bool use_device = device_name != "cpu";
+  const bool use_device = std::strcmp(device_name, "cpu") != 0;
   // set up a randomization seed
   srand(seed + rId);
 

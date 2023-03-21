@@ -15,82 +15,139 @@
 
 namespace ams
 {
-
+/**
+ * @brief A "utility" class that provides
+ * a unified interface to the umpire library for memory allocations
+ * and data movements/copies.
+ */
 class ResourceManager
 {
 public:
 private:
+
+  /** @brief  Used internally to allocate from the user define default resource (Device, Host Memory) */
   static AMSResourceType default_resource;
+
+  /** @brief  Used internally to map resource types (Device, host, pinned memory) to
+   * umpire allocator ids. */
   static int allocator_ids[AMSResourceType::RSEND];
+
+  /** @brief The names of the user defined allocators */
   static std::string allocator_names[AMSResourceType::RSEND];
 
 public:
-  //! names for these allocators
+  ResourceManager() = delete;
+  ResourceManager(const ResourceManager&) = delete;
+  ResourceManager(ResourceManager&&) = delete;
+  ResourceManager& operator=(const ResourceManager&) = delete;
+  ResourceManager& operator=(ResourceManager&&) = delete;
+
+  /** @brief The names of the user defined allocators */
   static const char* getDeviceAllocatorName();
+
+  /** @brief Get the name of the Host allocator */
   static const char* getHostAllocatorName();
+
+  /** @brief Get the name of the Pinned memory Allocator */
   static const char* getPinnedAllocatorName();
+
+  /** @brief Get the name of the Pinned memory Allocator */
   static const char* getAllocatorName(AMSResourceType Resource);
 
-  //! setup allocators in the resource manager
+  /** @brief setup allocators in the resource manager */
   static void setup(const AMSResourceType resource);
 
-  //! list allocators
+  /** @brief Print out all available allocators */
   static void list_allocators();
 
-  //! get/set default allocator
+  /** @brief Get the default memory allocator */
   static AMSResourceType getDefaultDataAllocator();
+
+  /** @brief Set the default memory allocator */
   static void setDefaultDataAllocator(AMSResourceType resource);
 
-  //! check if we are using device
+  /** @brief Check if default allocator is set to Device
+   *  @pre The library currently assumes the default memory allocator
+   *  also describes the executing device.
+   */
   static bool isDeviceExecution();
 
-  //! ------------------------------------------------------------------------
-  //! query an allocated array
-  template <typename T>
-  static bool hasAllocator(const T* data)
+  /** @brief Check if pointer is allocatd through
+   *  @tparam TypeInValue The type of pointer being tested.
+   *  @param[in] data pointer to memory.
+   *  @return Boolean value describing whether the pointer has
+   *  been allocated through an internal allocator
+   */
+  template <typename TypeInValue>
+  static bool hasAllocator(const TypeInValue* data)
   {
     static auto& rm = umpire::ResourceManager::getInstance();
-    void* vdata = static_cast<void*>(const_cast<T*>(data));
+    void* vdata = static_cast<void*>(const_cast<TypeInValue*>(data));
     return rm.hasAllocator(vdata);
   }
 
-  template <typename T>
-  static int getDataAllocationId(const T* data)
+  /** @brief Returns the id of the allocator allocated the defined memory.
+   *  @tparam TypeInValue The type of pointer being tested.
+   *  @param[in] data pointer to memory.
+   *  @return Allocator Id.
+   */
+  template <typename TypeInValue>
+  static int getDataAllocationId(const TypeInValue* data)
   {
     static auto& rm = umpire::ResourceManager::getInstance();
-    void* vdata = static_cast<void*>(const_cast<T*>(data));
-    return rm.hasAllocator(vdata) ? rm.getAllocator(vdata).getId() : -1;
+    void* vdata = static_cast<void*>(const_cast<TypeInValue*>(data));
+    return hasAllocator(vdata) ? rm.getAllocator(vdata).getId() : -1;
   }
 
-  template <typename T>
-  static const std::string getDataAllocationName(const T* data)
+  /** @brief Returns the name of the allocator allocated the defined memory.
+   *  @tparam TypeInValue The type of pointer being tested.
+   *  @param[in] data pointer to memory.
+   *  @return Allocator name if allocated through umpire else "unknown".
+   */
+  template <typename TypeInValue>
+  static const std::string getDataAllocationName(const TypeInValue* data)
   {
     static auto& rm = umpire::ResourceManager::getInstance();
-    void* vdata = static_cast<void*>(const_cast<T*>(data));
+    void* vdata = static_cast<void*>(const_cast<TypeInValue*>(data));
     return rm.hasAllocator(vdata) ? rm.getAllocator(vdata).getName()
                                   : "unknown";
   }
 
-  template <typename T>
-  static bool is_on_device(const T* data)
+  /** @brief checks whether the data are resident on the device.
+   *  @tparam TypeInValue The type of pointer being tested.
+   *  @param[in] data pointer to memory.
+   *  @return True when data are on Device.
+   */
+  template <typename TypeInValue>
+  static bool is_on_device(const TypeInValue* data)
   {
     auto alloc_id = getDataAllocationId(data);
     return ResourceManager::isDeviceExecution() && alloc_id != -1 &&
            alloc_id == allocator_ids[AMSResourceType::DEVICE];
   }
 
-  //! ------------------------------------------------------------------------
-  //! allocate and deallocate
-  template <typename T>
-  static T* allocate(size_t nvalues, AMSResourceType dev = default_resource)
+  /** @brief Allocates nvalues on the specified device.
+   *  @tparam TypeInValue The type of pointer to allocate.
+   *  @param[in] nvalues Number of elements to allocate.
+   *  @param[in] dev Resource to allocate memory from.
+   *  @return Pointer to allocated elements.
+   */
+  template <typename TypeInValue>
+  static TypeInValue* allocate(size_t nvalues, AMSResourceType dev = default_resource)
   {
     static auto& rm = umpire::ResourceManager::getInstance();
     auto alloc = rm.getAllocator(allocator_ids[dev]);
-    return static_cast<T*>(alloc.allocate(nvalues * sizeof(T)));
+    return static_cast<TypeInValue*>(alloc.allocate(nvalues * sizeof(TypeInValue)));
   }
 
-  template <typename T>
-  static void deallocate(T* data, AMSResourceType dev = default_resource)
+  /** @brief deallocates pointer from the specified device.
+   *  @tparam TypeInValue The type of pointer to de-allocate.
+   *  @param[in] data pointer to deallocate.
+   *  @param[in] dev device to de-allocate from .
+   *  @return void.
+   */
+  template <typename TypeInValue>
+  static void deallocate(TypeInValue* data, AMSResourceType dev = default_resource)
   {
     static auto& rm = umpire::ResourceManager::getInstance();
     if (hasAllocator(data)) {
@@ -98,6 +155,12 @@ public:
     }
   }
 
+  /** @brief registers an external pointer in the umpire allocation records.
+   *  @param[in] ptr pointer to memory to register.
+   *  @param[in] nBytes number of bytes to register.
+   *  @param[in] dev resource to register the memory to.
+   *  @return void.
+   */
   static void registerExternal(void* ptr,
                                size_t nBytes,
                                AMSResourceType dev = default_resource)
@@ -109,19 +172,35 @@ public:
                               ptr, nBytes, alloc.getAllocationStrategy()));
   }
 
+  /** @brief removes a registered external pointer from the umpire allocation records.
+   *  @param[in] ptr pointer to memory to de-register.
+   *  @return void.
+   */
   static void deregisterExternal(void* ptr)
   {
     auto& rm = umpire::ResourceManager::getInstance();
     rm.deregisterAllocation(ptr);
   }
 
-  template <typename T>
-  static void copy(T* src, T* dest, size_t size = 0)
+  /** @brief copy values from src to destination regardless of their memory location.
+   *  @tparam TypeInValue type of pointers
+   *  @param[in] src Source memory pointer.
+   *  @param[out] dest destination memory pointer.
+   *  @param[in] size number of elements to copy. (When 0 copies entire allocated area)
+   *  @return void.
+   */
+  template <typename TypeInValue>
+  static void copy(TypeInValue* src, TypeInValue* dest, size_t size = 0)
   {
     static auto& rm = umpire::ResourceManager::getInstance();
     rm.copy(dest, src, size);
   }
 
+  /** @brief Utility function that deallocates all C-Vectors inside the vector.
+   *  @tparam TypeInValue type of pointers
+   *  @param[in] dPtr vector containing pointers to C-vectors to be allocated.
+   *  @return void.
+   */
   template <typename T>
   static void deallocate(std::vector<T*>& dPtr)
   {

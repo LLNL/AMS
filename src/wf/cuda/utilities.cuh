@@ -249,8 +249,13 @@ int compact(bool cond,
     int numBlocks = divup(length, blockSize);
     int* d_BlocksCount = ams::ResourceManager::allocate<int>(numBlocks, AMSResourceType::DEVICE);
     int* d_BlocksOffset = ams::ResourceManager::allocate<int>(numBlocks, AMSResourceType::DEVICE);
+    // determine number of elements in the compacted list
+    int* h_BlocksCount = ams::ResourceManager::allocate<int>(numBlocks, AMSResourceType::HOST);
+    int* h_BlocksOffset = ams::ResourceManager::allocate<int>(numBlocks, AMSResourceType::HOST);
+
     T** d_dense  = ams::ResourceManager::allocate<T*>(dims, AMSResourceType::DEVICE);
     T** d_sparse = ams::ResourceManager::allocate<T*>(dims, AMSResourceType::DEVICE);
+
     ams::ResourceManager::registerExternal(dense, sizeof(T*) * dims, AMSResourceType::HOST);
     ams::ResourceManager::registerExternal(sparse, sizeof(T*) * dims, AMSResourceType::HOST);
     ams::ResourceManager::copy(dense, d_dense);
@@ -268,22 +273,22 @@ int compact(bool cond,
     compactK<<<numBlocks, blockSize, sizeof(int) * (blockSize / warpSize)>>>( cond,
         d_sparse, d_dense, dPredicate, length, dims, d_BlocksOffset, isReverse);
 
-    // determine number of elements in the compacted list
-    int* h_BlocksCount = ams::ResourceManager::allocate<int>(numBlocks, AMSResourceType::HOST);
-    int* h_BlocksOffset = ams::ResourceManager::allocate<int>(numBlocks, AMSResourceType::HOST);
     ams::ResourceManager::copy(d_BlocksCount, h_BlocksCount);
     ams::ResourceManager::copy(d_BlocksOffset, h_BlocksOffset);
     int compact_length = h_BlocksOffset[numBlocks - 1] + thrustPrt_bCount[numBlocks - 1];
 
     ams::ResourceManager::deallocate(d_BlocksCount, AMSResourceType::DEVICE);
     ams::ResourceManager::deallocate(d_BlocksOffset, AMSResourceType::DEVICE);
+
+    ams::ResourceManager::deallocate(h_BlocksCount, AMSResourceType::HOST);
     ams::ResourceManager::deallocate(h_BlocksOffset, AMSResourceType::HOST);
-    ams::ResourceManager::deallocate(h_BlocksOffset, AMSResourceType::HOST);
+
     ams::ResourceManager::deallocate(d_dense, AMSResourceType::DEVICE);
     ams::ResourceManager::deallocate(d_sparse, AMSResourceType::DEVICE);
+
     ams::ResourceManager::deregisterExternal(dense);
     ams::ResourceManager::deregisterExternal(sparse);
-
+    cudaDeviceSynchronize();
 
     return compact_length;
 }
@@ -309,6 +314,7 @@ int compact(bool cond, T** sparse, T** dense, int* indices, const size_t length,
     }
 
     assignK<<<numBlocks, blockSize>>>(sparse, dense, indices, sparseElements, dims, isReverse);
+    cudaDeviceSynchronize();
 
     return sparseElements;
 }
@@ -334,13 +340,14 @@ void cuda_rand_init(bool* predicate, const size_t length, T threshold) {
     }
 
     fillRandom<<<numBlocks, BS>>>(predicate, TS, dev_random, length, threshold);
+    cudaDeviceSynchronize();
 }
-
 
 void device_compute_predicate( float *data, bool *predicate, size_t nData, const size_t kneigh, float threshold){
   const int NT = 256;
   int NB = (nData + NT - 1 ) / NT;
   compute_predicate<<<NB, NT>>>(data, predicate, nData, kneigh, threshold);
+  cudaDeviceSynchronize();
 }
 
 #endif
