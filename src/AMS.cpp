@@ -7,7 +7,23 @@
 #include "AMS.h"
 #include "wf/workflow.hpp"
 
-std::vector<std::pair<AMSDType, void *>> executors;
+struct AMSWrap{
+  std::vector<std::pair<AMSDType, void *>> executors;
+  ~AMSWrap() {
+    for ( auto E : executors ){
+      if ( E.second != nullptr ){
+        if ( E.first == AMSDType::Double ){
+          std::cout << "\n\n\n I am calling destructor\n\n\n";
+          delete reinterpret_cast<ams::AMSWorkflow<double> *> (E.second);
+        } else{
+          delete reinterpret_cast<ams::AMSWorkflow<float> *> (E.second);
+        }
+      }
+    }
+  }
+};
+
+static AMSWrap _amsWrap;
 
 void _AMSExecute(AMSExecutor executor,
                  void *probDescr,
@@ -20,10 +36,10 @@ void _AMSExecute(AMSExecutor executor,
 {
   uint64_t index = reinterpret_cast<uint64_t>(executor);
 
-  if (index >= executors.size())
+  if (index >= _amsWrap.executors.size())
     throw std::runtime_error("AMS Executor identifier does not exist\n");
 
-  auto currExec = executors[index];
+  auto currExec = _amsWrap.executors[index];
   if (currExec.first == AMSDType::Double) {
     ams::AMSWorkflow<double> *dWF =
         reinterpret_cast<ams::AMSWorkflow<double> *>(currExec.second);
@@ -67,8 +83,8 @@ AMSExecutor AMSCreateExecutor(const AMSConfig config)
                                      config.threshold,
                                      config.pId,
                                      config.wSize);
-    executors.push_back(std::make_pair(config.dType, static_cast<void *>(dWF)));
-    return reinterpret_cast<AMSExecutor>(executors.size() - 1L);
+    _amsWrap.executors.push_back(std::make_pair(config.dType, static_cast<void *>(dWF)));
+    return reinterpret_cast<AMSExecutor>(_amsWrap.executors.size() - 1L);
   } else if (config.dType == AMSDType::Single) {
     ams::AMSWorkflow<float> *sWF =
         new ams::AMSWorkflow<float>(config.cBack,
@@ -80,8 +96,8 @@ AMSExecutor AMSCreateExecutor(const AMSConfig config)
                                     static_cast<float>(config.threshold),
                                     config.pId,
                                     config.wSize);
-    executors.push_back(std::make_pair(config.dType, static_cast<void *>(sWF)));
-    return reinterpret_cast<AMSExecutor>(executors.size() - 1L);
+    _amsWrap.executors.push_back(std::make_pair(config.dType, static_cast<void *>(sWF)));
+    return reinterpret_cast<AMSExecutor>(_amsWrap.executors.size() - 1L);
   } else {
     throw std::invalid_argument("Data type is not supported by AMSLib!");
     return reinterpret_cast<AMSExecutor>(-1L);

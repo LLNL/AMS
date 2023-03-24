@@ -53,6 +53,7 @@ public:
   BaseDB& operator=(const BaseDB&) = delete;
 
   BaseDB(uint64_t id) : id(id) {}
+  virtual ~BaseDB() { }
 
   /**
    * @brief Define the type of the DB (File, Redis etc)
@@ -171,7 +172,7 @@ public:
   /**
    * @brief Define the type of the DB (File, Redis etc)
    */
-  std::string type() override { return "csvDB"; }
+  std::string type() override { return "csv"; }
 
   /**
    * Takes an input and an output vector each holding 1-D vectors data, and
@@ -422,8 +423,9 @@ public:
    */
   ~hdf5DB()
   {
-    herr_t err = H5Fclose(HFile);
-    HDF5_ERROR(err);
+// HDF5 Automatically closes all opened fds at exit of application.
+//    herr_t err = H5Fclose(HFile);
+//    HDF5_ERROR(err);
   }
 
   /**
