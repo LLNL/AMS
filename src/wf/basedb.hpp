@@ -196,6 +196,7 @@ public:
       for (size_t j = 0; j < num_in; j++) {
         fd << inputs[j][i] << ":";
       }
+
       for (size_t j = 0; j < num_out - 1; j++) {
         fd << outputs[j][i] << ":";
       }

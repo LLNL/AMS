@@ -73,6 +73,7 @@ int main(int argc, char **argv)
   const char *model_path = "";
   const char *hdcache_path = "";
   const char *db_config = "";
+  const char *db_type = "";
 
   int seed = 0;
   TypeValue empty_element_ratio = -1;
@@ -93,7 +94,6 @@ int main(int argc, char **argv)
 #ifdef __ENABLE_DB__
   reqDB = true;
 #endif
-
 
   bool verbose = false;
 
@@ -164,12 +164,13 @@ int main(int argc, char **argv)
                  "Path to directory where applications will store their data",
                  reqDB);
 
-  //  args.AddOption(&db_config, "-db",
-  //      "--dbconfig",
-  //      "Configuration option of the different DB types:\n"
-  //      "\t CSV: directory storing files\n"
-  //      "\t REDIS: Configuration file of redis db\n"
-  //      "\t HDF5: directory storing the files\n", reqDB);
+  args.AddOption(&db_type,
+                 "-dt",
+                 "--dbtype",
+                 "Configuration option of the different DB types:\n"
+                 "\t 'csv' Use csv as back end\n"
+                 "\t 'hdf5': use hdf5 as a back end\n",
+                 reqDB);
 
   args.AddOption(
       &verbose, "-v", "--verbose", "-qu", "--quiet", "Print extra stuff");
@@ -180,7 +181,7 @@ int main(int argc, char **argv)
   args.Parse();
   if (!args.Good()) {
     args.PrintUsage(std::cout);
-    return false;
+    return -1;
   }
 
   if (rId == 0) {
@@ -200,7 +201,7 @@ int main(int argc, char **argv)
     for (const auto &s : eos_options) {
       std::cerr << " - " << s << std::endl;
     }
-    return false;
+    return -1;
   }
 
   // small validation
@@ -231,6 +232,12 @@ int main(int argc, char **argv)
   CALIPER(CALI_MARK_BEGIN("Setup");)
 
   const bool use_device = std::strcmp(device_name, "cpu") != 0;
+  AMSDBType dbType =
+      (std::strcmp(db_type, "csv") == 0) ? AMSDBType::CSV : AMSDBType::None;
+  dbType = ((dbType == AMSDBType::None) && (std::strcmp(db_type, "hdf5") == 0))
+               ? AMSDBType::HDF5
+               : AMSDBType::None;
+
   // set up a randomization seed
   srand(seed + rId);
 
@@ -349,9 +356,9 @@ int main(int argc, char **argv)
   // ---------------------------------------------------------------------
   std::vector<EOS *> eoses(num_mats, nullptr);
   for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
-    if (eos_name == "ideal_gas") {
+    if (eos_name == std::string("ideal_gas")) {
       eoses[mat_idx] = new IdealGas(1.6, 1.4);
-    } else if (eos_name == "constant_host") {
+    } else if (eos_name == std::string("constant_host")) {
       eoses[mat_idx] = new ConstantEOSOnHost(alloc_name_host.c_str(), 1.0);
     } else {
       std::cerr << "unknown eos `" << eos_name << "'" << std::endl;
@@ -377,25 +384,14 @@ int main(int argc, char **argv)
 #endif
 
   db_path = (strlen(db_config) > 0) ? db_config : nullptr;
-  /*
-   * A JSON that contains all Redis info (port, host, password, SSL certificate
-   * path) See README to generate the certificate (.crt file).
-   * {
-   *      "database-password": "mypassword",
-   *      "service-port": 32273,
-   *      "host": "cz-username-testredis1.apps.czapps.llnl.gov",
-   *      "cert": "redis_certificate.crt"
-   * }
-   */
-  // db_path = "test-config-redis.json";
-  //
+
   AMSResourceType ams_device = AMSResourceType::HOST;
   if (use_device) ams_device = AMSResourceType::DEVICE;
 
   AMSConfig amsConf = {AMSExecPolicy::SinglePass,
                        AMSDType::Double,
                        ams_device,
-                       AMSDBType::HDF5,
+                       dbType,
                        callBack,
                        (char *)surrogate_path,
                        (char *)uq_path,
@@ -406,11 +402,6 @@ int main(int argc, char **argv)
   AMSExecutor wf = AMSCreateExecutor(amsConf);
 
   for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
-    // #ifndef __ENABLE_REDIS__
-    //     char name[100];
-    //     sprintf(name, "miniapp_%d.txt", mat_idx);
-    //     amsConf.DBPath = name;
-    // #endif // __ENABLE_REDIS__
     workflow[mat_idx] = wf;
   }
 #endif
