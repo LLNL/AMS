@@ -13,7 +13,6 @@ struct AMSWrap{
     for ( auto E : executors ){
       if ( E.second != nullptr ){
         if ( E.first == AMSDType::Double ){
-          std::cout << "\n\n\n I am calling destructor\n\n\n";
           delete reinterpret_cast<ams::AMSWorkflow<double> *> (E.second);
         } else{
           delete reinterpret_cast<ams::AMSWorkflow<float> *> (E.second);
