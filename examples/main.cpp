@@ -169,8 +169,7 @@ int main(int argc, char **argv)
                  "--dbtype",
                  "Configuration option of the different DB types:\n"
                  "\t 'csv' Use csv as back end\n"
-                 "\t 'hdf5': use hdf5 as a back end\n",
-                 reqDB);
+                 "\t 'hdf5': use hdf5 as a back end\n");
 
   args.AddOption(
       &verbose, "-v", "--verbose", "-qu", "--quiet", "Print extra stuff");
@@ -234,9 +233,8 @@ int main(int argc, char **argv)
   const bool use_device = std::strcmp(device_name, "cpu") != 0;
   AMSDBType dbType =
       (std::strcmp(db_type, "csv") == 0) ? AMSDBType::CSV : AMSDBType::None;
-  dbType = ((dbType == AMSDBType::None) && (std::strcmp(db_type, "hdf5") == 0))
-               ? AMSDBType::HDF5
-               : AMSDBType::None;
+  if ( dbType != AMSDBType::CSV )
+    dbType = ((std::strcmp(db_type, "hdf5") == 0)) ? AMSDBType::HDF5 : AMSDBType::None;
 
   // set up a randomization seed
   srand(seed + rId);
