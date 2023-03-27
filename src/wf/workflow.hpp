@@ -54,7 +54,7 @@ class AMSWorkflow
   AMSDBType dbType = AMSDBType::None;
 
   /** @brief The process id. For MPI runs this is the rank */
-  int rId;
+  const int rId;
 
   /** @brief The total number of processes participating in the simulation
    * (world_size for MPI) */
@@ -272,25 +272,21 @@ public:
       CALIPER(CALI_MARK_END("UQ_MODULE");)
     }
 
-    // Pointer values which store data values
+    // Pointer values which store input data values
     // to be computed using the eos function.
     std::vector<FPTypeValue *> packedInputs;
-    // TODO: Do not drop the const modifier here.
-    // I am using const cast later
-    std::vector<FPTypeValue *> sparseInputs;
 
     for (int i = 0; i < inputDim; i++) {
       packedInputs.emplace_back(
           ams::ResourceManager::allocate<FPTypeValue>(totalElements));
-      sparseInputs.emplace_back(const_cast<FPTypeValue *>(origInputs[i]));
     }
 
+    // Pointer values which store output data values
+    // to be computed using the eos function.
     std::vector<FPTypeValue *> packedOutputs;
-    std::vector<FPTypeValue *> sparseOutputs;
     for (int i = 0; i < outputDim; i++) {
       packedOutputs.emplace_back(
           ams::ResourceManager::allocate<FPTypeValue>(totalElements));
-      sparseOutputs.emplace_back(origOutputs[i]);
     }
 
     bool *predicate = p_ml_acceptable;
@@ -299,15 +295,15 @@ public:
       std::cout << "Calling application cause I dont have model\n";
       AppCall(probDescr,
               totalElements,
-              reinterpret_cast<void **>(sparseInputs.data()),
-              reinterpret_cast<void **>(sparseOutputs.data()));
+              reinterpret_cast<void **>(origInputs.data()),
+              reinterpret_cast<void **>(origOutputs.data()));
     } else {
       std::cout << "Calling model\n";
       CALIPER(CALI_MARK_BEGIN("SURROGATE");)
       // We need to call the model on all data values.
       // Because we expect it to be faster.
       // I guess we may need to add some policy to do this
-      surrogate->evaluate(totalElements, sparseInputs, sparseOutputs);
+      surrogate->evaluate(totalElements, origInputs, origOutputs);
       CALIPER(CALI_MARK_END("SURROGATE");)
     }
 
@@ -317,7 +313,7 @@ public:
     // -----------------------------------------------------------------
     // ---- 3a: we need to pack the sparse data based on the uq flag
     const long packedElements =
-        data_handler::pack(predicate, totalElements, sparseInputs, packedInputs);
+        data_handler::pack(predicate, totalElements, origInputs, packedInputs);
 
 #ifdef __ENABLE_MPI__
     if (Comm) {
@@ -349,7 +345,7 @@ public:
     }
 #endif
     // ---- 3c: unpack the data
-    data_handler::unpack(predicate, totalElements, packedOutputs, sparseOutputs);
+    data_handler::unpack(predicate, totalElements, packedOutputs, origOutputs);
 
     if (DB != nullptr) {
       CALIPER(CALI_MARK_BEGIN("DBSTORE");)
