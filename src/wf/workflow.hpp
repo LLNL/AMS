@@ -17,6 +17,8 @@
 #include "ml/surrogate.hpp"
 #include "wf/basedb.hpp"
 
+#include "wf/debug.h"
+
 //! ----------------------------------------------------------------------------
 //! AMS Workflow class
 //! the purpose of this class is to expose an "evaluate" function
@@ -142,9 +144,7 @@ public:
   {
 #ifdef __ENABLE_DB__
     DB = createDB<FPTypeValue>("miniApp_data.txt", dbType, 0);
-    if (!DB) {
-      std::cout << "Cannot create static database\n";
-    }
+    CFATAL(WORKFLOW, !DB, "Cannot create database");
 #endif
   }
 
@@ -295,7 +295,7 @@ public:
       std::cout << "Calling application cause I dont have model\n";
       AppCall(probDescr,
               totalElements,
-              reinterpret_cast<void **>(origInputs.data()),
+              reinterpret_cast<const void **>(origInputs.data()),
               reinterpret_cast<void **>(origOutputs.data()));
     } else {
       std::cout << "Calling model\n";

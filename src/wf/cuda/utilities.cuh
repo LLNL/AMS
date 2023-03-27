@@ -239,7 +239,7 @@ void __global__ compute_predicate( float *data, bool *predicate, size_t nData, c
 
 template <typename T>
 int compact(bool cond,
-            T** sparse,
+            const T** sparse,
             T** dense,
             const bool* dPredicate,
             const size_t length,
@@ -259,7 +259,7 @@ int compact(bool cond,
     ams::ResourceManager::registerExternal(dense, sizeof(T*) * dims, AMSResourceType::HOST);
     ams::ResourceManager::registerExternal(sparse, sizeof(T*) * dims, AMSResourceType::HOST);
     ams::ResourceManager::copy(dense, d_dense);
-    ams::ResourceManager::copy(sparse, d_sparse);
+    ams::ResourceManager::copy(const_cast<T**> (sparse), d_sparse);
     thrust::device_ptr<int> thrustPrt_bCount(d_BlocksCount);
     thrust::device_ptr<int> thrustPrt_bOffset(d_BlocksOffset);
 

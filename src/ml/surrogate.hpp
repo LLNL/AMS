@@ -58,6 +58,20 @@ private:
     return tensor;
   }
 
+  inline at::Tensor arrayToTensor(long numRows,
+                                  long numCols,
+                                  const TypeInValue** array)
+  {
+    c10::SmallVector<at::Tensor, 8> Tensors;
+    for (int i = 0; i < numCols; i++) {
+      Tensors.push_back(torch::from_blob((TypeInValue*)array[i],
+                                         {numRows, 1},
+                                         tensorOptions));
+    }
+    at::Tensor tensor = at::reshape(at::cat(Tensors, 1), {numRows, numCols});
+    return tensor;
+  }
+
   inline void tensorToArray(at::Tensor tensor,
                             long numRows,
                             long numCols,
@@ -126,7 +140,7 @@ private:
   inline void _evaluate(long num_elements,
                         long num_in,
                         size_t num_out,
-                        TypeInValue** inputs,
+                        const TypeInValue** inputs,
                         TypeInValue** outputs)
   {
 
@@ -181,13 +195,13 @@ public:
   }
 
   inline void evaluate(long num_elements,
-                       std::vector<TypeInValue*> inputs,
+                       std::vector<const TypeInValue*> inputs,
                        std::vector<TypeInValue*> outputs)
   {
     _evaluate(num_elements,
               inputs.size(),
               outputs.size(),
-              static_cast<TypeInValue**>(inputs.data()),
+              static_cast<const TypeInValue**>(inputs.data()),
               static_cast<TypeInValue**>(outputs.data()));
   }
 };

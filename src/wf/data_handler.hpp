@@ -171,7 +171,7 @@ public:
    * */
   static inline size_t pack(const bool* predicate,
                             const size_t n,
-                            std::vector<TypeValue*>& sparse,
+                            std::vector<const TypeValue*>& sparse,
                             std::vector<TypeValue*>& dense,
                             bool denseVal = false)
   {
@@ -193,7 +193,7 @@ public:
       npacked = ams::Device::pack(denseVal,
                                   predicate,
                                   n,
-                                  const_cast<TypeValue**>(sparse.data()),
+                                  static_cast<const TypeValue**>(sparse.data()),
                                   dense.data(),
                                   dims);
     }
@@ -234,8 +234,12 @@ public:
         }
       }
     } else {
-      npacked = ams::Device::unpack(
-          denseVal, predicate, n, sparse.data(), dense.data(), dims);
+      npacked = ams::Device::unpack(denseVal,
+                                    predicate,
+                                    n,
+                                    sparse.data(),
+                                    dense.data(),
+                                    dims);
     }
     return;
   }
@@ -258,7 +262,7 @@ public:
   static inline size_t pack(const bool* predicate,
                             int* sparse_indices,
                             const size_t n,
-                            std::vector<TypeValue*>& sparse,
+                            std::vector<const TypeValue*>& sparse,
                             std::vector<TypeValue*>& dense,
                             bool denseVal = false)
   {

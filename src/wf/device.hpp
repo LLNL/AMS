@@ -48,7 +48,7 @@ template <typename TypeValue>
 int pack(bool cond,
          const bool *predicate,
          const size_t n,
-         TypeValue **sparse,
+         const TypeValue **sparse,
          TypeValue **dense,
          int dims)
 {
@@ -84,7 +84,8 @@ int unpack(bool cond,
            int dims)
 {
 #ifdef __ENABLE_CUDA__
-  return compact(cond, sparse, dense, predicate, n, dims, 1024, true);
+  return compact(cond, const_cast<const TypeValue**> (sparse),
+      dense, predicate, n, dims, 1024, true);
 #else
   return 0;
 #endif
