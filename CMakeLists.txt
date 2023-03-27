@@ -39,6 +39,7 @@ option(WITH_TORCH_DEBUG "Compute RMSE of Surrogate Model and Physics Module" OFF
 option(WITH_TESTS       "Compile tests" OFF)
 option(WITH_REDIS       "Use REDIS as a database back end" OFF)
 option(WITH_HDF5        "Use HDF5 as a database back end" OFF)
+option(WITH_AMS_DEBUG   "Enable verbose messages" OFF)
 
 if (WITH_MPI)
   #  SET(CMAKE_CXX_COMPILER "${MPI_CXX_COMPILER}" CACHE FILEPATH "CXX compiler overridden with MPI C++ wrapper")
@@ -85,6 +86,10 @@ if (WITH_CALIPER)
   list(APPEND AMS_APP_INCLUDES ${caliper_INCLUDE_DIR})
   list(APPEND AMS_APP_LIBRARIES caliper)
   list(APPEND AMS_APP_DEFINES "-D__ENABLE_CALIPER__")
+endif()
+
+if (WITH_AMS_DEBUG)
+  list(APPEND AMS_APP_DEFINES "-DLIBAMS_VERBOSE")
 endif()
 
 # ------------------------------------------------------------------------------

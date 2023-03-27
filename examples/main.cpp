@@ -298,7 +298,7 @@ int main(int argc, char **argv)
   device.Print();
   std::cout << std::endl;
 
-  AMSResourceInfo();
+  //AMSResourceInfo();
 
   // -------------------------------------------------------------------------
   // setup indicators

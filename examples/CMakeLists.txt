@@ -11,7 +11,8 @@ if (WITH_RZ)
   list(APPEND AMS_EXAMPLE_SRC ${RZ_AMS_SOURCES} ${AMS_CURRENT_EXAMPLE_INCLUDES})
 endif()
 
-target_include_directories(ams_example PRIVATE ${AMS_EXAMPLE_INCLUDES} ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(ams_example PRIVATE ${AMS_EXAMPLE_INCLUDES}
+  ${CMAKE_CURRENT_SOURCE_DIR} ${PROJECT_BINARY_DIR}/include)
 target_compile_definitions(ams_example PRIVATE ${AMS_EXAMPLE_DEFINES})
 target_link_directories(ams_example PRIVATE ${AMS_EXAMPLE_LIB_DIRS})
 target_link_libraries(ams_example PUBLIC AMS ${AMS_EXAMPLE_LIBRARIES})

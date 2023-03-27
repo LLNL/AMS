@@ -5,7 +5,9 @@
 #ifndef __AMS__
 #define __AMS__
 
-#ifdef __ENABLE_CALIPER__
+#include "AMS-config.h"
+
+#ifdef __AMS_ENABLE_CALIPER__
 #include <caliper/cali-manager.h>
 #include <caliper/cali.h>
 #define CALIPER(stmt) stmt
@@ -13,7 +15,7 @@
 #define CALIPER(stmt)
 #endif
 
-#ifdef __ENABLE_MPI__
+#ifdef __AMS_ENABLE_MPI__
 #include <mpi.h>
 #define MPI_CALL(stmt)                                                         \
   if (stmt != MPI_SUCCESS) {                                                   \
@@ -62,7 +64,7 @@ typedef struct ams_conf {
 
 AMSExecutor AMSCreateExecutor(const AMSConfig config);
 
-#ifdef __ENABLE_MPI__
+#ifdef __AMS_ENABLE_MPI__
 void AMSDistributedExecute(AMSExecutor executor,
                            MPI_Comm Comm,
                            void *probDescr,
@@ -82,10 +84,9 @@ void AMSExecute(AMSExecutor executor,
 
 void AMSDestroyExecutor(AMSExecutor executor);
 
-#ifdef __ENABLE_MPI__
+#ifdef __AMS_ENABLE_MPI__
 int AMSSetCommunicator(MPI_Comm Comm);
 #endif
-
 
 const char *AMSGetAllocatorName(AMSResourceType device);
 void AMSSetupAllocator(const AMSResourceType device);

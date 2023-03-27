@@ -10,7 +10,6 @@ set(LIBRARY_OUTPUT_PATH ${AMS_LIB_OUT_PATH})
 set(AMS_LIB_SRC ${MINIAPP_INCLUDES} AMS.cpp wf/resource_manager.cpp)
 # two targets: a shared lib and an exec
 add_library(AMS SHARED ${AMS_LIB_SRC} ${MINIAPP_INCLUDES})
-link_libraries()
 
 # ------------------------------------------------------------------------------
 if (WITH_CUDA)
@@ -28,10 +27,28 @@ message(STATUS "ALL INCLUDES ARE ${AMS_APP_INCLUDES}")
 target_compile_definitions(AMS PRIVATE ${AMS_APP_DEFINES})
 target_include_directories(AMS PRIVATE ${AMS_APP_INCLUDES})
 target_include_directories(AMS PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/>
+  $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include/>
   $<INSTALL_INTERFACE:include/>)
+target_include_directories(AMS PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_directories(AMS PRIVATE ${AMS_APP_LIB_DIRS})
 target_link_libraries(AMS PRIVATE ${AMS_APP_LIBRARIES} stdc++fs)
+
+#-------------------------------------------------------------------------------
+# create the configuration header file with the respective information
+#-------------------------------------------------------------------------------
+set(CALIPER_DEFINES "// #define __AMS_ENABLE_MPI__")
+set(MPI_DEFINES "// #define __AMS_ENABLE_CALIPER__")
+
+if (${WITH_CALIPER})
+  set(CALIPER_DEFINES "#define __AMS_ENABLE_CALIPER__")
+endif()
+
+if (${WITH_MPI})
+  set(MPI_DEFINES "#define __AMS_ENABLE_MPI__")
+endif()
+
+configure_file ("${CMAKE_CURRENT_SOURCE_DIR}/include/AMS-config.h.in" "${PROJECT_BINARY_DIR}/include/AMS-config.h")
+configure_file ("${CMAKE_CURRENT_SOURCE_DIR}/include/AMS.h" "${PROJECT_BINARY_DIR}/include/AMS.h" COPYONLY)
 
 # setup the exec
 #SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath -Wl,$ORIGIN")
@@ -46,3 +63,4 @@ install(EXPORT AMSTargets
   DESTINATION lib/cmake/AMS)
 
 install(FILES AMS.h DESTINATION include)
+install(FILES AMS-config.h DESTINATION include)
