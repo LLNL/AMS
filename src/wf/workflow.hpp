@@ -254,7 +254,9 @@ public:
                 int outputDim,
                 MPI_Comm Comm = nullptr)
   {
-
+    CDEBUG(Workflow, rId==0, "Entering Evaluate "
+        "with problem dimensions [(%d, %d, %d, %d)]",
+        totalElements, inputDim, totalElements, outputDim);
     // To move around the inputs, outputs we bundle them as std::vectors
     std::vector<const FPTypeValue *> origInputs(inputs, inputs + inputDim);
     std::vector<FPTypeValue *> origOutputs(outputs, outputs + outputDim);
@@ -271,6 +273,8 @@ public:
       hdcache->evaluate(totalElements, origInputs, p_ml_acceptable);
       CALIPER(CALI_MARK_END("UQ_MODULE");)
     }
+
+    DBG(Workflow, "Computed Predicates")
 
     // Pointer values which store input data values
     // to be computed using the eos function.
@@ -289,24 +293,27 @@ public:
           ams::ResourceManager::allocate<FPTypeValue>(totalElements));
     }
 
+    DBG(Workflow, "Allocated resources")
+
     bool *predicate = p_ml_acceptable;
     // null surrogate means we should call physics module
     if (surrogate == nullptr) {
-      std::cout << "Calling application cause I dont have model\n";
+      DBG(Workflow, "No-Model, I am calling Physics code (for all data)");
       AppCall(probDescr,
               totalElements,
               reinterpret_cast<const void **>(origInputs.data()),
               reinterpret_cast<void **>(origOutputs.data()));
     } else {
-      std::cout << "Calling model\n";
       CALIPER(CALI_MARK_BEGIN("SURROGATE");)
       // We need to call the model on all data values.
       // Because we expect it to be faster.
       // I guess we may need to add some policy to do this
+      DBG(Workflow, "Model exists, I am calling surrogate (for all data)");
       surrogate->evaluate(totalElements, origInputs, origOutputs);
       CALIPER(CALI_MARK_END("SURROGATE");)
     }
 
+    DBG(Workflow, "Evaluated Surrogate")
 
     // -----------------------------------------------------------------
     // STEP 3: call physics module only where d_dense_need_phys = true
@@ -320,12 +327,6 @@ public:
       MPI_Barrier(Comm);
     }
 #endif
-
-    std::cout << std::setprecision(2) << "Physics Computed elements / Surrogate computed elements "
-                 "(Fraction of Physics elements) ["
-              << packedElements << "/" << totalElements - packedElements << " ("
-              << static_cast<double>(packedElements) / static_cast<double>(totalElements)
-              << ")]\n";
 
     // ---- 3b: call the physics module and store in the data base
     if (packedElements > 0 ) {
@@ -347,12 +348,12 @@ public:
     // ---- 3c: unpack the data
     data_handler::unpack(predicate, totalElements, packedOutputs, origOutputs);
 
+    DBG(Workflow, "Finished physics evaluation")
+
     if (DB != nullptr) {
       CALIPER(CALI_MARK_BEGIN("DBSTORE");)
       Store(packedElements, packedInputs, packedOutputs);
       CALIPER(CALI_MARK_END("DBSTORE");)
-      std::cout << "Stored " << packedElements
-                << " physics-computed elements in " << DB->type() << std::endl;
     }
 
     // -----------------------------------------------------------------
@@ -364,6 +365,12 @@ public:
       ams::ResourceManager::deallocate(packedOutputs[i]);
 
     ams::ResourceManager::deallocate(p_ml_acceptable);
+
+    DBG(Workflow, "Finished AMSExecution")
+    CINFO(Workflow, rId == 0, "Computed %ld "
+        "using physics out of the %ld items (%.2f)",
+        packedElements, totalElements, (float) (packedElements) / float( totalElements))
+
   }
 };
 

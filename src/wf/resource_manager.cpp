@@ -35,8 +35,7 @@ const char* ResourceManager::getAllocatorName(AMSResourceType Resource)
   else if (Resource == AMSResourceType::PINNED)
     return ResourceManager::getPinnedAllocatorName();
   else {
-    throw std::runtime_error(
-        "Request allocator for resource that does not exist\n");
+    FATAL(ResourceManager, "Request allocator for resource that does not exist")
     return nullptr;
   }
 }
@@ -63,8 +62,9 @@ void ResourceManager::setDefaultDataAllocator(AMSResourceType location)
   auto& rm = umpire::ResourceManager::getInstance();
   auto alloc = rm.getAllocator(allocator_ids[location]);
 
-  std::cout << "  > Setting default allocator: " << alloc.getId() << " : "
-            << alloc.getName() << "\n";
+  DBG(ResourceManager, "Setting Default Allocator: %d : %s",
+      alloc.getId(), alloc.getName().c_str());
+
   rm.setDefaultAllocator(alloc);
 }
 
@@ -118,9 +118,6 @@ void ResourceManager::setup(const AMSResourceType Resource)
     throw std::runtime_error("Resource does not exist\n");
   }
 
-  std::cout << "\nSetting up ams::ResourceManager(" << allocator_names[Resource]
-            << ")\n";
-
   // use umpire resource manager
   auto& rm = umpire::ResourceManager::getInstance();
 
@@ -128,9 +125,8 @@ void ResourceManager::setup(const AMSResourceType Resource)
   auto alloc_resource = rm.makeAllocator<umpire::strategy::QuickPool, true>(
       alloc_name, rm.getAllocator(allocator_names[Resource]));
 
-  std::cout << "  > Created allocator[" << Resource
-            << "] = " << alloc_resource.getId() << ": "
-            << alloc_resource.getName() << "\n";
+  DBG(ResourceManager, "Setting up ams::ResourceManager::%s:%d",
+      allocator_names[Resource].c_str(), Resource);
 
   allocator_ids[Resource] = alloc_resource.getId();
 }

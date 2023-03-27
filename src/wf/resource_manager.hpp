@@ -11,6 +11,7 @@
 #include <umpire/Umpire.hpp>
 
 #include "AMS.h"
+#include "wf/debug.h"
 
 
 namespace ams
@@ -137,7 +138,10 @@ public:
   {
     static auto& rm = umpire::ResourceManager::getInstance();
     auto alloc = rm.getAllocator(allocator_ids[dev]);
-    return static_cast<TypeInValue*>(alloc.allocate(nvalues * sizeof(TypeInValue)));
+    TypeInValue *ret = static_cast<TypeInValue*>(alloc.allocate(nvalues * sizeof(TypeInValue)));
+    CFATAL(ResourceManager, ret == nullptr,
+        "Failed to allocated %ld values on device %d", nvalues, dev);
+    return ret;
   }
 
   /** @brief deallocates pointer from the specified device.

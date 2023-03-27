@@ -13,6 +13,8 @@
 
 #include "wf/data_handler.hpp"
 
+#include "wf/debug.h"
+
 
 //! ----------------------------------------------------------------------------
 //! An implementation for a surrogate model
@@ -109,8 +111,7 @@ private:
       module.to(dType);
       tensorOptions = torch::TensorOptions().dtype(dType).device(device);
     } catch (const c10::Error& e) {
-      std::cerr << "Error loading torch model\n";
-      exit(-1);
+      FATAL("Error loding torch model:%s", model_path.c_str())
     }
   }
 
@@ -119,8 +120,7 @@ private:
   inline void _load(const std::string& model_path,
                     const std::string& device_name)
   {
-    std::cout << "Loading torch model (" << model_path
-              << ") at double precision\n";
+    DBG(Surrogate, "Using model at double precision")
     _load_torch(model_path, torch::Device(device_name), torch::kFloat64);
   }
 
@@ -129,8 +129,7 @@ private:
   inline void _load(const std::string& model_path,
                     const std::string& device_name)
   {
-    std::cout << "Loading torch model (" << model_path
-              << ") at single precision\n";
+    DBG(Surrogate, "Using model at single precision")
     _load_torch(model_path, torch::Device(device_name), torch::kFloat32);
   }
 
@@ -143,14 +142,11 @@ private:
                         const TypeInValue** inputs,
                         TypeInValue** outputs)
   {
-
-    std::cout << "Evaluating surrogate model: ";
-    fflush(stdout);
-
     auto input = arrayToTensor(num_elements, num_in, inputs);
     at::Tensor output = module.forward({input}).toTensor();
 
-    std::cout << input.sizes() << " --> " << output.sizes() << "\n";
+    DBG(Surrogate, "Evaluate surrogate model (%ld, %ld) -> (%ld, %ld)",
+        num_elements, num_in, num_elements, num_out);
     tensorToArray(output, num_elements, num_out, outputs);
   }
 

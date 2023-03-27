@@ -140,8 +140,7 @@ public:
   {
     defaultRes =
         (m_use_device) ? AMSResourceType::DEVICE : AMSResourceType::HOST;
-    std::cerr << "WARNING: Ignoring cache path because FAISS is not "
-                 "available!\n";
+    WARNING(UQModule, "Ignoring cache path because FAISS is not available")
     print();
   }
 #endif
@@ -151,14 +150,12 @@ public:
   //! ------------------------------------------------------------------------
   inline void print() const
   {
-    std::cout << "HDCache (on_device = " << m_use_device << ", "
-              << "random = " << m_use_random << ", ";
-    if (has_index()) {
-      std::cout << "npoints = " << count();
-    } else {
-      std::cout << "index = null";
+    std::string info("index = null");
+    if ( ! has_index()) {
+      info =  "npoints = " + std::to_string(count());
     }
-    std::cout << ")\n";
+    DBG(UQModule, "HDCache (on_device = %d random = %d %s)",
+        m_use_device, m_use_random, info.c_str());
   }
 
   inline bool has_index() const
@@ -185,7 +182,7 @@ public:
   static inline Index *load_cache(const std::string &filename)
   {
 #ifdef __ENABLE_FAISS__
-    std::cout << "Loading HDCache from (" << filename << ")\n";
+    DBG(UQModule, "Loading HDCache: %s", filename.c_str());
     return faiss::read_index(filename.c_str());
 #else
     return nullptr;
@@ -196,7 +193,7 @@ public:
   {
 #ifdef __ENABLE_FAISS__
     print();
-    std::cout << "Saving to (" << filename << ")\n";
+    DBG(UQModule, "Saving HDCache to: %s", filename.c_str());
     faiss::write_index(m_index, filename.c_str());
 #endif
   }
@@ -209,17 +206,11 @@ public:
   {
     if (m_use_random) return;
 
-    std::cout << "Adding " << ndata << " " << d << "-dim points!\n";
-    if (d != m_dim)
-      throw std::invalid_argument("Mismatch in data dimensionality!");
-
-    if (!has_index())
-      throw std::invalid_argument(
-          "HDCache does not have a valid and trained index!");
+    DBG(UQModule, "Add %ld %ld points to HDCache", ndata, d);
+    CFATAL(UQModule, d != m_dim, "Mismatch in data dimensionality!")
+    CFATAL(UQModule, !has_index(), "HDCache does not have a valid and trained index!")
 
     _add(ndata, data);
-    std::cout << "Successfully added!";
-    print();
   }
 
   //! add the data that comes as separate features (a vector of pointers)
@@ -227,21 +218,13 @@ public:
   {
     if (m_use_random) return;
 
-    std::cout << "Adding " << ndata << " " << inputs.size() << "-dim points!\n";
-
     if (inputs.size() != m_dim)
-      throw std::invalid_argument("Mismatch in data dimensionality!");
-
-    if (!has_index())
-      throw std::invalid_argument(
-          "HDCache does not have a valid and trained index!");
+    CFATAL(UQModule, inputs.size() != m_dim, "Mismatch in data dimensionality")
+    CFATAL(UQModule, !has_index(), "HDCache does not have a valid and trained index!")
 
     TypeValue *lin_data = data_handler::linearize_features(ndata, inputs);
     _add(ndata, lin_data);
     ams::ResourceManager::deallocate(lin_data);
-
-    std::cout << "Successfully added!";
-    print();
   }
 
   //! -----------------------------------------------------------------------
@@ -251,39 +234,21 @@ public:
   void train(const size_t ndata, const size_t d, TypeInValue *data)
   {
     if (m_use_random) return;
-
-    std::cout << "Training a " << int(m_dim) << "-dim cache "
-              << "using " << ndata << " " << d << "-dim points!\n";
-
-    if (d != m_dim)
-      throw std::invalid_argument("Mismatch in data dimensionality!");
-
-    if (has_index())
-      throw std::invalid_argument("Already have a valid and trained index!");
+    DBG(UQModule, "Add %ld %ld points to HDCache", ndata, d);
+    CFATAL(UQModule, d != m_dim, "Mismatch in data dimensionality!")
+    CFATAL(UQModule, !has_index(), "HDCache does not have a valid and trained index!")
 
     _train(ndata, data);
-    std::cout << "Successfully trained " << int(m_dim) << "-dim faiss index!\n";
+    DBG(UQModule, "Successfully Trained HDCache");
   }
 
   //! train on data that comes separate features (a vector of pointers)
   void train(const size_t ndata, const std::vector<TypeInValue *> &inputs)
   {
     if (m_use_random) return;
-
-    std::cout << "Training a " << int(m_dim) << "-dim cache "
-              << "using " << ndata << " " << inputs.size() << "-dim points!\n";
-
-    if (inputs.size() != m_dim)
-      throw std::invalid_argument("Mismatch in data dimensionality!");
-
-    if (has_index())
-      throw std::invalid_argument("Already have a valid and trained index!");
-
     TypeValue *lin_data = data_handler::linearize_features(ndata, inputs);
     _train(ndata, lin_data);
     ams::ResourceManager::deallocate(lin_data);
-
-    std::cout << "Successfully trained " << int(m_dim) << "-dim faiss index!\n";
   }
 
   //! ------------------------------------------------------------------------
@@ -300,16 +265,10 @@ public:
                 bool *is_acceptable) const
   {
 
-    if (!has_index()) {
-      throw std::invalid_argument(
-          "HDCache does not have a valid and trained index!");
-    }
+    CFATAL(UQModule, !has_index(), "HDCache does not have a valid and trained index!")
+    DBG(UQModule, "Evaluating %ld %ld points to HDCache", ndata, d);
 
-    std::cout << "Evaluating a " << int(m_dim) << "-dim cache "
-              << "for " << ndata << " " << d << "-dim points!\n";
-
-    if (d != m_dim)
-      throw std::invalid_argument("Mismatch in data dimensionality!");
+    CFATAL(UQModule, d != m_dim, "Mismatch in data dimensionality!")
 
     if (m_use_random) {
       _evaluate(ndata, is_acceptable);
@@ -317,8 +276,6 @@ public:
       _evaluate(ndata, data, is_acceptable);
     }
 
-    std::cout << "Successfully evaluated " << ndata << " " << int(m_dim)
-              << "-dim points!\n";
   }
 
   //! train on data that comes separate features (a vector of pointers)
@@ -327,16 +284,9 @@ public:
                 bool *is_acceptable) const
   {
 
-    if (!has_index()) {
-      throw std::invalid_argument(
-          "HDCache does not have a valid and trained index!");
-    }
-
-    std::cout << "Evaluating a " << int(m_dim) << "-dim cache "
-              << "for " << ndata << " " << inputs.size() << "-dim points!\n";
-
-    if (inputs.size() != m_dim)
-      throw std::invalid_argument("Mismatch in data dimensionality!");
+    CFATAL(UQModule, !has_index(), "HDCache does not have a valid and trained index!")
+    DBG(UQModule, "Evaluating %ld %ld points to HDCache", ndata, inputs.size());
+    CFATAL(UQModule, inputs.size() != m_dim, "Mismatch in data dimensionality!")
 
     if (m_use_random) {
       _evaluate(ndata, is_acceptable);
@@ -345,9 +295,6 @@ public:
       _evaluate(ndata, lin_data, is_acceptable);
       ams::ResourceManager::deallocate(lin_data);
     }
-
-    std::cout << "Successfully evaluated " << ndata << " " << int(m_dim)
-              << "-dim points!\n";
   }
 
   //! -----------------------------------------------------------------------
@@ -387,13 +334,18 @@ private:
 
     if (m_index != nullptr && m_index->is_trained)
       throw std::invalid_argument(
-          "Trying to re-train an already trained index!");
+          "!");
+
+    CFATAL(UQModule,
+        (m_index != nullptr && m_index->is_trained),
+        "Trying to re-train an already trained index")
 
     m_index = faiss::index_factory(m_dim, index_key);
     m_index->train(ndata, data);
 
-    if (!m_index->is_trained)
-      throw std::runtime_error("Failed to train the index!");
+    CFATAL(UQModule,
+        ((!m_index->is_trained)),
+        "Failed to train index")
   }
 
   //! train an index when (data type != TypeValue)
@@ -421,9 +373,10 @@ private:
         ams::ResourceManager::is_on_device(is_acceptable);
 
     if (input_on_device != output_on_device) {
-      std::cerr << "WARNING: input (on_device =" << input_on_device << ") "
-                << "and output (on_device =" << output_on_device
-                << ") have differnt locations!\n";
+      WARNING(UQModule, "Input is ( on_device: %d)"
+                        " Output is ( on_device: %d)"
+                        " on different devices",
+                        input_on_device, output_on_device)
     }
 
     TypeValue *kdists =
