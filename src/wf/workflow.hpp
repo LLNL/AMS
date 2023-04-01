@@ -16,11 +16,7 @@
 #include "ml/hdcache.hpp"
 #include "ml/surrogate.hpp"
 
-#ifdef __ENABLE_RMQ__
 #include "wf/broker/data_broker.hpp"
-#include "wf/broker/rmq_broker.hpp"
-#endif
-
 #include "wf/basedb.hpp"
 
 #ifdef __ENABLE_MPI__
