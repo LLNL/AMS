@@ -86,11 +86,8 @@ class AMSWorkflow
     const int numOut = outputs.size();
 
     // No database, so just de-allocate and return
-    if (DB == nullptr) {
-      ams::ResourceManager::deallocate(inputs);
-      ams::ResourceManager::deallocate(outputs);
+    if (DB == nullptr)
       return;
-    }
 
     std::vector<FPTypeValue *> hInputs, hOutputs;
 
@@ -261,6 +258,23 @@ public:
     std::vector<const FPTypeValue *> origInputs(inputs, inputs + inputDim);
     std::vector<FPTypeValue *> origOutputs(outputs, outputs + outputDim);
 
+    if ( surrogate == nullptr ){
+      FPTypeValue **tmpInputs = const_cast<FPTypeValue**>(inputs);
+
+      std::vector<FPTypeValue *> tmpIn(tmpInputs, tmpInputs + inputDim);
+      DBG(Workflow, "No-Model, I am calling Physics code (for all data)");
+      AppCall(probDescr,
+              totalElements,
+              reinterpret_cast<const void **>(origInputs.data()),
+              reinterpret_cast<void **>(origOutputs.data()));
+      if (DB != nullptr) {
+        CALIPER(CALI_MARK_BEGIN("DBSTORE");)
+        Store(totalElements,  tmpIn,
+          origOutputs);
+        CALIPER(CALI_MARK_END("DBSTORE");)
+      }
+      return;
+    }
     // The predicate with which we will split the data on a later step
     bool *p_ml_acceptable = ams::ResourceManager::allocate<bool>(totalElements);
 
@@ -296,24 +310,14 @@ public:
     DBG(Workflow, "Allocated resources")
 
     bool *predicate = p_ml_acceptable;
-    // null surrogate means we should call physics module
-    if (surrogate == nullptr) {
-      DBG(Workflow, "No-Model, I am calling Physics code (for all data)");
-      AppCall(probDescr,
-              totalElements,
-              reinterpret_cast<const void **>(origInputs.data()),
-              reinterpret_cast<void **>(origOutputs.data()));
-    } else {
-      CALIPER(CALI_MARK_BEGIN("SURROGATE");)
-      // We need to call the model on all data values.
-      // Because we expect it to be faster.
-      // I guess we may need to add some policy to do this
-      DBG(Workflow, "Model exists, I am calling surrogate (for all data)");
-      surrogate->evaluate(totalElements, origInputs, origOutputs);
-      CALIPER(CALI_MARK_END("SURROGATE");)
-    }
 
-    DBG(Workflow, "Evaluated Surrogate")
+    CALIPER(CALI_MARK_BEGIN("SURROGATE");)
+    // We need to call the model on all data values.
+    // Because we expect it to be faster.
+    // I guess we may need to add some policy to do this
+    DBG(Workflow, "Model exists, I am calling surrogate (for all data)");
+    surrogate->evaluate(totalElements, origInputs, origOutputs);
+    CALIPER(CALI_MARK_END("SURROGATE");)
 
     // -----------------------------------------------------------------
     // STEP 3: call physics module only where d_dense_need_phys = true
