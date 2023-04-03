@@ -62,5 +62,5 @@ install(EXPORT AMSTargets
   FILE AMS.cmake
   DESTINATION lib/cmake/AMS)
 
-install(FILES AMS.h DESTINATION include)
-install(FILES AMS-config.h DESTINATION include)
+install(FILES ${PROJECT_BINARY_DIR}/include/AMS.h DESTINATION include)
+install(FILES ${PROJECT_BINARY_DIR}/include/AMS-config.h DESTINATION include)
