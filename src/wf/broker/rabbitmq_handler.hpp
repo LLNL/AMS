@@ -60,8 +60,11 @@ private:
     virtual bool onSecuring(AMQP::TcpConnection *connection, SSL *ssl) {
         ERR_clear_error();
         unsigned long err;
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+        int ret = SSL_use_certificate_file(ssl, _cacert, SSL_FILETYPE_PEM);
+#else
         int ret = SSL_use_certificate_chain_file(ssl, _cacert);
-
+#endif
         if (ret != 1) {
             std::string error("openssl: error loading ca-chain from [");
             SSL_get_error(ssl, ret);

@@ -17,7 +17,7 @@ if (NOT EXISTS ${CMAKE_BINARY_DIR}/CMakeCache.txt)
   endif()
 endif()
 
-set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake;${CMAKE_MODULE_PATH}")
+set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake;${CMAKE_MODULE_PATH};")
 
 set(AMS_APP_LIBRARIES "")
 set(AMS_APP_DEFINES "")
@@ -176,15 +176,25 @@ if (WITH_RMQ)
   list(APPEND AMS_APP_INCLUDES ${amqpcpp_INCLUDE_DIR})
 
   find_package(OpenSSL REQUIRED)
-  # if we use a custom OpenSSL
-  if (DEFINED OPENSSL_ROOT_DIR)
-      list(APPEND AMS_APP_INCLUDES ${OPENSSL_INCLUDE_DIR})
-      list(APPEND AMS_APP_LIBRARIES "${OPENSSL_LIBRARIES}")
+  if (OPENSSL_FOUND)
+    list(APPEND AMS_APP_INCLUDES ${OPENSSL_INCLUDE_DIR})
+    list(APPEND AMS_APP_LIBRARIES "${OPENSSL_LIBRARIES}")
+    list(APPEND AMS_APP_LIBRARIES ssl)
+    message(STATUS "OpenSSL includes found: " ${OPENSSL_INCLUDE_DIR})
+    message(STATUS "OpenSSL libraries found: " ${OPENSSL_LIBRARIES})
+  else()
+    message(STATUS "OpenSSL Not Found")
   endif()
 
   find_package(libevent REQUIRED) # event loop library
   list(APPEND AMS_APP_INCLUDES ${LIBEVENT_INCLUDE_DIR})
   list(APPEND AMS_APP_LIBRARIES "${LIBEVENT_LIBRARIES}")
+  list(APPEND AMS_APP_LIBRARIES amqpcpp event_pthreads event)
+  if (WITH_MPI)
+    # Mandatory otherwise MPI_Init hangs forever for unknown reasons
+    # probably linked to libevent, pthread ot OpenSSL
+    list(APPEND AMS_APP_LIBRARIES MPI::MPI_CXX)
+  endif()
 endif()
 
 # ------------------------------------------------------------------------------
@@ -278,7 +288,10 @@ if (WITH_EXAMPLES)
     list(APPEND AMS_EXAMPLE_INCLUDES ${amqpcpp_INCLUDE_DIR})
     list(APPEND AMS_EXAMPLE_INCLUDES ${OPENSSL_INCLUDE_DIR})
     list(APPEND AMS_EXAMPLE_INCLUDES ${LIBEVENT_INCLUDE_DIR})
-    list(APPEND AMS_EXAMPLE_LIBRARIES OpenSSL::SSL amqpcpp pthread event_pthreads event dl)
+    list(APPEND AMS_EXAMPLE_LIBRARIES OpenSSL::SSL amqpcpp pthread event_pthreads event)
+    if (WITH_MPI)
+      list(APPEND AMS_EXAMPLE_LIBRARIES MPI::MPI_CXX)
+    endif()
   endif()
 
   if (WITH_CUDA)

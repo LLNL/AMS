@@ -61,8 +61,7 @@ int main(int argc, char **argv)
   int rId = 0;
   // Level of Threading provided by MPI
   int provided = 0;
-  // MPI_CALL(MPI_Init(&argc, &argv));
-  MPI_CALL(MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided));
+  MPI_CALL(MPI_Init_thread(&argc, &argv, MPI_THREAD_SERIALIZED, &provided));
   MPI_CALL(MPI_Comm_size(MPI_COMM_WORLD, &wS));
   MPI_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &rId));
   // FIXME: Create a logger class to write
@@ -416,9 +415,11 @@ int main(int argc, char **argv)
   surrogate_path = (strlen(model_path) > 0) ? model_path : nullptr;
 #endif
 
+  AMSBrokerType ams_broker_type = AMSBrokerType::NoBroker;
 #ifdef __ENABLE_RMQ__
   std::cout << "RabbitMQ configuration path : " << rmq_config << "\n";
   rmq_path = (strlen(rmq_config) > 0) ? rmq_config : nullptr;
+  ams_broker_type = AMSBrokerType::RMQ;
 #endif
 
 #ifdef __ENABLE_DB__
