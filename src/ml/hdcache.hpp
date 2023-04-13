@@ -28,6 +28,7 @@
 #endif
 #endif
 
+#include "AMS.h"
 #include "wf/data_handler.hpp"
 #include "wf/resource_manager.hpp"
 
@@ -63,7 +64,8 @@ class HDCache
 
   const bool m_use_random;
   const bool m_use_device;
-  const uint8_t m_knbrs;
+  const int m_knbrs = 0;
+  const AMSUQPolicy m_policy = AMSUQPolicy::FAISSMean;
 
   AMSResourceType defaultRes;
 
@@ -86,14 +88,12 @@ public:
   //! ------------------------------------------------------------------------
   //! constructors
   //! ------------------------------------------------------------------------
-  HDCache(uint8_t dim,
-          uint8_t knbrs,
-          bool use_device,
+  HDCache(bool use_device,
           TypeInValue threshold = 0.5)
       : m_index(nullptr),
-        m_dim(dim),
+        m_dim(0),
         m_use_random(true),
-        m_knbrs(knbrs),
+        m_knbrs(-1),
         m_use_device(use_device),
         acceptable_error(threshold)
   {
@@ -104,13 +104,15 @@ public:
 
 #ifdef __ENABLE_FAISS__
   HDCache(const std::string &cache_path,
-          uint8_t knbrs,
           bool use_device,
+          const AMSUQPolicy uqPolicy,
+          int knbrs,
           TypeInValue threshold = 0.5)
       : m_index(load_cache(cache_path)),
         m_dim(m_index->d),
         m_use_random(false),
         m_knbrs(knbrs),
+        m_policy(uqPolicy),
         m_use_device(use_device),
         acceptable_error(threshold)
   {
@@ -128,7 +130,7 @@ public:
   }
 #else
   HDCache(const std::string &cache_path,
-          uint8_t knbrs,
+          int knbrs,
           bool use_device,
           TypeInValue threshold = 0.5)
       : m_index(nullptr),
@@ -151,7 +153,7 @@ public:
   inline void print() const
   {
     std::string info("index = null");
-    if ( ! has_index()) {
+    if ( has_index() ) {
       info =  "npoints = " + std::to_string(count());
     }
     DBG(UQModule, "HDCache (on_device = %d random = %d %s)",
@@ -266,9 +268,9 @@ public:
   {
 
     CFATAL(UQModule, !has_index(), "HDCache does not have a valid and trained index!")
-    DBG(UQModule, "Evaluating %ld %ld points to HDCache", ndata, d);
+    DBG(UQModule, "Evaluating %ld %ld points using HDCache", ndata, d);
 
-    CFATAL(UQModule, d != m_dim, "Mismatch in data dimensionality!")
+    CFATAL(UQModule, (!m_use_random) && (d != m_dim), "Mismatch in data dimensionality!")
 
     if (m_use_random) {
       _evaluate(ndata, is_acceptable);
@@ -285,8 +287,9 @@ public:
   {
 
     CFATAL(UQModule, !has_index(), "HDCache does not have a valid and trained index!")
-    DBG(UQModule, "Evaluating %ld %ld points to HDCache", ndata, inputs.size());
-    CFATAL(UQModule, inputs.size() != m_dim, "Mismatch in data dimensionality!")
+    DBG(UQModule, "Evaluating %ld %ld points using HDCache configured with %d neighbors, %f threshold, %d policy",
+        ndata, inputs.size(), m_knbrs, acceptable_error, m_policy);
+    CFATAL(UQModule, ((!m_use_random) && inputs.size() != m_dim), "Mismatch in data dimensionality!")
 
     if (m_use_random) {
       _evaluate(ndata, is_acceptable);
@@ -392,18 +395,29 @@ private:
       unsigned int nElems =
           ((ndata - start) < MAGIC_NUMBER) ? ndata - start : MAGIC_NUMBER;
       m_index->search(
-          nElems, &data[start], knbrs, &kdists[start], &kidxs[start]);
+          nElems, &data[start], knbrs, &kdists[start*knbrs], &kidxs[start*knbrs]);
     }
 
     // compute means
     if (defaultRes == AMSResourceType::HOST) {
       TypeValue total_dist = 0;
       for (size_t i = 0; i < ndata; ++i) {
-        total_dist =
-            std::accumulate(kdists + i * knbrs, kdists + (i + 1) * knbrs, 0.);
-        is_acceptable[i] = (ook * total_dist) < acceptable_error;
+        CFATAL(UQModule, m_policy==AMSUQPolicy::DeltaUQ, "DeltaUQ is not supported yet");
+        if ( m_policy == AMSUQPolicy::FAISSMean ) {
+          total_dist =
+              std::accumulate(kdists + i * knbrs, kdists + (i + 1) * knbrs, 0.);
+          is_acceptable[i] = (ook * total_dist) < acceptable_error;
+        }
+        else if ( m_policy == AMSUQPolicy::FAISSMax ) {
+          // Take the furtherst cluster as the distance metric
+          total_dist = kdists[i*knbrs + knbrs -1];
+          is_acceptable[i] = (total_dist) < acceptable_error;
+        }
       }
     } else {
+      CFATAL(UQModule, (m_policy==AMSUQPolicy::DeltaUQ) || (m_policy==AMSUQPolicy::FAISSMax),
+          "DeltaUQ is not supported yet");
+
       ams::Device::computePredicate(
           kdists, is_acceptable, ndata, knbrs, acceptable_error);
     }

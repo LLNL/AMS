@@ -48,6 +48,12 @@ typedef enum { SinglePass = 0, Partition, Predicate } AMSExecPolicy;
 
 typedef enum { None = 0, CSV, REDIS, HDF5 } AMSDBType;
 
+typedef enum {
+  FAISSMean =0,
+  FAISSMax,
+  DeltaUQ // Not supported
+} AMSUQPolicy;
+
 typedef struct ams_conf {
   const AMSExecPolicy ePolicy;
   const AMSDType dType;
@@ -58,6 +64,8 @@ typedef struct ams_conf {
   char *UQPath;
   char *DBPath;
   double threshold;
+  const AMSUQPolicy uqPolicy;
+  const int nClusters;
   int pId;
   int wSize;
 } AMSConfig;

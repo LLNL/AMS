@@ -44,6 +44,12 @@ class AMSWorkflow
   /** @brief The module that performs uncertainty quantification (UQ) */
   HDCache<FPTypeValue> *hdcache;
 
+  /** The metric/type of UQ we will use to select between physics and ml computations **/
+  const AMSUQPolicy uqPolicy = AMSUQPolicy::FAISSMean;
+
+  /** The Number of clusters we will use to compute FAISS UQ  **/
+  const int nClusters=10;
+
   /** @brief The torch surrogate model to replace the original physics function
    */
   SurrogateModel<FPTypeValue> *surrogate;
@@ -152,6 +158,8 @@ public:
               const AMSDBType dbType,
               bool is_cpu,
               FPTypeValue threshold,
+              const AMSUQPolicy uqPolicy,
+              const int nClusters,
               int _pId = 0,
               int _wSize = 1)
       : AppCall(_AppCall),
@@ -167,10 +175,11 @@ public:
     // TODO: Fix magic number. 10 represents the number of neighbours I am
     // looking at.
     if (uq_path != nullptr)
-      hdcache = new HDCache<FPTypeValue>(uq_path, 10, !is_cpu, threshold);
+      hdcache = new HDCache<FPTypeValue>(uq_path, !is_cpu,
+          uqPolicy, nClusters, threshold);
     else
       // This is a random hdcache returning true %threshold queries
-      hdcache = new HDCache<FPTypeValue>(2, 10, !is_cpu, threshold);
+      hdcache = new HDCache<FPTypeValue>(!is_cpu, threshold);
 
     DB = nullptr;
     if (db_path != nullptr) {
@@ -189,6 +198,7 @@ public:
 
   ~AMSWorkflow()
   {
+    DBG(Workflow, "Destroying Workflow Handler");
     if (hdcache) delete hdcache;
 
     if (surrogate) delete surrogate;

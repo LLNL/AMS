@@ -75,6 +75,9 @@ int main(int argc, char **argv)
   const char *db_config = "";
   const char *db_type = "";
 
+  const char *uq_policy_opt = "mean";
+  int k_nearest = 5;
+
   int seed = 0;
   TypeValue empty_element_ratio = -1;
 
@@ -171,6 +174,17 @@ int main(int argc, char **argv)
                  "\t 'csv' Use csv as back end\n"
                  "\t 'hdf5': use hdf5 as a back end\n");
 
+  args.AddOption(&k_nearest, "-knn", "--k-nearest-neighbors", "Number of closest neightbors we should look at");
+
+  args.AddOption(&uq_policy_opt,
+                 "-uq",
+                 "--uqtype",
+                 "Types of UQ to select from: \n"
+                 "\t 'mean' Uncertainty is computed in comparison against the mean distance of k-nearest neighbors\n"
+                 "\t 'max': Uncertainty is computed in comparison with the k'st cluster \n"
+                 "\t 'deltauq': Uncertainty through DUQ (not supported)\n");
+
+
   args.AddOption(
       &verbose, "-v", "--verbose", "-qu", "--quiet", "Print extra stuff");
 
@@ -235,6 +249,14 @@ int main(int argc, char **argv)
       (std::strcmp(db_type, "csv") == 0) ? AMSDBType::CSV : AMSDBType::None;
   if ( dbType != AMSDBType::CSV )
     dbType = ((std::strcmp(db_type, "hdf5") == 0)) ? AMSDBType::HDF5 : AMSDBType::None;
+
+  AMSUQPolicy uq_policy =
+      (std::strcmp(uq_policy_opt, "max") == 0) ? AMSUQPolicy::FAISSMax: AMSUQPolicy::FAISSMean;
+
+  if ( uq_policy != AMSUQPolicy::FAISSMax )
+    uq_policy = ((std::strcmp(uq_policy_opt, "deltauq") == 0))
+      ? AMSUQPolicy::DeltaUQ : AMSUQPolicy::FAISSMean;
+
 
   // set up a randomization seed
   srand(seed + rId);
@@ -395,8 +417,10 @@ int main(int argc, char **argv)
                        (char *)uq_path,
                        (char *)db_path,
                        threshold,
+                       uq_policy,
+                       k_nearest,
                        rId,
-                       wS};
+                       wS };
   AMSExecutor wf = AMSCreateExecutor(amsConf);
 
   for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {

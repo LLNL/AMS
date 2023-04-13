@@ -80,8 +80,11 @@ AMSExecutor AMSCreateExecutor(const AMSConfig config)
                                      config.dbType,
                                      config.device == AMSResourceType::HOST,
                                      config.threshold,
+                                     config.uqPolicy,
+                                     config.nClusters,
                                      config.pId,
                                      config.wSize);
+
     _amsWrap.executors.push_back(std::make_pair(config.dType, static_cast<void *>(dWF)));
     return reinterpret_cast<AMSExecutor>(_amsWrap.executors.size() - 1L);
   } else if (config.dType == AMSDType::Single) {
@@ -93,9 +96,12 @@ AMSExecutor AMSCreateExecutor(const AMSConfig config)
                                     config.dbType,
                                     config.device == AMSResourceType::HOST,
                                     static_cast<float>(config.threshold),
+                                    config.uqPolicy,
+                                    config.nClusters,
                                     config.pId,
                                     config.wSize);
     _amsWrap.executors.push_back(std::make_pair(config.dType, static_cast<void *>(sWF)));
+
     return reinterpret_cast<AMSExecutor>(_amsWrap.executors.size() - 1L);
   } else {
     throw std::invalid_argument("Data type is not supported by AMSLib!");
