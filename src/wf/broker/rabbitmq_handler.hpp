@@ -162,7 +162,7 @@ public:
         evbuffer_unlock(_buffer);
     }
 
-    char* encode64(char* input) {
+    char* encode64(const char* input) {
         size_t unencoded_length = strlen(input);
         size_t encoded_length = base64_encoded_length(unencoded_length);
         char *base64_encoded_string = (char *)malloc(encoded_length);
@@ -221,9 +221,12 @@ private:
             fprintf(stderr, "%.2f\n", data[k-1]);
             result.append(std::to_string(data[k-1]));
 
+            // For resiliency reasons we encode the result in base64
+            char* result_b64 = self->encode64(result.c_str());
+
             // publish the data in the buffer
             self->_channel->startTransaction();
-            self->_channel->publish("", self->_queue, result);
+            self->_channel->publish("", self->_queue, result_b64);
             self->_channel->commitTransaction().onSuccess([self, rank, nbyte_drained]() {
                 fprintf(stderr, "[rank=%d][ info ] messages were sucessfuly published on queue=%s\n", rank, self->_queue.c_str());
                 self->_byte_to_send = self->_byte_to_send - nbyte_drained;
@@ -233,6 +236,7 @@ private:
             });
 
             free(data);
+            free(result_b64);
         }
         fprintf(stderr, "[rank=%d][thread] after event_buffer_cb: orig_size=%d added=%d deleted=%d\n", rank, info->orig_size, info->n_added, info->n_deleted);
     }
