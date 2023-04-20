@@ -46,19 +46,10 @@ if (WITH_MPI)
   #SET(CMAKE_C_COMPILER "${MPI_C_COMPILER}" CACHE FILEPATH "CXX compiler overridden with MPI C++ wrapper")
 
   find_package(MPI REQUIRED)
-  message(STATUS "AFTER MPICXX: ${MPI_CXX_COMPILER}")
-  message(STATUS "AFTER MPICC: ${MPI_C_COMPILER}")
-  message(STATUS "MPI INCLUDE: ${MPI_INCLUDE_DIRS}")
-  message(STATUS "MPI LIBRARIES: ${MPI_LIBRARIES}")
-  message(STATUS "MPI support found")
-  message(STATUS "MPI compile flags: " ${MPI_CXX_COMPILE_FLAGS})
-  message(STATUS "MPI include path: " ${MPI_CXX_INCLUDE_PATH})
-  message(STATUS "MPI LINK flags path: " ${MPI_C_LINK_FLAGS})
-  message(STATUS "MPI libraries: " ${MPI_CXX_LIBRARIES})
-
-  list(APPEND AMS_APP_INCLUDES "${MPI_C_INCLUDE_DIRS}")
-  list(APPEND AMS_APP_LIB_DIRS "${MPI_C_LIBRARIES}")
-  list(APPEND AMS_APP_LIBRARIES "${MPI_C_LINK_FLAGS}")
+  message(STATUS "MPICC:  ${MPI_C_COMPILER}")
+  message(STATUS "MPICXX: ${MPI_CXX_COMPILER}")
+  list(APPEND AMS_APP_LIBRARIES MPI::MPI_CXX)
+  message(STATUS "MPI Library used: " MPI::MPI_CXX)
   list(APPEND AMS_APP_DEFINES "-D__ENABLE_MPI__")
 endif()
 
@@ -218,8 +209,7 @@ if (WITH_EXAMPLES)
   #The AMS Runtime does not depend on MFEM. The
   #examples we use do.
   if (WITH_MPI)
-    list(APPEND AMS_EXAMPLE_INCLUDES "${MPI_INCLUDE_PATH}")
-    list(APPEND AMS_EXAMPLE_LIBRARIES "${MPI_C_LIBRARIES}")
+    list(APPEND AMS_EXAMPLE_LIBRARIES MPI::MPI_CXX)
     list(APPEND AMS_EXAMPLE_DEFINES "-D__ENABLE_MPI__")
   endif()
 
