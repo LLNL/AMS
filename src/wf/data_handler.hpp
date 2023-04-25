@@ -130,9 +130,7 @@ public:
    * C-vector is_same resident in the same device as the input feature pointers.
    */
   template <typename TypeInValue>
-#ifdef __ENABLE_PERFFLOWASPECT__
-    __attribute__((annotate("@critical_path(pointcut='around')")))
-#endif
+PERFFASPECT()
   static inline TypeValue* linearize_features(
       const size_t n,
       const std::vector<const TypeInValue*>& features)
@@ -172,9 +170,7 @@ public:
    * to be stored in the dense vector
    * @return Total number of elements stored in the dense vector
    * */
-#ifdef __ENABLE_PERFFLOWASPECT__
-    __attribute__((annotate("@critical_path(pointcut='around')")))
-#endif
+PERFFASPECT()
   static inline size_t pack(const bool* predicate,
                             const size_t n,
                             std::vector<const TypeValue*>& sparse,
@@ -219,9 +215,7 @@ public:
    * @param[in] denseVal The condition the predicate needs to meet for the index
    * to be copied to the sparse vectors.
    * */
-#ifdef __ENABLE_PERFFLOWASPECT__
-    __attribute__((annotate("@critical_path(pointcut='around')")))
-#endif
+PERFFASPECT()
   static inline void unpack(const bool* predicate,
                             const size_t n,
                             std::vector<TypeValue*>& dense,
@@ -268,9 +262,7 @@ public:
    * to be stored in the dense vector
    * @return Total number of elements stored in the dense vector
    * */
-#ifdef __ENABLE_PERFFLOWASPECT__
-    __attribute__((annotate("@critical_path(pointcut='around')")))
-#endif
+PERFFASPECT()
   static inline size_t pack(const bool* predicate,
                             int* sparse_indices,
                             const size_t n,
@@ -319,9 +311,7 @@ public:
    * @param[in] denseVal The condition the predicate needs to meet for the index
    * to be copied to the sparse vectors.
    * */
-#ifdef __ENABLE_PERFFLOWASPECT__
-    __attribute__((annotate("@critical_path(pointcut='around')")))
-#endif
+PERFFASPECT()
   static inline void unpack(int* sparse_indices,
                             const size_t nPacked,
                             std::vector<TypeValue*>& dense,
@@ -346,9 +336,7 @@ public:
     return;
   }
 
-#ifdef __ENABLE_PERFFLOWASPECT__
-    __attribute__((annotate("@critical_path(pointcut='around')")))
-#endif
+PERFFASPECT()
   static inline int computePartitionSize(int numIFeatures,
                                          int numOFeatures,
                                          bool includeReIndex = true,

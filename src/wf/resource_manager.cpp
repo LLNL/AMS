@@ -112,9 +112,7 @@ void ResourceManager::list_allocators()
 // -----------------------------------------------------------------------------
 // set up the resource manager
 // -----------------------------------------------------------------------------
-#ifdef __ENABLE_PERFFLOWASPECT__
-__attribute__((annotate("@critical_path(pointcut='around')")))
-#endif
+PERFFASPECT()
 void ResourceManager::setup(const AMSResourceType Resource)
 {
   if (Resource < AMSResourceType::HOST || Resource >= AMSResourceType::RSEND) {

@@ -188,9 +188,7 @@ public:
    * @param[in] outputs Vector of 1-D vectors, each 1-D vectors contains
    * 'num_elements'  values to be stored
    */
-#ifdef __ENABLE_PERFFLOWASPECT__
-    __attribute__((annotate("@critical_path()")))
-#endif
+PERFFASPECT()
   virtual void store(size_t num_elements,
                      std::vector<TypeValue*>& inputs,
                      std::vector<TypeValue*>& outputs) override
@@ -451,9 +449,7 @@ public:
    * @param[in] outputs Vector of 1-D vectors, each 1-D vectors contains
    * 'num_elements'  values to be stored
    */
-#ifdef __ENABLE_PERFFLOWASPECT__
-    __attribute__((annotate("@critical_path()")))
-#endif
+PERFFASPECT()
   virtual void store(size_t num_elements,
                      std::vector<TypeValue*>& inputs,
                      std::vector<TypeValue*>& outputs) override

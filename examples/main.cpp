@@ -48,9 +48,7 @@ void random_init(mfem::Array<T> &arr)
   }
 }
 
-#ifdef __ENABLE_PERFFLOWASPECT__
-    __attribute__((annotate("@critical_path()")))
-#endif
+PERFFASPECT()
 int main(int argc, char **argv)
 {
   // -------------------------------------------------------------------------

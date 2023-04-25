@@ -41,8 +41,9 @@ target_link_libraries(AMS PRIVATE ${AMS_APP_LIBRARIES} stdc++fs)
 #-------------------------------------------------------------------------------
 # create the configuration header file with the respective information
 #-------------------------------------------------------------------------------
-set(CALIPER_DEFINES "// #define __AMS_ENABLE_MPI__")
-set(MPI_DEFINES "// #define __AMS_ENABLE_CALIPER__")
+set(CALIPER_DEFINES "// #define __AMS_ENABLE_CALIPER__")
+set(MPI_DEFINES "// #define __AMS_ENABLE_MPI__")
+set(PERFF_DEFINES "// #define __AMS_ENABLE_PERFFLOWASPECT__")
 
 if (${WITH_CALIPER})
   set(CALIPER_DEFINES "#define __AMS_ENABLE_CALIPER__")
@@ -50,6 +51,10 @@ endif()
 
 if (${WITH_MPI})
   set(MPI_DEFINES "#define __AMS_ENABLE_MPI__")
+endif()
+
+if (${WITH_PERFFLOWASPECT})
+  set(PERFF_DEFINES "#define __AMS_ENABLE_PERFFLOWASPECT__")
 endif()
 
 configure_file ("${CMAKE_CURRENT_SOURCE_DIR}/include/AMS-config.h.in" "${PROJECT_BINARY_DIR}/include/AMS-config.h")

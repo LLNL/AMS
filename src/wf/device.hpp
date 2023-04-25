@@ -17,9 +17,7 @@ namespace ams
 {
 namespace Device
 {
-#ifdef __ENABLE_PERFFLOWASPECT__
-__attribute__((annotate("@critical_path()")))
-#endif
+PERFFASPECT()
 void computePredicate(float *data,
                       bool *predicate,
                       size_t nData,
@@ -34,9 +32,7 @@ void computePredicate(float *data,
 }
 
 template <typename TypeInValue, typename TypeOutValue>
-#ifdef __ENABLE_PERFFLOWASPECT__
-__attribute__((annotate("@critical_path()")))
-#endif
+PERFFASPECT()
 void linearize(TypeOutValue *output,
                const TypeInValue *const *inputs,
                size_t dims,
@@ -50,9 +46,7 @@ void linearize(TypeOutValue *output,
 }
 
 template <typename TypeValue>
-#ifdef __ENABLE_PERFFLOWASPECT__
-__attribute__((annotate("@critical_path()")))
-#endif
+PERFFASPECT()
 int pack(bool cond,
          const bool *predicate,
          const size_t n,
@@ -68,9 +62,7 @@ int pack(bool cond,
 }
 
 template <typename TypeValue>
-#ifdef __ENABLE_PERFFLOWASPECT__
-__attribute__((annotate("@critical_path()")))
-#endif
+PERFFASPECT()
 int pack(bool cond,
          const bool *predicate,
          const size_t n,
@@ -87,9 +79,7 @@ int pack(bool cond,
 }
 
 template <typename TypeValue>
-#ifdef __ENABLE_PERFFLOWASPECT__
-__attribute__((annotate("@critical_path()")))
-#endif
+PERFFASPECT()
 int unpack(bool cond,
            const bool *predicate,
            const size_t n,
@@ -106,9 +96,7 @@ int unpack(bool cond,
 }
 
 template <typename TypeValue>
-#ifdef __ENABLE_PERFFLOWASPECT__
-__attribute__((annotate("@critical_path()")))
-#endif
+PERFFASPECT()
 int unpack(bool cond,
            const size_t n,
            TypeValue **sparse,
@@ -125,9 +113,7 @@ int unpack(bool cond,
 }
 
 template <typename TypeValue>
-#ifdef __ENABLE_PERFFLOWASPECT__
-__attribute__((annotate("@critical_path()")))
-#endif
+PERFFASPECT()
 void rand_init(bool *predicate, const size_t n, TypeValue threshold)
 {
 #ifdef __ENABLE_CUDA__
@@ -144,9 +130,7 @@ void rand_init(bool *predicate, const size_t n, TypeValue threshold)
 
 #include <curand.h>
 #include <curand_kernel.h>
-#ifdef __ENABLE_PERFFLOWASPECT__
-__attribute__((annotate("@critical_path()")))
-#endif
+PERFFASPECT()
 __global__ void random_uq_device(bool *uq_flags,
                                  int ndata,
                                  double acceptable_error)
@@ -172,66 +156,51 @@ __global__ void random_uq_device(bool *uq_flags,
 
 
 #include <cuda_runtime.h>
-#ifdef __ENABLE_PERFFLOWASPECT__
-__attribute__((annotate("@critical_path()")))
-#endif
+PERFFASPECT()
 inline void DtoDMemcpy(void *dest, void *src, size_t nBytes)
 {
   cudaMemcpy(dest, src, nBytes, cudaMemcpyDeviceToDevice);
 }
 
-#ifdef __ENABLE_PERFFLOWASPECT__
-__attribute__((annotate("@critical_path()")))
-#endif
+PERFFASPECT()
 inline void HtoHMemcpy(void *dest, void *src, size_t nBytes)
 {
   std::memcpy(dest, src, nBytes);
 }
 
-#ifdef __ENABLE_PERFFLOWASPECT__
-__attribute__((annotate("@critical_path()")))
-#endif
+PERFFASPECT()
 inline void HtoDMemcpy(void *dest, void *src, size_t nBytes)
 {
   cudaMemcpy(dest, src, nBytes, cudaMemcpyHostToDevice);
 };
 
-#ifdef __ENABLE_PERFFLOWASPECT__
-__attribute__((annotate("@critical_path()")))
-#endif
+PERFFASPECT()
 inline void DtoHMemcpy(void *dest, void *src, size_t nBytes)
 {
   cudaMemcpy(dest, src, nBytes, cudaMemcpyDeviceToHost);
 }
 #else
-#ifdef __ENABLE_PERFFLOWASPECT__
-__attribute__((annotate("@critical_path()")))
-#endif
+PERFFASPECT()
 inline void DtoDMemcpy(void* dest, void* src, size_t nBytes)
 {
   std::cerr << "DtoD Memcpy Not Enabled" << std::endl;
   exit(-1);
 }
 
-#ifdef __ENABLE_PERFFLOWASPECT__
-__attribute__((annotate("@critical_path()")))
-#endif
+PERFFASPECT()
 inline void HtoHMemcpy(void* dest, void* src, size_t nBytes)
 {
   std::memcpy(dest, src, nBytes);
 }
 
-#ifdef __ENABLE_PERFFLOWASPECT__
-__attribute__((annotate("@critical_path()")))
-#endif
+PERFFASPECT()
 inline void HtoDMemcpy(void* dest, void* src, size_t nBytes)
 {
   std::cerr << "HtoD Memcpy Not Enabled" << std::endl;
   exit(-1);
 };
-#ifdef __ENABLE_PERFFLOWASPECT__
-__attribute__((annotate("@critical_path()")))
-#endif
+
+PERFFASPECT()
 inline void DtoHMemcpy(void* dest, void* src, size_t nBytes)
 {
   std::cerr << "DtoH Memcpy Not Enabled" << std::endl;

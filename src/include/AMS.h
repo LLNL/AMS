@@ -26,6 +26,12 @@ typedef void *MPI_Comm;
 #define MPI_CALL(stm)
 #endif
 
+#ifdef __AMS_ENABLE_PERFFLOWASPECT__
+#define PERFFASPECT() __attribute__((annotate("@critical_path()")))
+#else
+#define PERFFASPECT()
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
