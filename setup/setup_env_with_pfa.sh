@@ -53,7 +53,7 @@ export AMS_HIREDIS_PATH=`spack location -i hiredis`
 export AMS_REDIS_PLUS_PLUS_PATH=`spack location -i redis-plus-plus`
 export AMS_HDF5_PATH=`spack location -i hdf5`
 export AMS_CUDA_ARCH=${CUDA_ARCH}
-export AMS_PFA_PATH=/usr/workspace/AMS/miniapp_resources/PerfFlowAspect/src/c/install-blueos_3_ppc64le_ib_p9-clang@10.0.1-gcc@8.3.1
+export AMS_PFA_PATH=/usr/workspace/AMS/miniapp_resources/PerfFlowAspect/src/c/install-apr2023
 
 echo "AMS_MFEM_PATH   = $AMS_MFEM_PATH"
 echo "AMS_TORCH_PATH  = $AMS_TORCH_PATH"
