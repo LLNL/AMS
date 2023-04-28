@@ -25,21 +25,28 @@ extern "C" {
 }
 #endif
 
+#ifdef LOG_DEBUG
+#define PR_DEBUG(fmt, ...) \
+    PR_DEBUG(fmt, ...) fprintf(stderr, "[debug] %s: " fmt, __func__, ## __VA_ARGS__)
+#else
+#define PR_DEBUG(fmt, ...)
+#endif
+
 namespace ams {
 
 /**
- * @brief TODO
- */
+* \brief Specific handler for RabbitMQ connections based on libevent.
+*/
 class RabbitMQHandler : public AMQP::LibEventHandler {
 private:
-    /** @brief Path to TLS certificate */
+    /** \brief Path to TLS certificate */
     const char* _cacert;
-    /** @brief The MPI rank (0 if MPI is not used) */
+    /** \brief The MPI rank (0 if MPI is not used) */
     int _rank;
 
 public:
     /**
-     *  @brief Constructor
+     *  \brief Constructor
      *  @param[in]  loop         Event Loop
      *  @param[in]  cacert       SSL Cacert
      *  @param[in]  rank         MPI rank
@@ -49,7 +56,7 @@ public:
 
 private:
     /**
-     *  @brief Method that is called after a TCP connection has been set up, and right before
+     *  \brief Method that is called after a TCP connection has been set up, and right before
      *  the SSL handshake is going to be performed to secure the connection (only for
      *  amqps:// connections). This method can be overridden in user space to load
      *  client side certificates.
@@ -80,7 +87,7 @@ private:
     }
 
     /**
-     *  @brief Method that is called when the secure TLS connection has been established. 
+     *  \brief Method that is called when the secure TLS connection has been established. 
      *  This is only called for amqps:// connections. It allows you to inspect
      *  whether the connection is secure enough for your liking (you can
      *  for example check the server certificate). The AMQP protocol still has
@@ -95,7 +102,7 @@ private:
     }
 
     /**
-     *  @brief Method that is called by the AMQP library when the login attempt
+     *  \brief Method that is called by the AMQP library when the login attempt
      *  succeeded. After this the connection is ready to use.
      *  @param[in]  connection      The connection that can now be used
      */
@@ -104,7 +111,7 @@ private:
     }
 
     /**
-     *  @brief Method that is called by the AMQP library when a fatal error occurs
+     *  \brief Method that is called by the AMQP library when a fatal error occurs
      *  on the connection, for example because data received from RabbitMQ
      *  could not be recognized, or the underlying connection is lost. This
      *  call is normally followed by a call to onLost() (if the error occurred
@@ -118,89 +125,138 @@ private:
 };
 
 /**
- * @brief TODO
+ * \brief An EventBuffer encapsulates an evbuffer (libevent structure).
+ * Each time data is pushed to the underlying evbuffer, the callback will be called.
  */
 class EventBuffer {
 public:
     /**
-     *  @brief Constructor
+     *  \brief Constructor
      *  @param[in]  loop
      *  @param[in]  channel
      *  @param[in]  queue
      */
     EventBuffer(int rank, struct event_base *loop, AMQP::TcpChannel *channel, std::string queue) : 
-        _rank(rank), _buffer(nullptr), _byte_to_send(0), _channel(channel), _queue(std::move(queue)) {
+        _rank(rank), _loop(loop), _buffer(nullptr), _byte_to_send(0), _channel(channel), _queue(std::move(queue)) {
+        pthread_t _tid = pthread_self();
         // initialize the libev buff event structure
         _buffer = evbuffer_new();
-        // evbuffer_enable_locking(_buffer, NULL);
-        evbuffer_add_cb(_buffer, callback, this);
-        /*
-         * Force all the callbacks on an evbuffer to be run, not immediately after
-         * the evbuffer is altered, but instead from inside the event loop
-         * Without that the call to callback() would block the main
-         * thread
+        evbuffer_add_cb(_buffer, callback_commit, this);
+        /**
+         * Force all the callbacks on an evbuffer to be run not immediately after
+         * the evbuffer is altered, but instead from inside the event loop.
+         * Without that, the call to callback() would block the main thread.
          */
-        evbuffer_defer_callbacks(_buffer, loop);
+        evbuffer_defer_callbacks(_buffer, _loop);
+        // We install signal callbacks
+        _sig_exit = SIGUSR1;
+        _signal_exit = evsignal_new(_loop, _sig_exit, callback_exit, this);
+        event_add(_signal_exit, NULL);
+        _signal_term = evsignal_new(_loop, SIGTERM, callback_exit, this);
+        event_add(_signal_term, NULL);
     }
 
+    /**
+     *  \brief   Return the size of the buffer in bytes.
+     *  @return  Buffer size in bytes.
+     */
     size_t size() {
         return evbuffer_get_length(_buffer);
     }
     
+    /**
+     *  \brief   Return True if the buffer is empty.
+     *  @return  True if the number of bytes that has to be sent is equals to 0.
+     */
     bool is_drained() {
         return _byte_to_send == 0;
     }
-    
+
+    /**
+     *  \brief   Push data to the underlying event buffer, which 
+     * will trigger the callback.
+     *  @return  The number of bytes that has to be sent.
+     */
     size_t get_byte_to_send() {
         return _byte_to_send;
     }
 
-    void push(double* data, ssize_t num_elem) {
+    /**
+     *  \brief  Push data to the underlying event buffer, which 
+     * will trigger the callback.
+     *  @param[in]  data            The data pointer
+     *  @param[in]  data_size       The number of bytes in the data pointer
+     */
+    void push(void* data, ssize_t data_size) {
         evbuffer_lock(_buffer);
-        evbuffer_add(_buffer, data, num_elem*sizeof(data));
-        _byte_to_send = _byte_to_send + num_elem*sizeof(data);
+        evbuffer_add(_buffer, data, data_size);
+        _byte_to_send = _byte_to_send + data_size;
         evbuffer_unlock(_buffer);
     }
 
-    char* encode64(const char* input) {
-        size_t unencoded_length = strlen(input);
+    /**
+     *  \brief  Method to encode a string into base64
+     *  @param[in]  input       The input string
+     *  @return                 The encoded string
+     */
+    std::string encode64(const std::string& input) {
+        if (input.size() == 0) return "";
+        size_t unencoded_length = input.size();
         size_t encoded_length = base64_encoded_length(unencoded_length);
         char *base64_encoded_string = (char *)malloc(encoded_length);
-        ssize_t encoded_size = base64_encode(base64_encoded_string, encoded_length, input, unencoded_length);
-        // printf("%s -> %s\n", input, base64_encoded_string);
-        // free(base64_encoded_string);
-        return base64_encoded_string;
+        ssize_t encoded_size = base64_encode(base64_encoded_string, encoded_length, input.c_str(), unencoded_length);
+        std::string result(base64_encoded_string);
+        free(base64_encoded_string);
+        return result;
     }
 
-    virtual ~EventBuffer() {
+    /** \brief Destructor */
+    ~EventBuffer() {
         evbuffer_free(_buffer);
+        event_free(_signal_exit);
+        event_free(_signal_term);
     }
+
 private:
-    /** @brief The actual event structure */
-    struct evbuffer* _buffer;
-    /** @brief Pointer towards the AMQP channel */
+    /** \brief Pointer towards the AMQP channel */
     AMQP::TcpChannel *_channel;
-    /** @brief Name of the RabbitMQ queue */
+    /** \brief Name of the RabbitMQ queue */
     std::string _queue;
-    /** @brief Total number of bytes that must be send */
+    /** \brief Total number of bytes that must be send */
     size_t _byte_to_send;
-    /** @brief MPI rank */
+    /** \brief MPI rank */
     int _rank;
+    /** \brief Thread ID */
+    pthread_t _tid;
+    /** \brief Event loop */
+    struct event_base* _loop;
+    /** \brief The buffer event structure */
+    struct evbuffer* _buffer;
+    /** \brief Signal events for exiting properly the loop */
+    struct event* _signal_exit;
+    struct event* _signal_term;
+    /** \brief Custom signal code (by default SIGUSR1) that can be intercepted */
+    int _sig_exit;
 
     /**
-     *  @brief  Callback method that is called by libevent when the timer expires
-     *  @param  fd          The loop in which the event was triggered
-     *  @param  event       Internal timer object
-     *  @param  argc        The events that triggered this call
+     *  \brief  Callback method that is called by libevent when data is being added to the buffer event
+     *  @param[in]  fd          The loop in which the event was triggered
+     *  @param[in]  event       Internal timer object
+     *  @param[in]  argc        The events that triggered this call
      */
-    static void callback(struct evbuffer *buffer, const struct evbuffer_cb_info *info, void *arg) {
+    static void callback_commit(struct evbuffer *buffer, const struct evbuffer_cb_info *info, void *arg) {
         // retrieve the this pointer
         EventBuffer *self = static_cast<EventBuffer*>(arg);
         int rank = self->_rank;
-        fprintf(stderr, "[rank=%d][thread] before event_buffer_cb: orig_size=%d added=%d deleted=%d\n", rank, info->orig_size, info->n_added, info->n_deleted);
+        pthread_t tid = self->_tid;
+        // fprintf(stderr,
+        //     "[rank=%d][tid=%d][ info ] before event_buffer_cb: orig_size=%d added=%d deleted=%d\n",
+        //     rank, tid, info->orig_size, info->n_added, info->n_deleted
+        // );
 
         // we remove only if some byte got added (this callback will get
         // trigger when data is added AND removed from the buffer
+        // TODO: Take into account float or double!
         if (info->n_added > 0) {
             // We read one double
             size_t datlen = info->n_added;
@@ -209,81 +265,61 @@ private:
 
             evbuffer_lock(buffer);
             int nbyte_drained = evbuffer_remove(buffer, data, datlen);
-            if (nbyte_drained < 0) perror("event_buffer_cb: cannot drain buffer");
+            if (nbyte_drained < 0)
+                perror("evbuffer_remove: cannot remove data from buffer buffer");
             evbuffer_unlock(buffer);
 
-            std::string result = "["+std::to_string(rank)+"] ";
-            fprintf(stderr, "[rank=%d][thread] buffer contains %d bytes:\n[thread] ", rank, nbyte_drained);
+            std::string result = std::to_string(rank)+":";
+            // fprintf(stderr, "[rank=%d][tid=%d][ info ] drained %d bytes: \n", rank, tid, nbyte_drained);
+            // fprintf(stderr, "[rank=%d][tid=%d][ info ] ", rank, tid);
             for (int i = 0; i < k-1; i++) {
-                fprintf(stderr, "%.2f ", data[i]);
-                result.append(std::to_string(data[i])+" ");
+                // fprintf(stderr, "%.2f ", data[i]);
+                result.append(std::to_string(data[i])+":");
             }
-            fprintf(stderr, "%.2f\n", data[k-1]);
+            // fprintf(stderr, "%.2f\n", data[k-1]);
             result.append(std::to_string(data[k-1]));
-
             // For resiliency reasons we encode the result in base64
-            char* result_b64 = self->encode64(result.c_str());
-
+            std::string result_b64 = self->encode64(result);
+            if (result_b64.size() % 4 != 0) {
+                fprintf(stderr, "[WARNING][rank=%d] Frame size (%d elements) cannot be %d more than a multiple of 4!\n", rank, result_b64.size(), result_b64.size() % 4);
+            }
+            // int frame_size = result_b64.size() * sizeof(std::string::value_type);
+            // fprintf(stderr, "[rank=%d][tid=%d] Frame size: %d B (%.2f KB)\n", rank, tid, frame_size, frame_size/1024.0);
             // publish the data in the buffer
             self->_channel->startTransaction();
             self->_channel->publish("", self->_queue, result_b64);
-            self->_channel->commitTransaction().onSuccess([self, rank, nbyte_drained]() {
-                fprintf(stderr, "[rank=%d][ info ] messages were sucessfuly published on queue=%s\n", rank, self->_queue.c_str());
+            self->_channel->commitTransaction().onSuccess([self, rank, tid, nbyte_drained]() {
+                // fprintf(stderr,
+                //     "[rank=%d][tid=%d][ info ] messages were sucessfuly published on queue=%s\n",
+                //     rank, tid, self->_queue.c_str()
+                // );
                 self->_byte_to_send = self->_byte_to_send - nbyte_drained;
-            }).onError([self, rank, nbyte_drained](const char *message) {
-                fprintf(stderr, "[rank=%d][ fail ] messages did not get send: %s\n", rank, message);
+            }).onError([self, rank, tid, nbyte_drained](const char *message) {
+                fprintf(stderr, "[ FAIL ][rank=%d] messages did not get send: %s\n", rank, message);
                 self->_byte_to_send = self->_byte_to_send - nbyte_drained;
             });
 
             free(data);
-            free(result_b64);
         }
-        fprintf(stderr, "[rank=%d][thread] after event_buffer_cb: orig_size=%d added=%d deleted=%d\n", rank, info->orig_size, info->n_added, info->n_deleted);
-    }
-};
-
-/**
- * @brief Signal Handler that triggers a callback when a given signal
- * is caught. We use it to gracefully exit the event loop.
- */
-class SignalHandler {
-public:
-    /**
-     *  @brief Constructor
-     *  @param[in]  rank MPI rank
-     *  @param[in]  loop event loop used (must exist before)
-     *  @param[in]  sig signal code that will be intercepted
-     */
-    SignalHandler(int rank, struct event_base *loop, int sig) : 
-        _rank(rank), _event(nullptr), _loop(loop), _sig(sig) {
-        _event = evsignal_new(loop, sig, callback, this);
-        event_add(_event, NULL);
+        // fprintf(stderr,
+        //     "[rank=%d][tid=%d][ info ] after event_buffer_cb: orig_size=%d added=%d deleted=%d\n",
+        //     rank, tid, info->orig_size, info->n_added, info->n_deleted
+        // );
     }
     
-    virtual ~SignalHandler() {
-        event_free(_event);
-    }
-
-private:
-    /** @brief Signal event */
-    struct event* _event;
-    /** @brief Event loop */
-    struct event_base* _loop;
-    /** @brief Signal code that will be intercepted */
-    int _sig;
-    /** @brief MPI rank */
-    int _rank;
-
     /**
-     *  @brief Callback method that is called by libevent when the signal sig is intercepted
-     *  @param  fd          The loop in which the event was triggered
-     *  @param  event       Internal event object (evsignal in this case)
-     *  @param  argc        The events that triggered this call
+     *  \brief Callback method that is called by libevent when the signal sig is intercepted
+     *  @param[in]  fd          The loop in which the event was triggered
+     *  @param[in]  event       Internal event object (evsignal in this case)
+     *  @param[in]  argc        The events that triggered this call
      */
-    static void callback(int fd, short event, void* argc) {
-        SignalHandler *self = static_cast<SignalHandler*>(argc);
-        fprintf(stderr,"[rank=%d][thread] caught an interrupt signal; exiting cleanly event loop...\n", self->_rank);
-        event_base_loopbreak(self->_loop);
+    static void callback_exit(int fd, short event, void* argc) {
+        EventBuffer *self = static_cast<EventBuffer*>(argc);
+        fprintf(stderr,
+            "[rank=%d][tid=%d][ info ] caught an interrupt signal; exiting cleanly event loop...\n",
+            self->_rank, self->_tid
+        );
+        event_base_loopexit(self->_loop, NULL);
     }
 };
 

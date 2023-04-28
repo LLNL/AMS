@@ -190,11 +190,11 @@ if (WITH_RMQ)
   list(APPEND AMS_APP_INCLUDES ${LIBEVENT_INCLUDE_DIR})
   list(APPEND AMS_APP_LIBRARIES "${LIBEVENT_LIBRARIES}")
   list(APPEND AMS_APP_LIBRARIES amqpcpp event_pthreads event)
-  if (WITH_MPI)
-    # Mandatory otherwise MPI_Init hangs forever for unknown reasons
-    # probably linked to libevent, pthread ot OpenSSL
-    list(APPEND AMS_APP_LIBRARIES MPI::MPI_CXX)
-  endif()
+  # if (WITH_MPI)
+  #   # Mandatory otherwise MPI_Init hangs forever for unknown reasons
+  #   # probably linked to libevent, pthread ot OpenSSL
+  #   list(APPEND AMS_APP_LIBRARIES MPI::MPI_CXX)
+  # endif()
 endif()
 
 # ------------------------------------------------------------------------------
