@@ -14,8 +14,8 @@ add_library(AMS SHARED ${AMS_LIB_SRC} ${MINIAPP_INCLUDES})
 # ------------------------------------------------------------------------------
 if (WITH_CUDA)
     #TODO: replace all-major by native with cmake >= 3.24
-    message("CUDA ARCH is '${AMS_CUDA_ARCH}'")
     set_target_properties(AMS PROPERTIES CUDA_ARCHITECTURES ${AMS_CUDA_ARCH})
+    set_property(TARGET AMS PROPERTY CUDA_SEPARABLE_COMPILATION ON)
     set_source_files_properties(AMS.cpp PROPERTIES LANGUAGE CUDA)
     set_source_files_properties(AMS.cpp PROPERTIES CUDA_ARCHITECTURES ${AMS_CUDA_ARCH})
     set_source_files_properties(AMS.cpp PROPERTIES COMPILE_FLAGS "--expt-extended-lambda")

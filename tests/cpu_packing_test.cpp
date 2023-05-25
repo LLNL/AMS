@@ -1,88 +1,156 @@
+#include <AMS.h>
+
 #include <cstring>
 #include <iostream>
-#include <umpire/Umpire.hpp>
 #include <vector>
-#include "utils/allocator.hpp"
-#include "utils/utils_data.hpp"
+#include <wf/data_handler.hpp>
+#include <wf/resource_manager.hpp>
 
-#define SIZE (32*1024 +3)
+#define SIZE (32 * 1024 + 1)
 
-void initPredicate(bool *ptr, double *data, int size){
-  for (int i = 0 ; i < size  ; i++){
-    ptr[i] = i%2 == 0;
+void initPredicate(bool* ptr, double* data, int size)
+{
+  for (int i = 0; i < size; i++) {
+    ptr[i] = i % 2 == 0;
     data[i] = i;
   }
 }
 
-int verify(double *dense, int size){
-  for (int i = 0; i < size; i++){
-    if ( dense[i] != i*2 ){
+int verify(double* dense, int size, int flag)
+{
+  for (int i = 0; i < size; i++) {
+    if (dense[i] != (i * 2 + (!flag))) {
+      std::cout << i << " Expected " << i * 2 << " gotten " << dense[i] << "\n";
       return 1;
     }
   }
   return 0;
 }
 
-int verify(bool *pred, double *d1, double *d2, int size){
-  for (int i = 0; i < size; i++){
-    if (pred[i] && d1[i] != d2[i] ){
+int verify(bool* pred, double* d1, double* d2, int size, int flag)
+{
+  for (int i = 0; i < size; i++) {
+    if ((pred[i] == flag) && d1[i] != d2[i]) {
+      std::cout << pred[i] << " dense " << d1[i] << " sparse " << d2[i] << "\n";
       return 1;
     }
   }
   return 0;
 }
 
-int main(int argc, char* argv[]) {
-    using namespace ams;
-    using data_handler = DataHandler<double>;
-    auto& rm = umpire::ResourceManager::getInstance();
-    const size_t size = SIZE;
-    int use_reindex  = std::atoi(argv[1]);
-
-    ams::ResourceManager::setup(false);
-
-    bool* predicate = ResourceManager::allocate<bool>(SIZE);
-    double* dense = ResourceManager::allocate<double>(SIZE);
-    double* sparse = ResourceManager::allocate<double>(SIZE);
-    double* rsparse = ResourceManager::allocate<double>(SIZE);
-    int* reindex = ResourceManager::allocate<int>(SIZE);
+int main(int argc, char* argv[])
+{
+  using namespace ams;
+  using data_handler = DataHandler<double>;
+  const size_t size = SIZE;
+  int device = std::atoi(argv[1]);
+  AMSSetupAllocator(AMSResourceType::HOST);
+  if (device == 0) {
+    bool* predicate = ams::ResourceManager::allocate<bool>(SIZE);
+    double* dense = ams::ResourceManager::allocate<double>(SIZE);
+    double* sparse = ams::ResourceManager::allocate<double>(SIZE);
+    double* rsparse = ams::ResourceManager::allocate<double>(SIZE);
 
     initPredicate(predicate, sparse, SIZE);
-    std::vector<double *> s_data({sparse});
-    std::vector<double *> sr_data({rsparse});
-    std::vector<double *> d_data({dense});
+    std::vector<const double*> s_data({const_cast<const double*>(sparse)});
+    std::vector<double*> sr_data({rsparse});
+    std::vector<double*> d_data({dense});
     int elements;
-    
-    if ( use_reindex )
-      elements = data_handler::pack(predicate, reindex, size, s_data, d_data);
-    else
-      elements = data_handler::pack(predicate, size, s_data, d_data);
 
-    if (elements != (SIZE+1) / 2 ){
-      std::cout << "Did not compute dense number correctly\n";
-      return 1;
-    }
+    for (int flag = 0; flag < 2; flag++) {
+      elements = data_handler::pack(predicate, size, s_data, d_data, flag);
 
-    if ( verify(dense, elements) ){
-      std::cout << "Dense elements do not have the correct values\n";
-      return 1;
-    }
-    
-    if ( use_reindex )
-      data_handler::unpack(reindex, size, d_data, sr_data);
-    else
-      data_handler::unpack(predicate, size, d_data, sr_data);
-    
-    if ( verify ( predicate, sparse, rsparse, size ) ){
-      std::cout<< "Unpacking packed data does not match initial values\n";
-      return 1;
+      if (elements != (SIZE + flag) / 2) {
+        std::cout << "Did not compute dense number correctly " << elements
+                  << "\n";
+        return 1;
+      }
+
+      if (verify(dense, elements, flag)) {
+        std::cout << "Dense elements do not have the correct values\n";
+        return 1;
+      }
+
+      data_handler::unpack(predicate, size, d_data, sr_data, flag);
+
+      if (verify(predicate, sparse, rsparse, size, flag)) {
+        std::cout << "Unpacking packed data does not match initial values\n";
+        return 1;
+      }
     }
 
     ResourceManager::deallocate(predicate);
     ResourceManager::deallocate(dense);
     ResourceManager::deallocate(sparse);
     ResourceManager::deallocate(rsparse);
-    ResourceManager::deallocate(reindex);
+  } else if (device == 1) {
+    AMSSetupAllocator(AMSResourceType::DEVICE);
+    AMSSetDefaultAllocator(AMSResourceType::DEVICE);
+    bool* h_predicate =
+        ams::ResourceManager::allocate<bool>(SIZE, AMSResourceType::HOST);
+    double* h_dense =
+        ams::ResourceManager::allocate<double>(SIZE, AMSResourceType::HOST);
+    double* h_sparse =
+        ams::ResourceManager::allocate<double>(SIZE, AMSResourceType::HOST);
+    double* h_rsparse =
+        ams::ResourceManager::allocate<double>(SIZE, AMSResourceType::HOST);
 
-    return 0;
+    initPredicate(h_predicate, h_sparse, SIZE);
+
+    bool* predicate = ams::ResourceManager::allocate<bool>(SIZE);
+    double* dense = ams::ResourceManager::allocate<double>(SIZE);
+    double* sparse = ams::ResourceManager::allocate<double>(SIZE);
+    double* rsparse = ams::ResourceManager::allocate<double>(SIZE);
+    int* reindex = ams::ResourceManager::allocate<int>(SIZE);
+
+    ResourceManager::copy(h_predicate, predicate);
+    ResourceManager::copy(h_sparse, sparse);
+
+    std::vector<const double*> s_data({const_cast<const double*>(sparse)});
+    std::vector<double*> sr_data({rsparse});
+    std::vector<double*> d_data({dense});
+
+    for (int flag = 0; flag < 2; flag++) {
+      int elements;
+      elements = data_handler::pack(predicate, size, s_data, d_data, flag);
+
+      if (elements != (SIZE + flag) / 2) {
+        std::cout << "Did not compute dense number correctly(" << elements
+                  << ")\n";
+        return 1;
+      }
+
+      ams::ResourceManager::copy(dense, h_dense);
+
+      if (verify(h_dense, elements, flag)) {
+        std::cout << "Dense elements do not have the correct values\n";
+        return 1;
+      }
+
+      data_handler::unpack(predicate, size, d_data, sr_data, flag);
+
+      ams::ResourceManager::copy(rsparse, h_rsparse);
+
+      if (verify(h_predicate, h_sparse, h_rsparse, size, flag)) {
+        //      for ( int k = 0; k < SIZE; k++){
+        //        std::cout << k << " " << h_sparse[k] << " " << h_rsparse[k] <<
+        //        "\n";
+        //      }
+        std::cout << "Unpacking packed data does not match initial values\n";
+        return 1;
+      }
+    }
+
+    ams::ResourceManager::deallocate(predicate);
+    ams::ResourceManager::deallocate(h_predicate, AMSResourceType::HOST);
+    ams::ResourceManager::deallocate(dense);
+    ams::ResourceManager::deallocate(h_dense, AMSResourceType::HOST);
+    ams::ResourceManager::deallocate(sparse);
+    ams::ResourceManager::deallocate(h_sparse, AMSResourceType::HOST);
+    ams::ResourceManager::deallocate(rsparse);
+    ams::ResourceManager::deallocate(h_rsparse, AMSResourceType::HOST);
+    ams::ResourceManager::deallocate(reindex);
+  }
+
+  return 0;
 }
