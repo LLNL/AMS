@@ -8,6 +8,7 @@
 #include <algorithm> // for std::remove
 
 #include "AMS.h"
+#include "wf/debug.h"
 
 namespace ams {
 /**
@@ -201,7 +202,7 @@ public:
 
         if (_address == nullptr) {
             fprintf(stderr, "something is wrong\n");
-            throw std::runtime_error("addresss is nullptr");
+            throw std::runtime_error("address is NULL");
         }
 
         fprintf(stderr, "RabbitMQ address: %s:%d/%s (queue = %s)\n", 
@@ -214,7 +215,7 @@ public:
         start(*_address, _queue_name);
         // mandatory to give some time to OpenSSL and RMQ to set things up, otherwise it will fail
         // TODO: find a way to remove that magic sleep
-        sleep(5);
+        sleep(3);
     }
 
     /**
@@ -228,7 +229,7 @@ public:
         _connection = new AMQP::TcpConnection(_handler, addr);
         _channel = new AMQP::TcpChannel(_connection);
         _channel->onError([&_rank = _rank](const char* message) {
-            fprintf(stderr, "[ERROR][rank=%d] while creating broker channel: %s\n", _rank, message);
+            fprintf(stderr, "[ERROR][rank=%d] Error while creating broker channel: %s\n", _rank, message);
             // TODO: throw dedicated excpetion or/and try to recover
             // from it (re-trying to open a queue, testing if the RM server is alive etc)
             throw std::runtime_error(message);
@@ -246,7 +247,7 @@ public:
             }
         }).onError([queue, &_rank = _rank](const char *message) {
             fprintf(stderr,
-                "[ERROR][rank=%d] while creating queue (%s): %s\n",
+                "[ERROR][rank=%d] Error while creating broker queue (%s): %s\n",
                 _rank, queue.c_str(), message
             );
             // TODO: throw dedicated excpetion or/and try to recover
@@ -291,6 +292,7 @@ public:
      */
     void push(ssize_t num_elements, TypeValue* data) const override {
         ssize_t datlen = num_elements * sizeof(TypeValue);
+        fprintf(stderr, "push() send inputs: %d elements, size %d B\n", num_elements, datlen);
         _evbuffer->push(static_cast<void*>(data), datlen);
         // Necessary for some reasons, other the event buffer overheat and potentially segfault
         // TODO: investigate, error -> "[err] buffer.c:1066: Assertion chain || datlen==0 failed in evbuffer_copyout"
@@ -321,22 +323,16 @@ public:
 
     ~RabbitMQBroker() {
         drain();
-        // pthread_kill(_worker->id, SIGUSR1);
-        pthread_join(_worker->id, NULL);
-        delete _evbuffer;
-        // close the channel
-        _channel->close().onSuccess([&_connection = _connection, &_channel = _channel, &_rank = _rank]() {
-            // fprintf(stderr, "[rank=%d][ info ] channel closed.\n", _rank);
-            // close the connection
-            _connection->close();
-        });
-
+        pthread_kill(_worker->id, SIGUSR1);
+        _channel->close();
+        _connection->close();
         event_base_free(_loop);
-        free(_worker);
+        delete _evbuffer;
+        delete _worker;
         delete _handler;
         delete _channel;
         delete _address;
-        delete _connection;
+        free(_connection); //Segfault with delete? -> might be heap corruption
     }
 
     /** \brief Return the type of this broker */

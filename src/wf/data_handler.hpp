@@ -143,7 +143,6 @@ PERFFASPECT()
 
     const bool features_on_device =
         ams::ResourceManager::is_on_device(features[0]);
-
     if (!features_on_device) {
       for (size_t d = 0; d < nfeatures; d++) {
         for (size_t i = 0; i < n; i++) {

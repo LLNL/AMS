@@ -261,6 +261,12 @@ int main(int argc, char **argv)
   if ( dbType != AMSDBType::CSV )
     dbType = ((std::strcmp(db_type, "hdf5") == 0)) ? AMSDBType::HDF5 : AMSDBType::None;
 
+  // TODO: this should be removed, it's for testing only. AMSBrokerType::RMQ type should become AMSDBType::RMQ brokerType will be removed.
+  AMSBrokerType brokerType = AMSBrokerType::NoBroker;
+#ifdef __ENABLE_RMQ__
+  brokerType = AMSBrokerType::RMQ;
+#endif
+
   AMSUQPolicy uq_policy =
       (std::strcmp(uq_policy_opt, "max") == 0) ? AMSUQPolicy::FAISSMax: AMSUQPolicy::FAISSMean;
 
@@ -438,6 +444,7 @@ int main(int argc, char **argv)
   //db_path = "test-config-redis.json";
 
   db_path = (strlen(db_config) > 0) ? db_config : nullptr;
+  rmq_path = (strlen(rmq_config) > 0) ? rmq_config : nullptr;
 
   AMSResourceType ams_device = AMSResourceType::HOST;
   if (use_device) ams_device = AMSResourceType::DEVICE;
@@ -448,6 +455,7 @@ int main(int argc, char **argv)
                        AMSDType::Double,
                        ams_device,
                        dbType,
+                       brokerType,
                        callBack,
                        (char *)surrogate_path,
                        (char *)uq_path,

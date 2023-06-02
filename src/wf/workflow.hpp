@@ -11,7 +11,6 @@
 #include <cstring>
 #include <iostream>
 #include <vector>
-#include <chrono>
 
 #include "AMS.h"
 #include "ml/hdcache.hpp"
@@ -67,6 +66,12 @@ class AMSWorkflow
 
   /** @brief The type of the database we will use (HDF5, CSV, etc) */
   AMSDBType dbType = AMSDBType::None;
+
+  /** @brief The broker to communicate data for which we cannot apply the current model */
+  DataBroker<FPTypeValue> *broker;
+
+  /** @brief The type of the broker we will use (only RabbitMQ supported now) */
+  AMSBrokerType brokerType = AMSBrokerType::NoBroker;
 
   /** @brief The process id. For MPI runs this is the rank */
   const int rId;

@@ -25,12 +25,7 @@ extern "C" {
 }
 #endif
 
-#ifdef LOG_DEBUG
-#define PR_DEBUG(fmt, ...) \
-    PR_DEBUG(fmt, ...) fprintf(stderr, "[debug] %s: " fmt, __func__, ## __VA_ARGS__)
-#else
-#define PR_DEBUG(fmt, ...)
-#endif
+#include "wf/debug.h"
 
 namespace ams {
 
@@ -315,10 +310,11 @@ private:
      */
     static void callback_exit(int fd, short event, void* argc) {
         EventBuffer *self = static_cast<EventBuffer*>(argc);
-        fprintf(stderr,
-            "[rank=%d][tid=%d][ info ] caught an interrupt signal; exiting cleanly event loop...\n",
-            self->_rank, self->_tid
-        );
+        // fprintf(stderr,
+        //     "[rank=%d][tid=%d][ info ] caught an interrupt signal; exiting cleanly event loop...\n",
+        //     self->_rank, self->_tid
+        // );
+        DBG(RabbitMQHandler, "caught an interrupt signal; exiting cleanly event loop...")
         event_base_loopexit(self->_loop, NULL);
     }
 };
