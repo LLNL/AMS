@@ -112,7 +112,7 @@ private:
     /** \brief The handler which contains various callbacks */
     RabbitMQHandler* _handler;
     /** \brief evbuffer that is responsible to offload data to RabbitMQ*/
-    EventBuffer* _evbuffer;
+    EventBuffer<TypeValue>* _evbuffer;
     /** \brief The worker in charge of sending data to the broker (dedicated thread) */
     struct worker* _worker;
 
@@ -151,7 +151,6 @@ private:
                 std::string key = line.substr(0, line.find(':'));
                 line.erase(0, line.find(":") + 1);
                 connection_info[key] = line;
-                // std::cerr << "key=" << key << " val=" << line << std::endl;
             }
             config.close();
         } 
@@ -257,7 +256,7 @@ public:
 
         _worker = new struct worker;
         _worker->loop = _loop;
-        _evbuffer = new EventBuffer(_rank, _loop, _channel, queue);
+        _evbuffer = new EventBuffer<TypeValue>(_rank, _loop, _channel, queue);
         
         if (pthread_create(&_worker->id, NULL, start_worker, _worker)) {
             perror("error pthread_create");
@@ -292,7 +291,7 @@ public:
      */
     void push(ssize_t num_elements, TypeValue* data) const override {
         ssize_t datlen = num_elements * sizeof(TypeValue);
-        fprintf(stderr, "push() send inputs: %d elements, size %d B\n", num_elements, datlen);
+        fprintf(stderr, "push() send data event buffer: %d elements, size %d B\n", num_elements, datlen);
         _evbuffer->push(static_cast<void*>(data), datlen);
         // Necessary for some reasons, other the event buffer overheat and potentially segfault
         // TODO: investigate, error -> "[err] buffer.c:1066: Assertion chain || datlen==0 failed in evbuffer_copyout"
@@ -309,13 +308,11 @@ public:
     void push(ssize_t num_elements, std::vector<TypeValue*>& inputs, std::vector<TypeValue*>& outputs) const override {
         ssize_t datlen = num_elements * sizeof(TypeValue);
         for (int i = 0; i < inputs.size(); ++i) {
-            // fprintf(stderr, "[i=%d] send inputs: %d elements, size %d B\n", i, num_elements, datlen);
             _evbuffer->push(static_cast<void*>(inputs[i]), datlen);
             // Necessary for some reasons, other the event buffer overheat and potentially segfault
             sleep(1);
         }
         for (int i = 0; i < outputs.size(); ++i) {
-            // fprintf(stderr, "[i=%d] send outputs: %d elements, size %d B\n", i, num_elements, datlen);
             _evbuffer->push(static_cast<void*>(outputs[i]), datlen);
             sleep(1);
         }

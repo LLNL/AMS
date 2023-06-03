@@ -123,6 +123,7 @@ private:
  * \brief An EventBuffer encapsulates an evbuffer (libevent structure).
  * Each time data is pushed to the underlying evbuffer, the callback will be called.
  */
+template <typename TypeValue>
 class EventBuffer {
 public:
     /**
@@ -198,8 +199,8 @@ public:
         if (input.size() == 0) return "";
         size_t unencoded_length = input.size();
         size_t encoded_length = base64_encoded_length(unencoded_length);
-        char *base64_encoded_string = (char *)malloc(encoded_length);
-        ssize_t encoded_size = base64_encode(base64_encoded_string, encoded_length, input.c_str(), unencoded_length);
+        char *base64_encoded_string = (char *)malloc((encoded_length+1)*sizeof(char));
+        ssize_t encoded_size = base64_encode(base64_encoded_string, encoded_length+1, input.c_str(), unencoded_length);
         std::string result(base64_encoded_string);
         free(base64_encoded_string);
         return result;
@@ -240,66 +241,52 @@ private:
      *  @param[in]  argc        The events that triggered this call
      */
     static void callback_commit(struct evbuffer *buffer, const struct evbuffer_cb_info *info, void *arg) {
-        // retrieve the this pointer
         EventBuffer *self = static_cast<EventBuffer*>(arg);
         int rank = self->_rank;
         pthread_t tid = self->_tid;
-        // fprintf(stderr,
-        //     "[rank=%d][tid=%d][ info ] before event_buffer_cb: orig_size=%d added=%d deleted=%d\n",
-        //     rank, tid, info->orig_size, info->n_added, info->n_deleted
-        // );
 
         // we remove only if some byte got added (this callback will get
         // trigger when data is added AND removed from the buffer
-        // TODO: Take into account float or double!
         if (info->n_added > 0) {
-            // We read one double
-            size_t datlen = info->n_added;
-            int k = datlen/sizeof(double);
-            double* data = (double*)malloc(datlen);
+            // Destination buffer (of TypeValue size, either float or double)
+            size_t datlen = info->n_added; // Total number of bytes
+            int k = datlen / sizeof(TypeValue);
+            if (datlen % sizeof(TypeValue) != 0) k++; // That case should not happen, but that's a safeguard
+            TypeValue* data = (TypeValue*)malloc(datlen);
 
             evbuffer_lock(buffer);
+            // Now we drain the evbuffer structure to fill up the destination bufferå
             int nbyte_drained = evbuffer_remove(buffer, data, datlen);
             if (nbyte_drained < 0)
-                perror("evbuffer_remove: cannot remove data from buffer buffer");
+                WARNING(EventBuffer, "evbuffer_remove(): cannot remove data from buffer");
             evbuffer_unlock(buffer);
 
             std::string result = std::to_string(rank)+":";
-            // fprintf(stderr, "[rank=%d][tid=%d][ info ] drained %d bytes: \n", rank, tid, nbyte_drained);
-            // fprintf(stderr, "[rank=%d][tid=%d][ info ] ", rank, tid);
             for (int i = 0; i < k-1; i++) {
-                // fprintf(stderr, "%.2f ", data[i]);
                 result.append(std::to_string(data[i])+":");
             }
-            // fprintf(stderr, "%.2f\n", data[k-1]);
             result.append(std::to_string(data[k-1]));
             // For resiliency reasons we encode the result in base64
             std::string result_b64 = self->encode64(result);
+            std::cout << k << ":" << result_b64.size() << std::endl;
             if (result_b64.size() % 4 != 0) {
-                fprintf(stderr, "[WARNING][rank=%d] Frame size (%d elements) cannot be %d more than a multiple of 4!\n", rank, result_b64.size(), result_b64.size() % 4);
+                WARNING(EventBuffer, "[rank=%d] Frame size (%d elements)"
+                    "cannot be %d more than a multiple of 4!", 
+                    rank, result_b64.size(), result_b64.size() % 4)
             }
-            // int frame_size = result_b64.size() * sizeof(std::string::value_type);
-            // fprintf(stderr, "[rank=%d][tid=%d] Frame size: %d B (%.2f KB)\n", rank, tid, frame_size, frame_size/1024.0);
+
             // publish the data in the buffer
             self->_channel->startTransaction();
             self->_channel->publish("", self->_queue, result_b64);
             self->_channel->commitTransaction().onSuccess([self, rank, tid, nbyte_drained]() {
-                // fprintf(stderr,
-                //     "[rank=%d][tid=%d][ info ] messages were sucessfuly published on queue=%s\n",
-                //     rank, tid, self->_queue.c_str()
-                // );
                 self->_byte_to_send = self->_byte_to_send - nbyte_drained;
             }).onError([self, rank, tid, nbyte_drained](const char *message) {
-                fprintf(stderr, "[ FAIL ][rank=%d] messages did not get send: %s\n", rank, message);
+                WARNING(EventBuffer, "[rank=%d] messages did not get send: %s", rank, message)
                 self->_byte_to_send = self->_byte_to_send - nbyte_drained;
             });
 
             free(data);
         }
-        // fprintf(stderr,
-        //     "[rank=%d][tid=%d][ info ] after event_buffer_cb: orig_size=%d added=%d deleted=%d\n",
-        //     rank, tid, info->orig_size, info->n_added, info->n_deleted
-        // );
     }
     
     /**
@@ -310,10 +297,6 @@ private:
      */
     static void callback_exit(int fd, short event, void* argc) {
         EventBuffer *self = static_cast<EventBuffer*>(argc);
-        // fprintf(stderr,
-        //     "[rank=%d][tid=%d][ info ] caught an interrupt signal; exiting cleanly event loop...\n",
-        //     self->_rank, self->_tid
-        // );
         DBG(RabbitMQHandler, "caught an interrupt signal; exiting cleanly event loop...")
         event_base_loopexit(self->_loop, NULL);
     }

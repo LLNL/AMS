@@ -25,6 +25,8 @@
 
 #include "wf/debug.h"
 
+#define LIBAMS_VERBOSE
+
 //! ----------------------------------------------------------------------------
 //! AMS Workflow class
 //! the purpose of this class is to expose an "evaluate" function
