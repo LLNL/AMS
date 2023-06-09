@@ -1,0 +1,41 @@
+FROM quay.io/centos/centos:stream8
+
+RUN dnf -y install epel-release initscripts && dnf -y install fakeroot && fakeroot dnf upgrade -y
+RUN fakeroot dnf install -y git wget hostname rsync glibc-locale-source libevent socat logrotate python39 unzip autoconf clang m4 openssl-devel zlib-devel systemd-devel ncurses-devel tar 
+RUN echo "LC_ALL=en_US.UTF-8" >> /etc/environment && echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && echo "LANG=en_US.UTF-8" > /etc/locale.conf
+RUN fakeroot localedef -c -i en_US -f UTF-8 en_US.UTF-8
+ENV LC_ALL "en_US.UTF-8"
+
+RUN wget https://github.com/erlang/otp/releases/download/OTP-25.3.1/otp_src_25.3.1.tar.gz && tar -xzf otp_src_25.3.1.tar.gz --no-same-owner
+RUN wget https://github.com/elixir-lang/elixir/archive/refs/tags/v1.14.1.tar.gz && tar -xzf v1.14.1.tar.gz --no-same-owner
+RUN wget https://github.com/rabbitmq/rabbitmq-server/releases/download/v3.11.18/rabbitmq-server-3.11.18.tar.xz && tar -xf rabbitmq-server-3.11.18.tar.xz --no-same-owner
+
+RUN cd otp_src_25.3.1 && ERL_TOP=`pwd` fakeroot ./configure --without-termcap --without-wx && fakeroot make -j2 && fakeroot make install
+RUN cd elixir-* && fakeroot make && fakeroot make install
+RUN cd rabbitmq-server-3.11.18 && fakeroot make -j2 && fakeroot make install
+ENV PATH "${PATH}:/rabbitmq-server-3.11.18/sbin"
+
+RUN fakeroot mkdir -p /etc/rabbitmq/
+ENV RABBITMQ_CONFIG_FILE /etc/rabbitmq/rabbitmq.conf
+ENV RABBITMQ_PID_FILE /var/lib/rabbitmq/mnesia/rabbitmq
+ENV RABBITMQ_NODENAME ams-broker@localhost
+# ENV RABBITMQ_USE_LONGNAME false
+ENV RABBITMQ_USER ams-user
+ENV RABBITMQ_LOGS=-
+
+ADD init.sh /init.sh
+RUN fakeroot chmod +x /init.sh
+
+RUN fakeroot echo "listeners.tcp = none" > $RABBITMQ_CONFIG_FILE
+RUN fakeroot echo "channel_max = 2047" >> $RABBITMQ_CONFIG_FILE
+RUN fakeroot echo "max_message_size = 134217728" >> $RABBITMQ_CONFIG_FILE
+# RUN fakeroot echo "loopback_users.guest = true" >> $RABBITMQ_CONFIG_FILE
+RUN fakeroot echo "listeners.ssl.default = 5671" >> $RABBITMQ_CONFIG_FILE
+RUN fakeroot echo "ssl_options.versions.1 = tlsv1.2" >> $RABBITMQ_CONFIG_FILE
+RUN fakeroot echo "ssl_options.cacertfile = /certs/ca_certificate.pem" >> $RABBITMQ_CONFIG_FILE
+RUN fakeroot echo "ssl_options.certfile = /certs/server_certificate.pem" >> $RABBITMQ_CONFIG_FILE
+RUN fakeroot echo "ssl_options.keyfile = /certs/server_key.pem" >> $RABBITMQ_CONFIG_FILE
+RUN fakeroot echo "ssl_options.fail_if_no_peer_cert = false" >> $RABBITMQ_CONFIG_FILE
+RUN fakeroot echo "ssl_options.verify = verify_none" >> $RABBITMQ_CONFIG_FILE
+
+CMD ["/init.sh"]
