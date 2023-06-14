@@ -19,15 +19,21 @@ def callback(ch, method, properties, body, args = None):
         f"        > data   : \"{body}\"\n"
         f"        > args   : \"{args}\"")
 
-def main(passwd: str = None, cacert: str = None, routing_key: str = ""):
+def get_rmq_connection(json_file):
+    data = {}
+    with open(json_file, 'r') as f:
+        data = json.load(f)
+    return data
+
+def main(credentials: str = None, routing_key: str = ""):
     # # context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     # context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
     # context.verify_mode = ssl.CERT_REQUIRED
     # context.load_verify_locations("/g/g92/pottier1/ams/marbl-matprops-miniapp/docker/rabbitmq/certs/ca_certificate.pem")
-
+    conn = get_rmq_connection(credentials)
     context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
     context.verify_mode = ssl.CERT_REQUIRED
-    context.load_verify_locations("/g/g92/pottier1/ams/marbl-matprops-miniapp/docker/rabbitmq/certs/ca_certificate.pem")
+    context.load_verify_locations(conn["rabbitmq-cert"])
     # context.load_cert_chain(
     #     certfile="/g/g92/pottier1/ams/marbl-matprops-miniapp/docker/rabbitmq/certs/client_lassen_certificate.pem",
     #     keyfile="/g/g92/pottier1/ams/marbl-matprops-miniapp/docker/rabbitmq/certs/client_lassen_key.pem"
@@ -50,18 +56,25 @@ def main(passwd: str = None, cacert: str = None, routing_key: str = ""):
     #     "cert_reqs": ssl.CERT_REQUIRED,
     #     "server_side": False
     # })
-
-    credentials = pika.PlainCredentials(
-        "ams-user",
-        "ZhjN5ZSw5aeanFyPZ4QZE9JBl-8TeBmmG9gcvRg_PWUox2cmbZVdfccRxpfwF6s12fztrEwSHgQgxvqF"
-    )
+    credentials = pika.PlainCredentials(conn["rabbitmq-user"], conn["rabbitmq-password"])
     cp = pika.ConnectionParameters(
-        host="localhost",
-        port=5671,
-        virtual_host="/",
+        host=conn["rabbitmq-host"],
+        port=conn["rabbitmq-port"],
+        virtual_host=conn["rabbitmq-vhost"],
         credentials=credentials,
         ssl_options=pika.SSLOptions(context)
     )
+    # credentials = pika.PlainCredentials(
+    #     "ams-user",
+    #     "KKORhLhmHNqhYbDvQ8gpJDx7tyCGiWOsHEsKLy0ff7I4Iq9RL2M6GgcbfyCu5OgPS3iaLbIyXFOCcV1wrLXe6riXoO"
+    # )
+    # cp = pika.ConnectionParameters(
+    #     host="localhost",
+    #     port=5671,
+    #     virtual_host="/",
+    #     credentials=credentials,
+    #     ssl_options=pika.SSLOptions(context)
+    # )
 
     # cp = pika.ConnectionParameters(
     #     host="localhost",
@@ -75,7 +88,7 @@ def main(passwd: str = None, cacert: str = None, routing_key: str = ""):
     connection = pika.BlockingConnection(cp)
     channel = connection.channel()
 
-    print(f"[recv.py] Connecting to RMQ ...")
+    print(f"[recv.py] Connecting to {conn['rabbitmq-host']} ...")
 
     # Warning:
     #   if no queue is specified then RabbitMQ will NOT hold messages that are not routed to queues.
@@ -92,8 +105,7 @@ def main(passwd: str = None, cacert: str = None, routing_key: str = ""):
 
 if __name__ == "__main__":
     try:
-        # main(passwd = sys.argv[3], cacert = sys.argv[1], routing_key = sys.argv[2])
-        main()
+        main(credentials = sys.argv[1], routing_key = "")
     except KeyboardInterrupt:
         print("")
         print("Interrupted")

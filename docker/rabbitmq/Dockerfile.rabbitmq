@@ -22,20 +22,22 @@ ENV RABBITMQ_NODENAME ams-broker@localhost
 # ENV RABBITMQ_USE_LONGNAME false
 ENV RABBITMQ_USER ams-user
 ENV RABBITMQ_LOGS=-
+# /certs must be mounted with TLS credentials
+ENV RABBITMQ_CRED="/certs/credentials.json"
 
 ADD init.sh /init.sh
-RUN fakeroot chmod +x /init.sh
+RUN fakeroot chmod 777 /init.sh
 
-RUN fakeroot echo "listeners.tcp = none" > $RABBITMQ_CONFIG_FILE
-RUN fakeroot echo "channel_max = 2047" >> $RABBITMQ_CONFIG_FILE
-RUN fakeroot echo "max_message_size = 134217728" >> $RABBITMQ_CONFIG_FILE
-# RUN fakeroot echo "loopback_users.guest = true" >> $RABBITMQ_CONFIG_FILE
-RUN fakeroot echo "listeners.ssl.default = 5671" >> $RABBITMQ_CONFIG_FILE
-RUN fakeroot echo "ssl_options.versions.1 = tlsv1.2" >> $RABBITMQ_CONFIG_FILE
-RUN fakeroot echo "ssl_options.cacertfile = /certs/ca_certificate.pem" >> $RABBITMQ_CONFIG_FILE
-RUN fakeroot echo "ssl_options.certfile = /certs/server_certificate.pem" >> $RABBITMQ_CONFIG_FILE
-RUN fakeroot echo "ssl_options.keyfile = /certs/server_key.pem" >> $RABBITMQ_CONFIG_FILE
-RUN fakeroot echo "ssl_options.fail_if_no_peer_cert = false" >> $RABBITMQ_CONFIG_FILE
-RUN fakeroot echo "ssl_options.verify = verify_none" >> $RABBITMQ_CONFIG_FILE
+RUN echo -e "listeners.tcp = none\n\
+channel_max = 2047\n\
+max_message_size = 134217728\n\
+loopback_users.guest = true\n\
+listeners.ssl.default = 5671\n\
+ssl_options.versions.1 = tlsv1.2\n\
+ssl_options.cacertfile = /certs/ca_certificate.pem\n\
+ssl_options.certfile = /certs/server_certificate.pem\n\
+ssl_options.keyfile = /certs/server_key.pem\n\
+ssl_options.fail_if_no_peer_cert = false\n\
+ssl_options.verify = verify_none" >> $RABBITMQ_CONFIG_FILE
 
 CMD ["/init.sh"]
