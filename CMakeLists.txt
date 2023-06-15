@@ -28,18 +28,19 @@ set(AMS_EXAMPLE_DEFINES "")
 set(AMS_EXAMPLE_INCLUDES "")
 
 # ------------------------------------------------------------------------------
-option(WITH_CUDA        "Option to enable CUDA" OFF)
-option(WITH_EXAMPLES    "Build examples" OFF)
-option(WITH_MPI         "Option to enable MPI" OFF)
-option(WITH_DB          "Use Database for Caching Simulation Results" OFF)
-option(WITH_CALIPER     "Use Caliper for Profiling" OFF)
-option(WITH_FAISS       "Use C/C++ FAISS interface for HD Cache" OFF)
-option(WITH_TORCH       "Use C/C++ Torch interface for Surrogate Model Inference" OFF)
-option(WITH_TORCH_DEBUG "Compute RMSE of Surrogate Model and Physics Module" OFF)
-option(WITH_TESTS       "Compile tests" OFF)
-option(WITH_REDIS       "Use REDIS as a database back end" OFF)
-option(WITH_HDF5        "Use HDF5 as a database back end" OFF)
-option(WITH_AMS_DEBUG   "Enable verbose messages" OFF)
+option(WITH_CUDA           "Option to enable CUDA" OFF)
+option(WITH_EXAMPLES       "Build examples" OFF)
+option(WITH_MPI            "Option to enable MPI" OFF)
+option(WITH_DB             "Use Database for Caching Simulation Results" OFF)
+option(WITH_CALIPER        "Use Caliper for Profiling" OFF)
+option(WITH_FAISS          "Use C/C++ FAISS interface for HD Cache" OFF)
+option(WITH_TORCH          "Use C/C++ Torch interface for Surrogate Model Inference" OFF)
+option(WITH_TORCH_DEBUG    "Compute RMSE of Surrogate Model and Physics Module" OFF)
+option(WITH_TESTS          "Compile tests" OFF)
+option(WITH_REDIS          "Use REDIS as a database back end" OFF)
+option(WITH_HDF5           "Use HDF5 as a database back end" OFF)
+option(WITH_RMQ            "Use RabbitMQ as a database back end (require a reachable and running RabbitMQ server service)" OFF)
+option(WITH_AMS_DEBUG      "Enable verbose messages" OFF)
 option(WITH_PERFFLOWASPECT "Use PerfFlowAspect for Profiling" OFF)
 option(BUILD_SHARED_LIBS "Build using shared libraries" ON)
 
@@ -134,6 +135,33 @@ if (WITH_DB)
     message(STATUS "HDF5 Shared Library: ${HDF5_C_SHARED_LIBRARY}")
     message(STATUS "HDF5 Include directories: ${HDF5_INCLUDE_DIR}")
   endif() # WITH_HDF5
+
+  if (WITH_RMQ)
+    if (WITH_CUDA)
+      add_compile_definitions(THRUST_IGNORE_CUB_VERSION_CHECK)
+    endif()
+    list(APPEND AMS_APP_DEFINES "-D__ENABLE_RMQ__")
+
+    find_package(amqpcpp REQUIRED)
+    get_target_property(amqpcpp_INCLUDE_DIR amqpcpp INTERFACE_INCLUDE_DIRECTORIES)
+    list(APPEND AMS_APP_INCLUDES ${amqpcpp_INCLUDE_DIR})
+
+    find_package(OpenSSL REQUIRED)
+    if (OPENSSL_FOUND)
+      list(APPEND AMS_APP_INCLUDES ${OPENSSL_INCLUDE_DIR})
+      list(APPEND AMS_APP_LIBRARIES "${OPENSSL_LIBRARIES}")
+      list(APPEND AMS_APP_LIBRARIES ssl)
+      message(STATUS "OpenSSL includes found: " ${OPENSSL_INCLUDE_DIR})
+      message(STATUS "OpenSSL libraries found: " ${OPENSSL_LIBRARIES})
+    else()
+      message(STATUS "OpenSSL Not Found")
+    endif()
+
+    find_package(libevent REQUIRED) # event loop library
+    list(APPEND AMS_APP_INCLUDES ${LIBEVENT_INCLUDE_DIR})
+    list(APPEND AMS_APP_LIBRARIES "${LIBEVENT_LIBRARIES}")
+    list(APPEND AMS_APP_LIBRARIES amqpcpp event_pthreads event)
+  endif() # WITH_RMQ
 endif() # WITH_DB
 
 # ------------------------------------------------------------------------------

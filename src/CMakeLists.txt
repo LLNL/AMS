@@ -7,13 +7,12 @@
 file(GLOB_RECURSE MINIAPP_INCLUDES "*.hpp")
 #set global library path to link with tests if necessary
 set(LIBRARY_OUTPUT_PATH ${AMS_LIB_OUT_PATH})
-set(AMS_LIB_SRC ${MINIAPP_INCLUDES} AMS.cpp wf/resource_manager.cpp wf/broker/base64.c)
+set(AMS_LIB_SRC ${MINIAPP_INCLUDES} AMS.cpp wf/resource_manager.cpp wf/base64.c)
 # two targets: a shared lib and an exec
 add_library(AMS ${AMS_LIB_SRC} ${MINIAPP_INCLUDES})
 
 # ------------------------------------------------------------------------------
 if (WITH_CUDA)
-    #TODO: replace all-major by native with cmake >= 3.24
     set_target_properties(AMS PROPERTIES CUDA_ARCHITECTURES ${AMS_CUDA_ARCH})
 
     #    if (BUILD_SHARED_LIBS)

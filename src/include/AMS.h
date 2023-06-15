@@ -52,9 +52,7 @@ typedef enum {
 
 typedef enum { UBALANCED = 0, BALANCED } AMSExecPolicy;
 
-typedef enum { None = 0, CSV, REDIS, HDF5 } AMSDBType;
-
-typedef enum{ NoBroker = 0, RMQ } AMSBrokerType; // For testing only, will be merged as a AMSDBType type
+typedef enum { None = 0, CSV, REDIS, HDF5, RMQ } AMSDBType;
 
 typedef enum {
   FAISSMean =0,
@@ -67,7 +65,6 @@ typedef struct ams_conf {
   const AMSDType dType;
   const AMSResourceType device;
   const AMSDBType dbType;
-  const AMSBrokerType brokerType;
   AMSPhysicFn cBack;
   char *SPath;
   char *UQPath;

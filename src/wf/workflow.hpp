@@ -17,7 +17,6 @@
 #include "ml/surrogate.hpp"
 
 #include "wf/basedb.hpp"
-#include "wf/broker/data_broker.hpp"
 
 #ifdef __ENABLE_MPI__
 #include "wf/redist_load.hpp"
@@ -69,12 +68,6 @@ class AMSWorkflow
   /** @brief The type of the database we will use (HDF5, CSV, etc) */
   AMSDBType dbType = AMSDBType::None;
 
-  /** @brief The broker to communicate data for which we cannot apply the current model */
-  DataBroker<FPTypeValue> *broker;
-
-  /** @brief The type of the broker we will use (only RabbitMQ supported now) */
-  AMSBrokerType brokerType = AMSBrokerType::NoBroker;
-
   /** @brief The process id. For MPI runs this is the rank */
   const int rId;
 
@@ -107,6 +100,8 @@ class AMSWorkflow
   {
     // 1 MB of buffer size;
     // TODO: Fix magic number
+    // TODO: This is likely not efficient for RabbitMQ backend at scale
+    //       We could just linearize the whole input+output and do one send (or two) per cycle
     static const long bSize = 1 * 1024 * 1024;
     const int numIn = inputs.size();
     const int numOut = outputs.size();
@@ -413,7 +408,7 @@ public:
 
     if (DB != nullptr) {
       CALIPER(CALI_MARK_BEGIN("DBSTORE");)
-      DBG(Workflow, "Storing data to database");
+      DBG(Workflow, "Storing data (#elements = %d) to database", packedElements);
       Store(packedElements, packedInputs, packedOutputs);
       CALIPER(CALI_MARK_END("DBSTORE");)
     }

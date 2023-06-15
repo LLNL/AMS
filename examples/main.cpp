@@ -76,7 +76,6 @@ int main(int argc, char **argv)
   const char *hdcache_path = "";
   const char *db_config = "";
   const char *db_type = "";
-  const char *rmq_config   = "";
 
   const char *uq_policy_opt = "mean";
   int k_nearest = 5;
@@ -174,7 +173,7 @@ int main(int argc, char **argv)
   args.AddOption(&db_config,
                  "-db",
                  "--dbconfig",
-                 "Path to directory where applications will store their data",
+                 "Path to directory where applications will store their data (or Path to JSON configuration if RabbitMQ is chosen)",
                  reqDB);
 
   args.AddOption(&db_type,
@@ -182,7 +181,8 @@ int main(int argc, char **argv)
                  "--dbtype",
                  "Configuration option of the different DB types:\n"
                  "\t 'csv' Use csv as back end\n"
-                 "\t 'hdf5': use hdf5 as a back end\n");
+                 "\t 'hdf5': use hdf5 as a back end\n"
+                 "\t 'rmq': use RabbitMQ as a back end\n");
 
   args.AddOption(&k_nearest, "-knn", "--k-nearest-neighbors", "Number of closest neightbors we should look at");
 
@@ -193,7 +193,6 @@ int main(int argc, char **argv)
                  "\t 'mean' Uncertainty is computed in comparison against the mean distance of k-nearest neighbors\n"
                  "\t 'max': Uncertainty is computed in comparison with the k'st cluster \n"
                  "\t 'deltauq': Uncertainty through DUQ (not supported)\n");
-
 
   args.AddOption(
       &verbose, "-v", "--verbose", "-qu", "--quiet", "Print extra stuff");
@@ -260,12 +259,8 @@ int main(int argc, char **argv)
       (std::strcmp(db_type, "csv") == 0) ? AMSDBType::CSV : AMSDBType::None;
   if ( dbType != AMSDBType::CSV )
     dbType = ((std::strcmp(db_type, "hdf5") == 0)) ? AMSDBType::HDF5 : AMSDBType::None;
-
-  // TODO: this should be removed, it's for testing only. AMSBrokerType::RMQ type should become AMSDBType::RMQ brokerType will be removed.
-  AMSBrokerType brokerType = AMSBrokerType::NoBroker;
-#ifdef __ENABLE_RMQ__
-  brokerType = AMSBrokerType::RMQ;
-#endif
+  if ( dbType != AMSDBType::HDF5 )
+    dbType = ((std::strcmp(db_type, "rmq") == 0)) ? AMSDBType::RMQ : AMSDBType::None;
 
   AMSUQPolicy uq_policy =
       (std::strcmp(uq_policy_opt, "max") == 0) ? AMSUQPolicy::FAISSMax: AMSUQPolicy::FAISSMean;
@@ -273,7 +268,6 @@ int main(int argc, char **argv)
   if ( uq_policy != AMSUQPolicy::FAISSMax )
     uq_policy = ((std::strcmp(uq_policy_opt, "deltauq") == 0))
       ? AMSUQPolicy::DeltaUQ : AMSUQPolicy::FAISSMean;
-
 
   // set up a randomization seed
   srand(seed + rId);
@@ -410,7 +404,6 @@ int main(int argc, char **argv)
   const char *uq_path = nullptr;
   const char *surrogate_path = nullptr;
   const char *db_path = nullptr;
-  const char *rmq_path       = nullptr;
 
 #ifdef __ENABLE_FAISS__
   uq_path = (strlen(hdcache_path) > 0) ? hdcache_path : nullptr;
@@ -444,7 +437,6 @@ int main(int argc, char **argv)
   //db_path = "test-config-redis.json";
 
   db_path = (strlen(db_config) > 0) ? db_config : nullptr;
-  rmq_path = (strlen(rmq_config) > 0) ? rmq_config : nullptr;
 
   AMSResourceType ams_device = AMSResourceType::HOST;
   if (use_device) ams_device = AMSResourceType::DEVICE;
@@ -455,7 +447,6 @@ int main(int argc, char **argv)
                        AMSDType::Double,
                        ams_device,
                        dbType,
-                       brokerType,
                        callBack,
                        (char *)surrogate_path,
                        (char *)uq_path,
