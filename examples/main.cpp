@@ -347,7 +347,7 @@ int run(const char *device_name,
   for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
     EOS<TypeValue> *base;
     if (eos_name == std::string("ideal_gas")) {
-      base = new IdealGas<TypeValue>(1.6, 1.4);
+      base = new IdealGas<TypeValue>(1.6, 1.4, repeats);
     } else if (eos_name == std::string("constant_host")) {
       base = new ConstantEOSOnHost<TypeValue>(physics_host_alloc.c_str(), 1.0);
     } else {
@@ -634,6 +634,7 @@ int main(int argc, char **argv)
   double avg = 0.5;
   double stdDev = 0.2;
   bool reqDB = false;
+  int repeats = 1;
   const char *pool = "default";
 
 #ifdef __ENABLE_DB__
@@ -751,6 +752,8 @@ int main(int argc, char **argv)
 
   args.AddOption(
       &verbose, "-v", "--verbose", "-qu", "--quiet", "Print extra stuff");
+
+  args.AddOption(&repeats, "-rp", "--repeats", "Number of repeats to perform on physics eval");
 
   args.AddOption(&pool,
                  "-ptype",

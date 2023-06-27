@@ -18,10 +18,11 @@ class IdealGas : public EOS<FPType>
 {
   const FPType gamma_;
   const FPType specific_heat_;
+  const int repeat;
 
 public:
-  IdealGas(FPType gamma, FPType specific_heat)
-      : gamma_(gamma), specific_heat_(specific_heat)
+  IdealGas(FPType gamma, FPType specific_heat, int repeat)
+      : gamma_(gamma), specific_heat_(specific_heat), repeat(repeat)
   {
   }
 
@@ -39,14 +40,15 @@ public:
   {
     const FPType gamma = gamma_;
     const FPType specific_heat = specific_heat_;
-
-    using mfem::ForallWrap;
-    MFEM_FORALL(i, length, {
-      pressure[i] = (gamma - 1) * density[i] * energy[i];
-      soundspeed2[i] = gamma * (gamma - 1) * energy[i];
-      bulkmod[i] = gamma * pressure[i];
-      temperature[i] = energy[i] / specific_heat;
+    for ( int r = 0; r < repeat; r++){
+      using mfem::ForallWrap;
+      MFEM_FORALL(i, length, {
+        pressure[i] = (gamma - 1) * density[i] * energy[i];
+        soundspeed2[i] = gamma * (gamma - 1) * energy[i];
+        bulkmod[i] = gamma * pressure[i];
+        temperature[i] = energy[i] / specific_heat;
     });
+    }
   }
 
 #ifdef __ENABLE_PERFFLOWASPECT__
