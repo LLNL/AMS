@@ -25,3 +25,4 @@ BinPackArguments : false
 AlignOperands : true
 AlwaysBreakTemplateDeclarations : true
 Cpp11BracedListStyle : true
+ReflowComments: false

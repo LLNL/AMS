@@ -336,19 +336,6 @@ PERFFASPECT()
     return;
   }
 
-PERFFASPECT()
-  static inline int computePartitionSize(int numIFeatures,
-                                         int numOFeatures,
-                                         bool includeReIndex = true,
-                                         const int pSize = partitionSize)
-  {
-    int singleElementBytes = sizeof(TypeValue) * (numIFeatures + numOFeatures);
-    if (includeReIndex)
-      return pSize / (singleElementBytes + sizeof(int));
-    else
-      return pSize / (singleElementBytes);
-  }
-
 };
 }  // namespace ams
 

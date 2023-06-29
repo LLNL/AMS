@@ -21,8 +21,26 @@ using enable_if_t = typename std::enable_if<B, T>::type;
 #else
 #endif
 
+template <typename T>
+class isDouble
+{
+public:
+  static constexpr bool default_value() { return false; }
+};
 
-const int partitionSize = 1 << 24;
+template <>
+class isDouble<double>
+{
+public:
+  static constexpr bool default_value() { return true; }
+};
+
+template <>
+class isDouble<float>
+{
+public:
+  static constexpr bool default_value() { return false; }
+};
 
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------

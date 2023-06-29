@@ -16,6 +16,7 @@
 #include "ml/hdcache.hpp"
 #include "ml/surrogate.hpp"
 #include "wf/basedb.hpp"
+#include "wf/redist_load.hpp"
 
 #include "wf/debug.h"
 
@@ -71,6 +72,9 @@ class AMSWorkflow
   /** @brief  Whether data and simulation takes place on CPU or GPU*/
   bool isCPU;
 
+  /** @brief  Location of data during simulation (CPU or GPU) */
+  AMSResourceType mLoc;
+
   /** \brief Store the data in the database and copies
    * data from the GPU to the CPU and then to the database.
    * To store GPU resident data we use a 1MB of "pinned"
@@ -116,22 +120,22 @@ class AMSWorkflow
       hOutputs.push_back(&pPtr[(i + inputs.size()) * elPerDim]);
 
     // Iterate over all chunks
-    for (int i = 0; i < num_elements; i += bElements) {
-      size_t actualElems = std::min(bElements, num_elements - i);
+    for (int i = 0; i < num_elements; i += elPerDim) {
+      size_t actualElems = std::min(elPerDim, num_elements - i);
       // Copy input data to host
       for (int k = 0; k < numIn; k++) {
-        ams::ResourceManager::copy(&inputs[k][i], hInputs[k], actualElems);
+        ams::ResourceManager::copy(&inputs[k][i], hInputs[k], actualElems * sizeof(FPTypeValue));
       }
 
       // Copy output data to host
       for (int k = 0; k < numIn; k++) {
-        ams::ResourceManager::copy(&outputs[k][i], hOutputs[k], actualElems);
+        ams::ResourceManager::copy(&outputs[k][i], hOutputs[k], actualElems * sizeof(FPTypeValue));
       }
 
       // Store to database
       DB->store(actualElems, hInputs, hOutputs);
     }
-    ams::ResourceManager::deallocate(pPtr);
+    ams::ResourceManager::deallocate(pPtr, AMSResourceType::PINNED);
 
     return;
   }
@@ -143,8 +147,12 @@ public:
         surrogate(nullptr),
         DB(nullptr),
         dbType(AMSDBType::None),
-        isCPU(false)
+        isCPU(false),
+        mLoc(AMSResourceType::DEVICE)
   {
+    if (isCPU){
+      mLoc = AMSResourceType::HOST;
+    }
 #ifdef __ENABLE_DB__
     DB = createDB<FPTypeValue>("miniApp_data.txt", dbType, 0);
     CFATAL(WORKFLOW, !DB, "Cannot create database");
@@ -166,8 +174,13 @@ public:
         dbType(dbType),
         rId(_pId),
         wSize(_wSize),
-        isCPU(is_cpu)
+        isCPU(is_cpu),
+        mLoc(AMSResourceType::DEVICE)
   {
+    if (isCPU){
+      mLoc = AMSResourceType::HOST;
+    }
+
     surrogate = nullptr;
     if (surrogate_path != nullptr)
       surrogate = new SurrogateModel<FPTypeValue>(surrogate_path, is_cpu);
@@ -310,15 +323,7 @@ public:
           ams::ResourceManager::allocate<FPTypeValue>(totalElements));
     }
 
-    // Pointer values which store output data values
-    // to be computed using the eos function.
-    std::vector<FPTypeValue *> packedOutputs;
-    for (int i = 0; i < outputDim; i++) {
-      packedOutputs.emplace_back(
-          ams::ResourceManager::allocate<FPTypeValue>(totalElements));
-    }
-
-    DBG(Workflow, "Allocated resources")
+    DBG(Workflow, "Allocated input resources")
 
     bool *predicate = p_ml_acceptable;
 
@@ -337,29 +342,46 @@ public:
     const long packedElements =
         data_handler::pack(predicate, totalElements, origInputs, packedInputs);
 
-#ifdef __ENABLE_MPI__
-    if (Comm) {
-      MPI_Barrier(Comm);
+    // Pointer values which store output data values
+    // to be computed using the eos function.
+    std::vector<FPTypeValue *> packedOutputs;
+    for (int i = 0; i < outputDim; i++) {
+      packedOutputs.emplace_back(
+          ams::ResourceManager::allocate<FPTypeValue>(packedElements));
     }
-#endif
+
+    {
+      void** iPtr = reinterpret_cast<void **>(packedInputs.data());
+      void** oPtr = reinterpret_cast<void **>(packedOutputs.data());
+      long lbElements = packedElements;
+
+//#ifdef __ENABLE_MPI__
+//    AMSLoadBalancer<FPTypeValue> lBalancer(rId, wSize, packedElements, Comm, inputDim, outputDim, mLoc);
+//    if (Comm) {
+//      lBalancer.scatterInputs(packedInputs, mLoc);
+//      iPtr = reinterpret_cast<void **>(lBalancer.inputs());
+//      oPtr = reinterpret_cast<void **>(lBalancer.outputs());
+//      lbElements = lBalancer.getBalancedSize();
+//    }
+//#endif
 
     // ---- 3b: call the physics module and store in the data base
     if (packedElements > 0 ) {
       CALIPER(CALI_MARK_BEGIN("PHYSICS MODULE");)
       AppCall(probDescr,
-              packedElements,
-              reinterpret_cast<void **>(packedInputs.data()),
-              reinterpret_cast<void **>(packedOutputs.data()));
+              lbElements,
+              iPtr,
+              oPtr);
       CALIPER(CALI_MARK_END("PHYSICS MODULE");)
     }
-#ifdef __ENABLE_MPI__
-    // TODO: Here we need to load balance. Each rank may have a different
-    // number of PackedElemets. Thus we need to distribute the packedOutputs
-    // to all ranks
-    if (Comm) {
-      MPI_Barrier(Comm);
+
+//#ifdef __ENABLE_MPI__
+//   if (Comm) {
+//      lBalancer.gatherOutputs(packedOutputs, mLoc);
+//    }
+//#endif
     }
-#endif
+
     // ---- 3c: unpack the data
     data_handler::unpack(predicate, totalElements, packedOutputs, origOutputs);
 
@@ -376,11 +398,11 @@ public:
     // Deallocate temporal data
     // -----------------------------------------------------------------
     for (int i = 0; i < inputDim; i++)
-      ams::ResourceManager::deallocate(packedInputs[i]);
+      ams::ResourceManager::deallocate(packedInputs[i], mLoc);
     for (int i = 0; i < outputDim; i++)
-      ams::ResourceManager::deallocate(packedOutputs[i]);
+      ams::ResourceManager::deallocate(packedOutputs[i], mLoc);
 
-    ams::ResourceManager::deallocate(p_ml_acceptable);
+    ams::ResourceManager::deallocate(p_ml_acceptable, mLoc);
 
     DBG(Workflow, "Finished AMSExecution")
     CINFO(Workflow, rId == 0, "Computed %ld "

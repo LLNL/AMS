@@ -79,10 +79,10 @@ int main(int argc, char* argv[])
       }
     }
 
-    ResourceManager::deallocate(predicate);
-    ResourceManager::deallocate(dense);
-    ResourceManager::deallocate(sparse);
-    ResourceManager::deallocate(rsparse);
+    ResourceManager::deallocate(predicate, AMSResourceType::HOST);
+    ResourceManager::deallocate(dense, AMSResourceType::HOST);
+    ResourceManager::deallocate(sparse, AMSResourceType::HOST);
+    ResourceManager::deallocate(rsparse, AMSResourceType::HOST);
   } else if (device == 1) {
     AMSSetupAllocator(AMSResourceType::DEVICE);
     AMSSetDefaultAllocator(AMSResourceType::DEVICE);
@@ -141,15 +141,15 @@ int main(int argc, char* argv[])
       }
     }
 
-    ams::ResourceManager::deallocate(predicate);
+    ams::ResourceManager::deallocate(predicate, AMSResourceType::DEVICE);
     ams::ResourceManager::deallocate(h_predicate, AMSResourceType::HOST);
-    ams::ResourceManager::deallocate(dense);
+    ams::ResourceManager::deallocate(dense, AMSResourceType::DEVICE);
     ams::ResourceManager::deallocate(h_dense, AMSResourceType::HOST);
-    ams::ResourceManager::deallocate(sparse);
+    ams::ResourceManager::deallocate(sparse, AMSResourceType::DEVICE);
     ams::ResourceManager::deallocate(h_sparse, AMSResourceType::HOST);
-    ams::ResourceManager::deallocate(rsparse);
+    ams::ResourceManager::deallocate(rsparse, AMSResourceType::DEVICE);
     ams::ResourceManager::deallocate(h_rsparse, AMSResourceType::HOST);
-    ams::ResourceManager::deallocate(reindex);
+    ams::ResourceManager::deallocate(reindex, AMSResourceType::DEVICE);
   }
 
   return 0;

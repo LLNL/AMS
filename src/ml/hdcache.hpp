@@ -228,7 +228,7 @@ PERFFASPECT()
 
     TypeValue *lin_data = data_handler::linearize_features(ndata, inputs);
     _add(ndata, lin_data);
-    ams::ResourceManager::deallocate(lin_data);
+    ams::ResourceManager::deallocate(lin_data, defaultRes);
   }
 
   //! -----------------------------------------------------------------------
@@ -254,7 +254,7 @@ PERFFASPECT()
     if (m_use_random) return;
     TypeValue *lin_data = data_handler::linearize_features(ndata, inputs);
     _train(ndata, lin_data);
-    ams::ResourceManager::deallocate(lin_data);
+    ams::ResourceManager::deallocate(lin_data, defaultRes);
   }
 
   //! ------------------------------------------------------------------------
@@ -302,7 +302,7 @@ PERFFASPECT()
     } else {
       TypeValue *lin_data = data_handler::linearize_features(ndata, inputs);
       _evaluate(ndata, lin_data, is_acceptable);
-      ams::ResourceManager::deallocate(lin_data);
+      ams::ResourceManager::deallocate(lin_data, defaultRes);
     }
   }
 
@@ -431,8 +431,8 @@ PERFFASPECT()
           kdists, is_acceptable, ndata, knbrs, acceptable_error);
     }
 
-    ams::ResourceManager::deallocate(kdists);
-    ams::ResourceManager::deallocate(kidxs);
+    ams::ResourceManager::deallocate(kdists, defaultRes);
+    ams::ResourceManager::deallocate(kidxs, defaultRes);
   }
 
   //! evaluate cache uncertainty when (data type != TypeValue)

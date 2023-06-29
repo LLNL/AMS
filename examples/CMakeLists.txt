@@ -25,7 +25,7 @@ if (WITH_CUDA)
     set_source_files_properties(main.cpp PROPERTIES COMPILE_FLAGS "--expt-extended-lambda")
     set_source_files_properties(app/eos_idealgas.hpp PROPERTIES COMPILE_FLAGS "--expt-extended-lambda")
     set_target_properties(ams_example PROPERTIES CUDA_ARCHITECTURES "${AMS_CUDA_ARCH}")
-    set_property(TARGET ams_example PROPERTY CUDA_SEPARABLE_COMPILATION ON)
+    #    set_property(TARGET ams_example PROPERTY CUDA_SEPARABLE_COMPILATION ON)
 
     if (WITH_RZ)
         set_source_files_properties(${RZ_AMS_SOURCES} PROPERTIES LANGUAGE CUDA)

@@ -14,6 +14,7 @@
 
 #include "AMS.h"
 #include "wf/debug.h"
+#include "wf/utils.hpp"
 
 namespace fs = std::experimental::filesystem;
 
@@ -212,27 +213,6 @@ PERFFASPECT()
 };
 
 #ifdef __ENABLE_HDF5__
-
-template <typename T>
-class isDouble
-{
-public:
-  static constexpr bool default_value() { return false; }
-};
-
-template <>
-class isDouble<double>
-{
-public:
-  static constexpr bool default_value() { return true; }
-};
-
-template <>
-class isDouble<float>
-{
-public:
-  static constexpr bool default_value() { return false; }
-};
 
 template <typename TypeValue>
 class hdf5DB final : public FileDB<TypeValue>

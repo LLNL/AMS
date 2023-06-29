@@ -35,7 +35,7 @@ const char* ResourceManager::getAllocatorName(AMSResourceType Resource)
   else if (Resource == AMSResourceType::PINNED)
     return ResourceManager::getPinnedAllocatorName();
   else {
-    FATAL(ResourceManager, "Request allocator for resource that does not exist")
+    FATAL(ResourceManager, "Request allocator for resource that does not exist (%d)", Resource)
     return nullptr;
   }
 }
