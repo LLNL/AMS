@@ -83,7 +83,8 @@ AMSExecutor AMSCreateExecutor(const AMSConfig config)
                                      config.uqPolicy,
                                      config.nClusters,
                                      config.pId,
-                                     config.wSize);
+                                     config.wSize,
+                                     config.ePolicy);
 
     _amsWrap.executors.push_back(std::make_pair(config.dType, static_cast<void *>(dWF)));
     return reinterpret_cast<AMSExecutor>(_amsWrap.executors.size() - 1L);
@@ -99,7 +100,8 @@ AMSExecutor AMSCreateExecutor(const AMSConfig config)
                                     config.uqPolicy,
                                     config.nClusters,
                                     config.pId,
-                                    config.wSize);
+                                    config.wSize,
+                                    config.ePolicy);
     _amsWrap.executors.push_back(std::make_pair(config.dType, static_cast<void *>(sWF)));
 
     return reinterpret_cast<AMSExecutor>(_amsWrap.executors.size() - 1L);

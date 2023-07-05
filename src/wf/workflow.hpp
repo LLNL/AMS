@@ -75,6 +75,9 @@ class AMSWorkflow
   /** @brief  Location of data during simulation (CPU or GPU) */
   AMSResourceType mLoc;
 
+  /** @brief execution policy of the distributed system. Load balance or not. */
+  const AMSExecPolicy ePolicy;
+
   /** \brief Store the data in the database and copies
    * data from the GPU to the CPU and then to the database.
    * To store GPU resident data we use a 1MB of "pinned"
@@ -148,7 +151,8 @@ public:
         DB(nullptr),
         dbType(AMSDBType::None),
         isCPU(false),
-        mLoc(AMSResourceType::DEVICE)
+        mLoc(AMSResourceType::DEVICE),
+        ePolicy(AMSExecPolicy::UBALANCED)
   {
     if (isCPU){
       mLoc = AMSResourceType::HOST;
@@ -169,13 +173,15 @@ public:
               const AMSUQPolicy uqPolicy,
               const int nClusters,
               int _pId = 0,
-              int _wSize = 1)
+              int _wSize = 1,
+              AMSExecPolicy policy= AMSExecPolicy::UBALANCED)
       : AppCall(_AppCall),
         dbType(dbType),
         rId(_pId),
         wSize(_wSize),
         isCPU(is_cpu),
-        mLoc(AMSResourceType::DEVICE)
+        mLoc(AMSResourceType::DEVICE),
+        ePolicy(policy)
   {
     if (isCPU){
       mLoc = AMSResourceType::HOST;
@@ -355,15 +361,15 @@ public:
       void** oPtr = reinterpret_cast<void **>(packedOutputs.data());
       long lbElements = packedElements;
 
-//#ifdef __ENABLE_MPI__
-//    AMSLoadBalancer<FPTypeValue> lBalancer(rId, wSize, packedElements, Comm, inputDim, outputDim, mLoc);
-//    if (Comm) {
-//      lBalancer.scatterInputs(packedInputs, mLoc);
-//      iPtr = reinterpret_cast<void **>(lBalancer.inputs());
-//      oPtr = reinterpret_cast<void **>(lBalancer.outputs());
-//      lbElements = lBalancer.getBalancedSize();
-//    }
-//#endif
+#ifdef __ENABLE_MPI__
+    AMSLoadBalancer<FPTypeValue> lBalancer(rId, wSize, packedElements, Comm, inputDim, outputDim, mLoc);
+    if (ePolicy == AMSExecPolicy::BALANCED && Comm) {
+      lBalancer.scatterInputs(packedInputs, mLoc);
+      iPtr = reinterpret_cast<void **>(lBalancer.inputs());
+      oPtr = reinterpret_cast<void **>(lBalancer.outputs());
+      lbElements = lBalancer.getBalancedSize();
+    }
+#endif
 
     // ---- 3b: call the physics module and store in the data base
     if (packedElements > 0 ) {
@@ -375,11 +381,11 @@ public:
       CALIPER(CALI_MARK_END("PHYSICS MODULE");)
     }
 
-//#ifdef __ENABLE_MPI__
-//   if (Comm) {
-//      lBalancer.gatherOutputs(packedOutputs, mLoc);
-//    }
-//#endif
+#ifdef __ENABLE_MPI__
+    if (ePolicy == AMSExecPolicy::BALANCED && Comm) {
+      lBalancer.gatherOutputs(packedOutputs, mLoc);
+    }
+#endif
     }
 
     // ---- 3c: unpack the data

@@ -327,6 +327,7 @@ public:
   /** @brief deallocates all objects of this load balancing transcation */
   ~AMSLoadBalancer()
   {
+    CINFO(LoadBalance, root==rId, "Total data %d Data per rank %d", globalLoad, balancedLoad);
     if (displs) ams::ResourceManager::deallocate(displs, AMSResourceType::HOST);
     if (dataElements)
       ams::ResourceManager::deallocate(dataElements, AMSResourceType::HOST);

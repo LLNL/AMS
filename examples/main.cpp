@@ -90,6 +90,7 @@ int main(int argc, char **argv)
   bool pack_sparse_mats = true;
 
   bool imbalance = false;
+  bool lbalance = false;
   TypeValue threshold = 0.5;
   TypeValue avg = 0.5;
   TypeValue stdDev = 0.2;
@@ -153,8 +154,15 @@ int main(int argc, char **argv)
   args.AddOption(&stdDev,
                  "-std",
                  "--stdev",
-                 "Standard deviation of random number generator of imbalance "
-                 "threshold");
+                 "Standard deviation of random number generator of imbalance ");
+
+  args.AddOption(&lbalance,
+                 "-lb",
+                 "--with-load-balance",
+                 "-nlb",
+                 "--without-load-balance",
+                 "Enable Load balance module in AMS");
+
 
   args.AddOption(&threshold,
                  "-t",
@@ -408,8 +416,10 @@ int main(int argc, char **argv)
 
   AMSResourceType ams_device = AMSResourceType::HOST;
   if (use_device) ams_device = AMSResourceType::DEVICE;
+  AMSExecPolicy ams_loadBalance = AMSExecPolicy::UBALANCED;
+  if ( lbalance ) ams_loadBalance = AMSExecPolicy::BALANCED;
 
-  AMSConfig amsConf = {AMSExecPolicy::SinglePass,
+  AMSConfig amsConf = {ams_loadBalance,
                        AMSDType::Double,
                        ams_device,
                        dbType,

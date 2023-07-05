@@ -50,7 +50,7 @@ typedef enum {
   RSEND
 } AMSResourceType;
 
-typedef enum { SinglePass = 0, Partition, Predicate } AMSExecPolicy;
+typedef enum { UBALANCED = 0, BALANCED } AMSExecPolicy;
 
 typedef enum { None = 0, CSV, REDIS, HDF5 } AMSDBType;
 
