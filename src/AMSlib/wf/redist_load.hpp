@@ -114,6 +114,7 @@ private:
    * It initializes the 'dataElements', 'displs' on the root node and the localLoad, balancedLoad
    * across all ranks.
   */
+PERFFASPECT()
   void init(int numIn, int numOut, AMSResourceType resource)
   {
     // We need to store information
@@ -176,6 +177,7 @@ private:
   /** @brief Computes the number of elements every rank will receive after balancing.
    *  @returns the number of elements computed by this rank.
    **/
+PERFFASPECT()
   int computeBalanceLoad()
   {
     int rc = MPI_Bcast(&globalLoad, 1, MPI_INT, root, Comm);
@@ -208,6 +210,7 @@ private:
  *
  *  \return void.
  */
+PERFFASPECT()
   void distribute(FPTypeValue *src,
                   FPTypeValue *dest,
                   FPTypeValue *buffer,
@@ -253,6 +256,7 @@ private:
  *
  *  \return void.
  */
+PERFFASPECT()
   void distributeV(std::vector<FPTypeValue *> &src,
                    std::vector<FPTypeValue *> &dest,
                    int *gNElems,
@@ -352,6 +356,7 @@ public:
    * @param[out] outputs The vector to store all the output values gathered from their compute (remote) ranks.
    * @param[in] resource The location of the data (CPU|GPU)
    */
+PERFFASPECT()
   void gatherOutputs(std::vector<FPTypeValue *> &outputs,
                      AMSResourceType resource)
   {
@@ -381,6 +386,7 @@ public:
    * @param[out] inputs The vector to load balance across all compute (remote) ranks.
    * @param[in] resource The location of the data (CPU|GPU)
    */
+PERFFASPECT()
   void scatterInputs(std::vector<FPTypeValue *> &inputs,
                      AMSResourceType resource)
   {
