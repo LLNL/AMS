@@ -144,7 +144,7 @@ endif()
 find_package(UMPIRE REQUIRED
              NO_DEFAULT_PATH
              PATHS ${UMPIRE_DIR}/share/umpire/cmake ${UMPIRE_DIR}/lib/cmake/umpire)
-list(APPEND AMS_APP_LIBRARIES umpire::cuda)
+list(APPEND AMS_APP_LIBRARIES umpire)
 list(APPEND AMS_APP_INCLUDES ${UMPIRE_INCLUDE_DIR})
 
 # ------------------------------------------------------------------------------
