@@ -16,12 +16,12 @@ if (WITH_CUDA)
     #TODO: replace all-major by native with cmake >= 3.24
     set_target_properties(AMS PROPERTIES CUDA_ARCHITECTURES ${AMS_CUDA_ARCH})
 
-    if (BUILD_SHARED_LIBS)
-      set_target_properties(AMS PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-    else()
-      set_target_properties(AMS PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-      set_target_properties(AMS PROPERTIES CUDA_RESOLVE_DEVICE_SYMBOLS ON)
-    endif()
+    #    if (BUILD_SHARED_LIBS)
+    #      set_target_properties(AMS PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+    #    else()
+    #      set_target_properties(AMS PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+    #      set_target_properties(AMS PROPERTIES CUDA_RESOLVE_DEVICE_SYMBOLS ON)
+    #    endif()
 
     set_source_files_properties(AMS.cpp PROPERTIES LANGUAGE CUDA)
     set_source_files_properties(AMS.cpp PROPERTIES CUDA_ARCHITECTURES ${AMS_CUDA_ARCH})
