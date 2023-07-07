@@ -196,7 +196,6 @@ int main(int argc, char **argv)
 
   args.AddOption(
       &verbose, "-v", "--verbose", "-qu", "--quiet", "Print extra stuff");
-  args.AddOption(&rmq_config, "-rmq", "--rabbitmq", "Path to Data Broker configuration (e.g., RabbitMQ)");
 
   // -------------------------------------------------------------------------
   // parse arguments
@@ -413,28 +412,6 @@ int main(int argc, char **argv)
 #ifdef __ENABLE_TORCH__
   surrogate_path = (strlen(model_path) > 0) ? model_path : nullptr;
 #endif
-
-  AMSBrokerType ams_broker_type = AMSBrokerType::NoBroker;
-#ifdef __ENABLE_RMQ__
-  std::cout << "RabbitMQ configuration path : " << rmq_config << "\n";
-  rmq_path = (strlen(rmq_config) > 0) ? rmq_config : nullptr;
-  ams_broker_type = AMSBrokerType::RMQ;
-#endif
-
-#ifdef __ENABLE_DB__
-  db_path = "miniapp.txt";
-#ifdef __ENABLE_REDIS__
-  /*
-  * A JSON that contains all Redis info (port, host, password, SSL certificate path)
-  * See README to generate the certificate (.crt file).
-  * {
-  *      "database-password": "mypassword",
-  *      "service-port": 32273,
-  *      "host": "cz-username-testredis1.apps.czapps.llnl.gov",
-  *      "cert": "redis_certificate.crt"
-  * }
-  */
-  //db_path = "test-config-redis.json";
 
   db_path = (strlen(db_config) > 0) ? db_config : nullptr;
 
