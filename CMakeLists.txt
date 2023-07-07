@@ -41,6 +41,7 @@ option(WITH_REDIS       "Use REDIS as a database back end" OFF)
 option(WITH_HDF5        "Use HDF5 as a database back end" OFF)
 option(WITH_AMS_DEBUG   "Enable verbose messages" OFF)
 option(WITH_PERFFLOWASPECT "Use PerfFlowAspect for Profiling" OFF)
+option(BUILD_SHARED_LIBS "Build using shared libraries" ON)
 
 if (WITH_MPI)
   #  SET(CMAKE_CXX_COMPILER "${MPI_CXX_COMPILER}" CACHE FILEPATH "CXX compiler overridden with MPI C++ wrapper")
@@ -59,6 +60,12 @@ if (WITH_CUDA)
   if (NOT DEFINED AMS_CUDA_ARCH)
     message(WARNING "CUDA ARCH IS NOT DEFINED, USING 70")
     set(AMS_CUDA_ARCH 70)
+  endif()
+
+  if (BUILD_SHARED_LIBS)
+    set(CUDA_RUNTIME_LIBRARY "Shared")
+  else()
+    set(CUDA_RUNTIME_LIBRARY "Static")
   endif()
 
   # we need to enable nvcc

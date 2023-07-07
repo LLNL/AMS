@@ -9,13 +9,20 @@ file(GLOB_RECURSE MINIAPP_INCLUDES "*.hpp")
 set(LIBRARY_OUTPUT_PATH ${AMS_LIB_OUT_PATH})
 set(AMS_LIB_SRC ${MINIAPP_INCLUDES} AMS.cpp wf/resource_manager.cpp)
 # two targets: a shared lib and an exec
-add_library(AMS SHARED ${AMS_LIB_SRC} ${MINIAPP_INCLUDES})
+add_library(AMS ${AMS_LIB_SRC} ${MINIAPP_INCLUDES})
 
 # ------------------------------------------------------------------------------
 if (WITH_CUDA)
     #TODO: replace all-major by native with cmake >= 3.24
     set_target_properties(AMS PROPERTIES CUDA_ARCHITECTURES ${AMS_CUDA_ARCH})
-    set_property(TARGET AMS PROPERTY CUDA_SEPARABLE_COMPILATION ON)
+
+    if (BUILD_SHARED_LIBS)
+      set_target_properties(AMS PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+    else()
+      set_target_properties(AMS PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+      set_target_properties(AMS PROPERTIES CUDA_RESOLVE_DEVICE_SYMBOLS ON)
+    endif()
+
     set_source_files_properties(AMS.cpp PROPERTIES LANGUAGE CUDA)
     set_source_files_properties(AMS.cpp PROPERTIES CUDA_ARCHITECTURES ${AMS_CUDA_ARCH})
     set_source_files_properties(AMS.cpp PROPERTIES COMPILE_FLAGS "--expt-extended-lambda")
