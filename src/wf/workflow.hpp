@@ -16,7 +16,10 @@
 #include "ml/hdcache.hpp"
 #include "ml/surrogate.hpp"
 #include "wf/basedb.hpp"
+
+#ifdef __ENABLE_MPI__
 #include "wf/redist_load.hpp"
+#endif
 
 #include "wf/debug.h"
 
