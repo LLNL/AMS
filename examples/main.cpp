@@ -254,12 +254,14 @@ int main(int argc, char **argv)
   CALIPER(CALI_MARK_BEGIN("Setup");)
 
   const bool use_device = std::strcmp(device_name, "cpu") != 0;
-  AMSDBType dbType =
-      (std::strcmp(db_type, "csv") == 0) ? AMSDBType::CSV : AMSDBType::None;
-  if ( dbType != AMSDBType::CSV )
-    dbType = ((std::strcmp(db_type, "hdf5") == 0)) ? AMSDBType::HDF5 : AMSDBType::None;
-  if ( dbType != AMSDBType::HDF5 )
-    dbType = ((std::strcmp(db_type, "rmq") == 0)) ? AMSDBType::RMQ : AMSDBType::None;
+  AMSDBType dbType = AMSDBType::None;
+  if (std::strcmp(db_type, "csv") == 0) {
+    dbType = AMSDBType::CSV;
+  } else if (std::strcmp(db_type, "hdf5") == 0) {
+    dbType = AMSDBType::HDF5;
+  } else if (std::strcmp(db_type, "rmq") == 0) {
+    dbType = AMSDBType::RMQ;
+  }
 
   AMSUQPolicy uq_policy =
       (std::strcmp(uq_policy_opt, "max") == 0) ? AMSUQPolicy::FAISSMax: AMSUQPolicy::FAISSMean;

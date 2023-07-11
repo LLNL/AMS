@@ -43,7 +43,6 @@ export AMS_REDIS_PLUS_PLUS_PATH=`spack location -i redis-plus-plus`
 export AMS_HDF5_PATH=`spack location -i hdf5`
 export AMS_CALIPER_PATH=`spack location -i caliper`
 export AMS_AMQPCPP_PATH=`spack location -i amqp-cpp`
-export AMS_OPENSSL_PATH=`spack location -i openssl`
 export AMS_CUDA_ARCH=${CUDA_ARCH}
 
 echo "AMS_CUDA_ARCH                = $AMS_CUDA_ARCH"
@@ -56,7 +55,6 @@ echo "AMS_REDIS_PLUS_PLUS_PATH     = $AMS_REDIS_PLUS_PLUS_PATH"
 echo "AMS_HDF5_PATH                = $AMS_HDF5_PATH"
 echo "AMS_CALIPER_PATH             = $AMS_CALIPER_PATH"
 echo "AMS_AMQPCPP_PATH             = $AMS_AMQPCPP_PATH"
-echo "AMS_OPENSSL_PATH             = $AMS_OPENSSL_PATH"
 
 export AMS_TORCH_PATH=$(echo $AMS_TORCH_PATH/lib/python3.*/site-packages/torch/share/cmake/Torch)
 export AMS_AMQPCPP_PATH=$(echo $AMS_AMQPCPP_PATH/cmake)
