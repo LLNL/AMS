@@ -95,7 +95,7 @@ public:
   virtual std::string type() = 0;
 
   /**
-   * Takes an input and an output vector each holding 1-D vectors data, and
+   * @brief Takes an input and an output vector each holding 1-D vectors data, and
    * store. them in persistent data storage.
    * @param[in] num_elements Number of elements of each 1-D vector
    * @param[in] inputs Vector of 1-D vectors containing the inputs to be stored
@@ -136,7 +136,7 @@ protected:
 
 public:
   /**
-   * Takes an input and an output vector each holding 1-D vectors data, and
+   * @brief Takes an input and an output vector each holding 1-D vectors data, and
    * store. them in persistent data storage.
    * @param[in] path Path to an existing directory where to store our data
    * @param[in] suffix The suffix of the file to write to
@@ -211,7 +211,7 @@ public:
   std::string type() override { return "csv"; }
 
   /**
-   * Takes an input and an output vector each holding 1-D vectors data, and
+   * @brief Takes an input and an output vector each holding 1-D vectors data, and
    * store them into a csv file delimited by ':'. This should never be used for
    * large scale simulations as txt/csv format will be extremely slow.
    * @param[in] num_elements Number of elements of each 1-D vector
@@ -377,7 +377,7 @@ private:
     }
   }
 
-  /* @brief Writes a single 1-D vector to the dataset
+  /** @brief Writes a single 1-D vector to the dataset
    * @param[in] dSet the dataset to write the data to
    * @param[in] data the data we need to write
    * @param[in] elements the number of data elements we have
@@ -650,23 +650,23 @@ public:
 
 #ifdef __ENABLE_RMQ__
 
-/** \brief Structure that represents a JSON structure */
+/** @brief Structure that represents a JSON structure */
 typedef std::unordered_map<std::string, std::string> json;
-/** \brief Structure that represents a RabbitMQ messages that have been received
- */
+/** @brief Structure that represents a received RabbitMQ message */
 typedef std::tuple<std::string, std::string, std::string, uint64_t, bool>
     inbound_msg;
 
-/** \brief Structure that is passed to each worker thread that sends data. */
+/**
+ * @brief Structure that is passed to each worker thread that sends data.
+ */
 struct rmq_sender {
   struct event_base* loop;
   pthread_t id;
 };
 
 /**
- * Worker function responsible of starting the event loop for each thread.
+ * @brief Worker function responsible of starting the event loop for each thread.
  * @param[in] arg a pointer on a worker structure
- * @return NULL
  */
 void* start_worker_sender(void* arg)
 {
@@ -675,7 +675,9 @@ void* start_worker_sender(void* arg)
   return NULL;
 }
 
-/** \brief Structure that is passed to each worker thread receiving data. */
+/**
+ * @brief Structure that is passed to each worker thread receiving data.
+ */
 struct rmq_consumer {
   struct event_base* loop;
   pthread_t id;
@@ -685,9 +687,8 @@ struct rmq_consumer {
 };
 
 /**
- * Worker function responsible of starting the event loop for each thread.
+ * @brief Worker function responsible of starting the event loop for each thread.
  * @param[in] arg a pointer on a worker structure
- * @return NULL
  */
 void* start_worker_consumer(void* arg)
 {
@@ -723,13 +724,6 @@ void* start_worker_consumer(void* arg)
         message.bodySize(),
         message.exchange().c_str(),
         message.routingkey().c_str())
-    fprintf(stderr,
-        "message received [tag=%d] : '%s' of size %d B from '%s'/'%s'\n",
-        deliveryTag,
-        s.c_str(),
-        message.bodySize(),
-        message.exchange().c_str(),
-        message.routingkey().c_str());
   };
 
   /* callback that is called when the consumer is cancelled by RabbitMQ (this
@@ -755,19 +749,19 @@ void* start_worker_consumer(void* arg)
 }
 
 /**
- * \brief Specific handler for RabbitMQ connections based on libevent.
+ * @brief Specific handler for RabbitMQ connections based on libevent.
  */
 class RabbitMQHandler : public AMQP::LibEventHandler
 {
 private:
-  /** \brief Path to TLS certificate */
+  /** @brief Path to TLS certificate */
   const char* _cacert;
-  /** \brief The MPI rank (0 if MPI is not used) */
+  /** @brief The MPI rank (0 if MPI is not used) */
   int _rank;
 
 public:
   /**
-   *  \brief Constructor
+   *  @brief Constructor
    *  @param[in]  loop         Event Loop
    *  @param[in]  cacert       SSL Cacert
    *  @param[in]  rank         MPI rank
@@ -780,7 +774,7 @@ public:
 
 private:
   /**
-   *  \brief Method that is called after a TCP connection has been set up, and
+   *  @brief Method that is called after a TCP connection has been set up, and
    * right before the SSL handshake is going to be performed to secure the
    * connection (only for amqps:// connections). This method can be overridden
    * in user space to load client side certificates.
@@ -814,7 +808,7 @@ private:
   }
 
   /**
-   *  \brief Method that is called when the secure TLS connection has been
+   *  @brief Method that is called when the secure TLS connection has been
    * established. This is only called for amqps:// connections. It allows you to
    * inspect whether the connection is secure enough for your liking (you can
    *  for example check the server certificate). The AMQP protocol still has
@@ -833,7 +827,7 @@ private:
   }
 
   /**
-   *  \brief Method that is called by the AMQP library when the login attempt
+   *  @brief Method that is called by the AMQP library when the login attempt
    *  succeeded. After this the connection is ready to use.
    *  @param[in]  connection      The connection that can now be used
    */
@@ -845,7 +839,7 @@ private:
   }
 
   /**
-   *  \brief Method that is called by the AMQP library when a fatal error occurs
+   *  @brief Method that is called by the AMQP library when a fatal error occurs
    *  on the connection, for example because data received from RabbitMQ
    *  could not be recognized, or the underlying connection is lost. This
    *  call is normally followed by a call to onLost() (if the error occurred
@@ -864,7 +858,7 @@ private:
 };  // class RabbitMQHandler
 
 /**
- * \brief An EventBuffer encapsulates an evbuffer (libevent structure).
+ * @brief An EventBuffer encapsulates an evbuffer (libevent structure).
  * Each time data is pushed to the underlying evbuffer, the callback will be
  * called.
  */
@@ -872,34 +866,35 @@ template <typename TypeValue>
 class EventBuffer
 {
 private:
-  /** \brief AMQP reliable channel (wrapper of a classic channel with added functionalities) */
+  /** @brief AMQP reliable channel (wrapper of a classic channel with added functionalities) */
   std::shared_ptr<AMQP::Reliable<AMQP::Tagger>> _rchannel;
-  /** \brief Name of the RabbitMQ queue */
+  /** @brief Name of the RabbitMQ queue */
   std::string _queue;
-  /** \brief Internal queue of messages to send (data, num_elements) */
+  /** @brief Internal queue of messages to send (data, num_elements) */
   std::deque<std::tuple<void*, size_t>> _messages;
-  /** \brief Total number of bytes that must be send */
+  /** @brief Total number of bytes that must be send */
   size_t _byte_to_send;
-  /** \brief MPI rank */
+  /** @brief MPI rank */
   int _rank;
-  /** \brief Thread ID */
+  /** @brief Thread ID */
   pthread_t _tid;
-  /** \brief Event loop */
+  /** @brief Event loop */
   struct event_base* _loop;
-  /** \brief The buffer event structure */
+  /** @brief The buffer event structure */
   struct evbuffer* _buffer;
-  /** \brief Signal events for exiting properly the loop */
+  /** @brief Signal event for exiting properly the loop */
   struct event* _signal_exit;
+  /** @brief Signal event for exiting properly the loop */
   struct event* _signal_term;
-  /** \brief Custom signal code (by default SIGUSR1) that can be intercepted */
+  /** @brief Custom signal code (by default SIGUSR1) that can be intercepted */
   int _sig_exit;
-  /** \brief Internal counter for number of messages acknowledged */
+  /** @brief Internal counter for number of messages acknowledged */
   int _counter_ack;
-  /** \brief Internal counter for number of messages negatively acknowledged */
+  /** @brief Internal counter for number of messages negatively acknowledged */
   int _counter_nack;
 
   /**
-   *  \brief  Callback method that is called by libevent when data is being
+   *  @brief  Callback method that is called by libevent when data is being
    * added to the buffer event
    *  @param[in]  fd          The loop in which the event was triggered
    *  @param[in]  event       Internal timer object
@@ -994,7 +989,7 @@ private:
   }
 
   /**
-   *  \brief Callback method that is called by libevent when the signal sig is
+   *  @brief Callback method that is called by libevent when the signal sig is
    * intercepted
    *  @param[in]  fd          The loop in which the event was triggered
    *  @param[in]  event       Internal event object (evsignal in this case)
@@ -1013,7 +1008,7 @@ private:
 
 public:
   /**
-   *  \brief Constructor
+   *  @brief Constructor
    *  @param[in]  loop        Event loop (Libevent in this case)
    *  @param[in]  channel     AMQP TCP channel
    *  @param[in]  queue       Name of the queue the Event Buffer will publish on
@@ -1050,13 +1045,13 @@ public:
   }
 
   /**
-   *  \brief   Return the size of the buffer in bytes.
+   *  @brief   Return the size of the buffer in bytes.
    *  @return  Buffer size in bytes.
    */
   size_t size() { return evbuffer_get_length(_buffer); }
 
   /**
-   *  \brief   Return True if the buffer is empty.
+   *  @brief   Return True if the buffer is empty.
    *  @return  True if the number of bytes that has to be sent is equals to 0.
    */
   bool is_drained()
@@ -1065,14 +1060,14 @@ public:
   }
 
   /**
-   *  \brief   Push data to the underlying event buffer, which
+   *  @brief   Push data to the underlying event buffer, which
    * will trigger the callback.
    *  @return  The number of bytes that has to be sent.
    */
   size_t get_byte_to_send() { return _byte_to_send; }
 
   /**
-   *  \brief  Push data to the underlying event buffer, which
+   *  @brief  Push data to the underlying event buffer, which
    * will trigger the callback.
    *  @param[in]  data            The data pointer
    *  @param[in]  data_size       The number of bytes in the data pointer
@@ -1095,7 +1090,7 @@ public:
   }
 
   /**
-   *  \brief  Method to encode a string into base64
+   *  @brief  Method to encode a string into base64
    *  @param[in]  input       The input string
    *  @return                 The encoded string
    */
@@ -1115,7 +1110,7 @@ public:
     return result;
   }
 
-  /** \brief Destructor */
+  /** @brief Destructor */
   ~EventBuffer()
   {
     evbuffer_free(_buffer);
@@ -1125,52 +1120,52 @@ public:
 };  // class EventBuffer
 
 /**
- * \brief Class that manages a RabbitMQ broker and handles connection, event
+ * @brief Class that manages a RabbitMQ broker and handles connection, event
  * loop and set up various handlers.
  */
 template <typename TypeValue>
 class RabbitMQDB final : public BaseDB<TypeValue>
 {
 private:
-  /** \brief Path of the config file (JSON) */
+  /** @brief Path of the config file (JSON) */
   std::string _config;
-  /** \brief Connection to the broker */
+  /** @brief Connection to the broker */
   AMQP::TcpConnection* _connection;
-  /** \brief main channel used to send data to the broker */
+  /** @brief main channel used to send data to the broker */
   std::shared_ptr<AMQP::TcpChannel> _channel_send;
-  /** \brief main channel used to receive data from the broker */
+  /** @brief main channel used to receive data from the broker */
   std::shared_ptr<AMQP::TcpChannel> _channel_receive;
-  /** \brief Broker address */
+  /** @brief Broker address */
   AMQP::Address* _address;
-  /** \brief name of the queue to send data */
+  /** @brief name of the queue to send data */
   std::string _queue_sender;
-  /** \brief name of the queue to receive data */
+  /** @brief name of the queue to receive data */
   std::string _queue_receiver;
-  /** \brief MPI rank (if MPI is used, otherwise 0) */
+  /** @brief MPI rank (if MPI is used, otherwise 0) */
   int _rank;
-  /** \brief The event loop for sender (usually the default one in libevent) */
+  /** @brief The event loop for sender (usually the default one in libevent) */
   struct event_base* _loop_sender;
-  /** \brief The event loop receiver */
+  /** @brief The event loop receiver */
   struct event_base* _loop_receiver;
-  /** \brief The handler which contains various callbacks for the sender */
+  /** @brief The handler which contains various callbacks for the sender */
   std::shared_ptr<RabbitMQHandler> _handler_sender;
-  /** \brief The handler which contains various callbacks for the receiver */
+  /** @brief The handler which contains various callbacks for the receiver */
   std::shared_ptr<RabbitMQHandler> _handler_receiver;
-  /** \brief evbuffer that is responsible to offload data to RabbitMQ*/
+  /** @brief evbuffer that is responsible to offload data to RabbitMQ*/
   EventBuffer<TypeValue>* _evbuffer;
-  /** \brief The worker in charge of sending data to the broker (dedicated
+  /** @brief The worker in charge of sending data to the broker (dedicated
    * thread) */
   std::shared_ptr<struct rmq_sender> _sender;
-  /** \brief The worker in charge of sending data to the broker (dedicated
+  /** @brief The worker in charge of sending data to the broker (dedicated
    * thread) */
   std::shared_ptr<struct rmq_consumer> _receiver;
-  /** \brief The number of messages to be sent */
+  /** @brief The number of messages to be sent */
   int _nb_msg_send;
-  /** \brief Queue that contains all the messages received on receiver queue */
+  /** @brief Queue that contains all the messages received on receiver queue */
   std::shared_ptr<std::vector<inbound_msg>> _messages;
 
   /**
-   * \brief Read a JSON and create a hashmap
+   * @brief Read a JSON and create a hashmap
    * @param[in] fn Path of the RabbitMQ JSON config file
    * @return a hashmap (std::unordered_map) of the JSON file
    */
@@ -1215,7 +1210,7 @@ private:
     return connection_info;
   }
 
-  /* @brief linearize all elements of a vector of C-vectors
+  /** @brief linearize all elements of a vector of C-vectors
    * in a single C-vector. Data are transposed.
    *
    * @tparam TypeInValue Type of the source value.
@@ -1257,7 +1252,7 @@ private:
   }
 
   /**
-   * Initialize the connection with the broker, open a channel and set up a
+   * @brief Initialize the connection with the broker, open a channel and set up a
    * queue. Then it also sets up a worker thread and start its even loop. Now
    * the broker is ready for push operation.
    * @param[in] queue The name of the queue to declare
@@ -1317,7 +1312,7 @@ private:
   }
 
   /**
-   * Initialize the connection with the broker, open a channel and set up a
+   * @brief Initialize the connection with the broker, open a channel and set up a
    * queue. Then it also sets up a worker thread and start its even loop. Now
    * the broker is ready for push operation.
    * @param[in] queue The name of the queue to declare
@@ -1472,7 +1467,7 @@ public:
   }
 
   /**
-   * Make sure the evbuffer is being drained.
+   * @brief Make sure the evbuffer is being drained.
    * This function blocks until the buffer is empty.
    * @param[in] sleep_time Number of seconds between two checking (active
    * pooling)
@@ -1484,7 +1479,6 @@ public:
     }
     while (true) {
       if (_evbuffer->is_drained()) {
-        // pthread_kill(_worker->id, SIGUSR1);
         break;
       }
       sleep(sleep_time);
@@ -1492,7 +1486,7 @@ public:
   }
 
   /**
-   * Return the most recent messages and delete it
+   * @brief Return the most recent messages and delete it
    * @return A structure inbound_msg which is a std::tuple (see typedef)
    */
   inbound_msg pop_messages()
@@ -1506,8 +1500,9 @@ public:
   }
 
   /**
-   * Return the message corresponding to the delivery tag. Do not delete the
+   * @brief Return the message corresponding to the delivery tag. Do not delete the
    * message.
+   * @param[in] delivery_tag Delivery tag that will be returned (if found)
    * @return A structure inbound_msg which is a std::tuple (see typedef)
    */
   inbound_msg get_messages(uint64_t delivery_tag)
@@ -1524,7 +1519,7 @@ public:
   }
 
   /**
-   * Takes an input and an output vector each holding 1-D vectors data, and push
+   * @brief Takes an input and an output vector each holding 1-D vectors data, and push
    * it onto the libevent buffer. We flatten the inputs/outputs and send one 
    * message for each. The first two elements of the message are num_elements 
    * and the feature size. These elements are needed to reconstruct the inputs
@@ -1548,14 +1543,6 @@ public:
           num_elements,
           inputs.size(),
           outputs.size())
-
-    // fprintf(stderr,
-    //       "RabbitMQDB of type %s stores %ld elements of input/output "
-    //       "dimensions (%d, %d)\n",
-    //       type().c_str(),
-    //       num_elements,
-    //       inputs.size(),
-    //       outputs.size());
 
     const size_t inputs_size = num_elements * inputs.size();
     auto inputs_data = flatten_features(num_elements, inputs, true);
@@ -1593,13 +1580,13 @@ public:
   }
 
   /**
-   * Return the type of this broker
+   * @brief Return the type of this broker
    * @return The type of the broker
    */
   std::string type() override { return "rabbitmq"; }
 
   /**
-   * Return the number of messages that 
+   * @brief Return the number of messages that 
    * has been push to the buffer
    * @return The number of messages sent
    */
@@ -1625,7 +1612,7 @@ public:
 
 
 /**
- * Create an object of the respective database.
+ * @brief Create an object of the respective database.
  * This should never be used for large scale simulations as txt/csv format will
  * be extremely slow.
  * @param[in] dbPath path to the directory storing the data
