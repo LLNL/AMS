@@ -1,4 +1,32 @@
-/* Licensed under BSD-MIT - see LICENSE file for details */
+/**
+ * Disclaimer: This code comes from flux-core libccan library, it provides 
+ * utility functions to use base64 encoding on strings. base64 is used to 
+ * encode data for data transfers and encapsulation.
+ * base64 represents 24-bit groups of input bits as output
+ * strings of 4 encoded characters (cf rfc4648).
+ * 
+ * This code is licensed under BSD-MIT (see below).
+ * The original code can be found under flux-core repository.
+ * 
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ * 
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ * 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
 #include "base64.h"
 
 #include <errno.h>
@@ -8,9 +36,9 @@
 
 
 /**
- * sixbit_to_b64 - maps a 6-bit value to the base64 alphabet
- * @param map A base 64 map (see base64_init_map)
- * @param sixbit Six-bit value to map
+ * @brief sixbit_to_b64 - maps a 6-bit value to the base64 alphabet
+ * @param[in] map A base 64 map (see base64_init_map)
+ * @param[in] sixbit Six-bit value to map
  * @return a base 64 character
  */
 static char sixbit_to_b64(const base64_maps_t *maps, const uint8_t sixbit)
@@ -21,10 +49,10 @@ static char sixbit_to_b64(const base64_maps_t *maps, const uint8_t sixbit)
 }
 
 /**
- * sixbit_from_b64 - maps a base64-alphabet character to its 6-bit value
- * @param maps A base 64 maps structure (see base64_init_maps)
- * @param sixbit Six-bit value to map
- * @return a six-bit value
+ * @brief sixbit_from_b64 - maps a base64-alphabet character to its 6-bit value
+ * @param[in] maps A base 64 maps structure (see base64_init_maps)
+ * @param[in] sixbit Six-bit value to map
+ * @return    a six-bit value
  */
 static int8_t sixbit_from_b64(const base64_maps_t *maps,
 				const unsigned char b64letter)
@@ -208,7 +236,7 @@ ssize_t base64_decode_using_maps(const base64_maps_t *maps,
 
 
 /**
- * base64_maps_rfc4648 - pregenerated maps struct for rfc4648
+ * @brief base64_maps_rfc4648 - pregenerated maps struct for rfc4648
  */
 const base64_maps_t base64_maps_rfc4648 = {
 "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/",
