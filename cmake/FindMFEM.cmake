@@ -1,15 +1,7 @@
-# Copyright (c) 2017-2022, Lawrence Livermore National Security, LLC and
-# other Axom Project Developers. See the top-level LICENSE file for details.
+# Copyright 2021-2023 Lawrence Livermore National Security, LLC and other
+# AMSLib Project Developers
 #
-# SPDX-License-Identifier: (BSD-3-Clause)
-#------------------------------------------------------------------------------
-# Setup MFEM
-#------------------------------------------------------------------------------
-# This file defines:
-#  MFEM_FOUND        - If mfem was found
-#  MFEM_INCLUDE_DIRS - The mfem include directories
-#  MFEM_LIBRARIES    - The mfem libraries
-#------------------------------------------------------------------------------
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 if (NOT MFEM_DIR)
   message(FATAL_ERROR "Cannot find MFEM. MFEM_DIR is not defined. ")

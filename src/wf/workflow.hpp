@@ -1,6 +1,9 @@
-// Copyright (c) Lawrence Livermore National Security, LLC and other AMS
-// Project developers. See top-level LICENSE AND COPYRIGHT files for dates and
-// other details. No copyright assignment is required to contribute
+/*
+ * Copyright 2021-2023 Lawrence Livermore National Security, LLC and other
+ * AMSLib Project Developers
+ *
+ * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+ */
 
 #ifndef __AMS_WORKFLOW_HPP__
 #define __AMS_WORKFLOW_HPP__

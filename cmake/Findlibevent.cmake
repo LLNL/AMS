@@ -1,6 +1,8 @@
-# - Try to find the LibEvent config processing library
-# Once done this will define
+# Copyright 2021-2023 Lawrence Livermore National Security, LLC and other
+# AMSLib Project Developers
 #
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
 # LIBEVENT_FOUND - System has LibEvent
 # LIBEVENT_INCLUDE_DIR - the LibEvent include directory
 # LIBEVENT_LIBRARIES 0 The libraries needed to use LibEvent

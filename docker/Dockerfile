@@ -66,7 +66,7 @@ RUN mkdir /opt/spack-environment \
 
 # Install the software, remove unnecessary deps
 RUN cd /opt/spack-environment \
-    && git clone --single-branch --branch v0.18.1 https://github.com/spack/spack.git 
+    && git clone --single-branch --branch v0.18.1 https://github.com/spack/spack.git
 
 # Need patched Spack for Faiss 1.7.2
 COPY docker/package.py /opt/spack-environment/spack/var/spack/repos/builtin/packages/faiss/

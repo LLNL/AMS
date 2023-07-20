@@ -1,6 +1,9 @@
-// Copyright (c) Lawrence Livermore National Security, LLC and other AMS
-// Project developers. See top-level LICENSE AND COPYRIGHT files for dates and
-// other details. No copyright assignment is required to contribute
+/*
+ * Copyright 2021-2023 Lawrence Livermore National Security, LLC and other
+ * AMSLib Project Developers
+ *
+ * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+ */
 
 #ifndef EOS_CONSTANT_ON_HOST_HPP
 #define EOS_CONSTANT_ON_HOST_HPP

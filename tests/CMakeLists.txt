@@ -1,4 +1,7 @@
-
+# Copyright 2021-2023 Lawrence Livermore National Security, LLC and other
+# AMSLib Project Developers
+#
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 function (ADDTEST binary_name src_file test_name)
   add_executable(${binary_name} ${src_file})
