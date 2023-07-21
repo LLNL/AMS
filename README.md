@@ -24,3 +24,6 @@ AMSLib is released under Apache License (Version 2.0) with LLVM exceptions. For 
 
 `LLNL-CODE-851455`
 
+# Installation Instructions
+
+See [INSTALL.md](./INSTALL.md) for full instructions.
