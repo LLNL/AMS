@@ -22,7 +22,7 @@ AMS was created under the AMS LDRD-SI project (22-SI-004).
 
 If you use this software, please cite it as below:
 
-- Bhatia, Harsh, Patki, Tapasya A., Brink, Stephanie, Pottier, Loic E., Stitt, Thomas M., Parasyris, Konstantinos, Milroy, Daniel J., Laney, Daniel E., Blake, Robert C., Yeom, Jae-Seung, Bremer, Peer-Timo, and Doutriaux, Charles. Autonomous MultiScale Library. Computer Software. https://github.com/LLNL/AMS. USDOE National Nuclear Security Administration (NNSA). 01 May. 2023. Web. doi:10.11578/dc.20230721.1.
+- Bhatia, Harsh, Patki, Tapasya A., Brink, Stephanie, Pottier, Loïc, Stitt, Thomas M., Parasyris, Konstantinos, Milroy, Daniel J., Laney, Daniel E., Blake, Robert C., Yeom, Jae-Seung, Bremer, Peer-Timo, and Doutriaux, Charles. Autonomous MultiScale Library. Computer Software. https://github.com/LLNL/AMS. US DOE National Nuclear Security Administration (NNSA). 01 May. 2023. Web. doi:10.11578/dc.20230721.1.
 
 or get the format you prefer from [here](https://www.osti.gov/doecode/biblio/110346)
 
