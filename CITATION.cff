@@ -1,0 +1,85 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: Autonomous MultiScale Library
+message: 'If you use this software, please cite it as below'
+type: software
+authors:
+  - given-names: "Konstantinos"
+    family-names: "Parasyris"
+    affiliation: >-
+      Livermore National Laboratory (LLNL), Livermore, CA
+      (United States)
+  - given-names: "Loïc"
+    family-names: "Pottier"
+    affiliation: >-
+      Livermore National Laboratory (LLNL), Livermore, CA
+      (United States)
+  - given-names: "Daniel J."
+    family-names: "Milroy"
+    affiliation: >-
+      Livermore National Laboratory (LLNL), Livermore, CA
+      (United States)
+  - given-names: "Harsh"
+    family-names: "Bhatia"
+    affiliation: >-
+      Livermore National Laboratory (LLNL), Livermore, CA
+      (United States)
+  - given-names: "Tapasya"
+    family-names: "Patki"
+    affiliation: >-
+      Livermore National Laboratory (LLNL), Livermore, CA
+      (United States)
+  - given-names: "Stephanie"
+    family-names: "Brink"
+    affiliation: >-
+      Livermore National Laboratory (LLNL), Livermore, CA
+      (United States)
+  - given-names: "Thomas"
+    family-names: "Stitt"
+    affiliation: >-
+      Livermore National Laboratory (LLNL), Livermore, CA
+      (United States)
+  - given-names: "Daniel E."
+    family-names: "Laney"
+    affiliation: >-
+      Livermore National Laboratory (LLNL), Livermore, CA
+      (United States)
+  - given-names: "Robert C."
+    family-names: "Blake"
+    affiliation: >-
+      Livermore National Laboratory (LLNL), Livermore, CA
+      (United States)
+  - given-names: "Jae-Seung"
+    family-names: "Yeom"
+    affiliation: >-
+      Livermore National Laboratory (LLNL), Livermore, CA
+      (United States)
+  - given-names: "Peer-Timo"
+    family-names: "Bremer"
+    affiliation: >-
+      Livermore National Laboratory (LLNL), Livermore, CA
+      (United States)
+  - given-names: "Charles"
+    family-names: "Doutriaux"
+    affiliation: >-
+      Livermore National Laboratory (LLNL), Livermore, CA
+      (United States)
+identifiers:
+  - type: doi
+    value: 10.11578/dc.20230721.1
+repository-code: 'https://github.com/LLNL/AMS'
+url: 'https://github.com/LLNL/AMS'
+abstract: >-
+  AMSLib provides the infrastructure to tightly couple
+  multi-scale physics simulation code with ML surrogate
+  model inference. It provides a wholistic runtime execution
+  paradigm to support uncertainty quantification, surrogate
+  model inference, persistent data storing throughout the
+  execution of a simulation
+license: Apache-2.0
+commit: '2023-05-01'
+version: 0.0.0.alpha
+date-released: '2023-05-01'
+
