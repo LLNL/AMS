@@ -66,16 +66,25 @@ To built AMS with [PFA](https://github.com/flux-framework/PerfFlowAspect) suppor
 
 ```
 $ cd $CODE_ROOT/setup
+$ source setup_env_with_pfa.sh
 $ mkdir build; cd build
 $  cmake \
-   -DCMAKE_CXX_COMPILER=clang++ \
-   -DCMAKE_C_COMPILER=clang \
+   -DCMAKE_CXX_COMPILER=/usr/tce/packages/clang/clang-10.0.1-gcc-8.3.1/bin/clang++ \
+   -DCMAKE_C_COMPILER=/usr/tce/packages/clang/clang-10.0.1-gcc-8.3.1/bin/clang \
+   -DWITH_HDF5=On -DHDF5_Dir=$AMS_HDF5_PATH \
+   -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
+   -DWITH_DB=On \
+   -DCMAKE_INSTALL_PREFIX=./install \
+   -DCMAKE_BUILD_TYPE=Debug \
+   -DWITH_EXAMPLES=On \
    -DMFEM_DIR=$AMS_MFEM_PATH \
    -DUMPIRE_DIR=$AMS_UMPIRE_PATH \
+   -DWITH_MPI=On \
    -DWITH_CUDA=On \
    -DWITH_CALIPER=On \
    -DWITH_TORCH=On -DTorch_DIR=$AMS_TORCH_PATH \
    -DWITH_FAISS=On -DFAISS_DIR=$AMS_FAISS_PATH \
+   -DAMS_CUDA_ARCH=${AMS_CUDA_ARCH} \
    -DWITH_PERFFLOWASPECT=On \
    -Dperfflowaspect_DIR=$AMS_PFA_PATH/share \
   ../
