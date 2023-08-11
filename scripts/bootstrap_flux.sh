@@ -16,7 +16,6 @@ if ! [[ $FLUX_NODES =~ $re ]] ; then
   exit 1
 fi
 
-
 echo "[$(date +'%m%d%Y-%T')@$(hostname)] Launching Flux with $FLUX_NODES nodes"
 echo "[$(date +'%m%d%Y-%T')@$(hostname)] Writing Flux configuration/URIs into $AMS_JSON"
 
@@ -81,14 +80,31 @@ echo "[$(date +'%m%d%Y-%T')@$(hostname)] You can run: export FLUX_URI=$(cat $FLU
 rm $FLUX_SLEEP_WRAPPER
 
 # Read configuration file with number of nodes/cores for each sub allocations
-# TODO: add number of cores/GPUs for each
-NNODES_PHYSICS=$(jq ".physics_nodes" $AMS_JSON)
-NNODES_ML=$(jq ".ml_nodes" $AMS_JSON)
-NNODES_CONTAINERS=$(jq ".containers_nodes" $AMS_JSON)
+NODES_PHYSICS=$(jq ".physics.nodes" $AMS_JSON)
+NODES_ML=$(jq ".ml.nodes" $AMS_JSON)
+NODES_CONTAINERS=$(jq ".containers.nodes" $AMS_JSON)
 re='^[0-9]+$'
-if ! [[ $NNODES_PHYSICS =~ $re && $NNODES_ML =~ $re && $NNODES_CONTAINERS =~ $re ]] ; then
-  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Error: number of nodes is not an integer (${NNODES_PHYSICS}, ${NNODES_ML}, ${NNODES_CONTAINERS})"
-  echo $usage
+if ! [[ $NODES_PHYSICS =~ $re && $NODES_ML =~ $re && $NODES_CONTAINERS =~ $re ]] ; then
+  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Error: number of nodes is not an integer \
+  (${NODES_PHYSICS}, ${NODES_ML}, ${NODES_CONTAINERS})"
+  exit 1
+fi
+
+CORES_PHYSICS=$(jq ".physics.cores" $AMS_JSON)
+CORES_ML=$(jq ".ml.cores" $AMS_JSON)
+CORES_CONTAINERS=$(jq ".containers.cores" $AMS_JSON)
+if ! [[ $CORES_PHYSICS =~ $re && $CORES_ML =~ $re && $CORES_CONTAINERS =~ $re ]] ; then
+  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Error: number of cores is not an integer \
+  (${CORES_PHYSICS}, ${CORES_ML}, ${CORES_CONTAINERS})"
+  exit 1
+fi
+
+GPUS_PHYSICS=$(jq ".physics.gpus" $AMS_JSON)
+GPUS_ML=$(jq ".ml.gpus" $AMS_JSON)
+GPUS_CONTAINERS=$(jq ".containers.gpus" $AMS_JSON)
+if ! [[ $GPUS_PHYSICS =~ $re && $GPUS_ML =~ $re && $CORES_CONTAINERS =~ $re ]] ; then
+  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Error: number of GPUs is not an integer \
+  (${GPUS_PHYSICS}, ${GPUS_ML}, ${GPUS_CONTAINERS})"
   exit 1
 fi
 
@@ -96,35 +112,47 @@ fi
 JOBID_PHYSICS=$(
     flux mini batch --job-name="ams-physics" \
     --output="ams-physics-{{id}}.log" \
-    --nslots=1 --cores-per-slot=1 --nodes=$NNODES_PHYSICS \
+    --nslots=1 --nodes=$NODES_PHYSICS \
+    --cores-per-slot=$CORES_PHYSICS \
+    --gpus-per-slot=$GPUS_PHYSICS \
     --wrap sleep inf
 )
 FLUX_PHYSICS_URI=$(flux uri --remote $JOBID_PHYSICS)
+echo "[$(date +'%m%d%Y-%T')@$(hostname)] Physics batch job ($JOBID_PHYSICS) \
+started with nodes=${NODES_PHYSICS}, cores=${CORES_PHYSICS}, gpus=${GPUS_PHYSICS}"
 
 JOBID_ML=$(
     flux mini batch --job-name="ams-ml" \
     --output="ams-ml-{{id}}.log" \
-    --nslots=1 --cores-per-slot=1 --nodes=$NNODES_ML \
+    --nslots=1 --nodes=$NODES_ML\
+    --cores-per-slot=$CORES_ML \
+    --gpus-per-slot=$GPUS_ML \
     --wrap sleep inf
 )
 FLUX_ML_URI=$(flux uri --remote $JOBID_ML)
+echo "[$(date +'%m%d%Y-%T')@$(hostname)] ML batch job ($JOBID_ML) \
+started with nodes=${NODES_ML}, cores=${CORES_ML}, gpus=${GPUS_ML}"
 
 JOBID_CONTAINERS=$(
     flux mini batch --job-name="ams-containers" \
     --output="ams-containers-{{id}}.log" \
-    --nslots=1 --cores-per-slot=1 --nodes=$NNODES_CONTAINERS \
+    --nslots=1 --nodes=$NODES_CONTAINERS \
+    --cores-per-slot=$CORES_CONTAINERS \
+    --gpus-per-slot=$GPUS_CONTAINERS \
     --wrap sleep inf
 )
 FLUX_CONTAINERS_URI=$(flux uri --remote $JOBID_CONTAINERS)
+echo "[$(date +'%m%d%Y-%T')@$(hostname)] Containers batch job ($JOBID_CONTAINERS) \
+started with nodes=${NODES_CONTAINERS}, cores=${CORES_CONTAINERS}, gpus=${GPUS_CONTAINERS}"
 
 # Add all URIs to existing AMS JSON file
 AMS_JSON_BCK=${AMS_JSON}.bck
 cp -f $AMS_JSON $AMS_JSON_BCK
 jq '. += {flux:{}}' $AMS_JSON > $AMS_JSON_BCK && cp $AMS_JSON_BCK $AMS_JSON
-jq --arg flux_uri "$FLUX_URI" '.flux += {"FLUX_URI":$flux_uri}' $AMS_JSON > $AMS_JSON_BCK && cp $AMS_JSON_BCK $AMS_JSON
-jq --arg flux_uri "$FLUX_PHYSICS_URI" '.flux += {"FLUX_PHYSICS_URI":$flux_uri}' $AMS_JSON > $AMS_JSON_BCK && cp $AMS_JSON_BCK $AMS_JSON
-jq --arg flux_uri "$FLUX_ML_URI" '.flux += {"FLUX_ML_URI":$flux_uri}' $AMS_JSON > $AMS_JSON_BCK && cp $AMS_JSON_BCK $AMS_JSON
-jq --arg flux_uri "$FLUX_CONTAINERS_URI" '.flux += {"FLUX_CONTAINERS_URI":$flux_uri}' $AMS_JSON_BCK > $AMS_JSON && cp $AMS_JSON_BCK $AMS_JSON
+jq --arg flux_uri "$FLUX_URI" '.flux += {"global_uri":$flux_uri}' $AMS_JSON > $AMS_JSON_BCK && cp $AMS_JSON_BCK $AMS_JSON
+jq --arg flux_uri "$FLUX_PHYSICS_URI" '.flux += {"physics_uri":$flux_uri}' $AMS_JSON > $AMS_JSON_BCK && cp $AMS_JSON_BCK $AMS_JSON
+jq --arg flux_uri "$FLUX_ML_URI" '.flux += {"ml_uri":$flux_uri}' $AMS_JSON > $AMS_JSON_BCK && cp $AMS_JSON_BCK $AMS_JSON
+jq --arg flux_uri "$FLUX_CONTAINERS_URI" '.flux += {"container_uri":$flux_uri}' $AMS_JSON_BCK > $AMS_JSON && cp $AMS_JSON_BCK $AMS_JSON
 
 if [[ $? -ne 0 ]]; then
   mv -f $AMS_JSON_BCK $AMS_JSON
