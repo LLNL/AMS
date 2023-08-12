@@ -181,7 +181,7 @@ jq '. += {flux:{}}' $AMS_JSON > $AMS_JSON_BCK && cp $AMS_JSON_BCK $AMS_JSON
 jq --arg flux_uri "$FLUX_URI" '.flux += {"global_uri":$flux_uri}' $AMS_JSON > $AMS_JSON_BCK && cp $AMS_JSON_BCK $AMS_JSON
 jq --arg flux_uri "$FLUX_PHYSICS_URI" '.flux += {"physics_uri":$flux_uri}' $AMS_JSON > $AMS_JSON_BCK && cp $AMS_JSON_BCK $AMS_JSON
 jq --arg flux_uri "$FLUX_ML_URI" '.flux += {"ml_uri":$flux_uri}' $AMS_JSON > $AMS_JSON_BCK && cp $AMS_JSON_BCK $AMS_JSON
-jq --arg flux_uri "$FLUX_CONTAINERS_URI" '.flux += {"container_uri":$flux_uri}' $AMS_JSON_BCK > $AMS_JSON && cp $AMS_JSON_BCK $AMS_JSON
+jq --arg flux_uri "$FLUX_CONTAINERS_URI" '.flux += {"container_uri":$flux_uri}' $AMS_JSON > $AMS_JSON && cp $AMS_JSON_BCK $AMS_JSON
 
 # We move the file only if jq is sucessful otherwise jq will likey erase the original file
 if [[ $? -ne 0 ]]; then
