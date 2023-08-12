@@ -36,14 +36,6 @@ echo "[$(date +'%m%d%Y-%T')@$(hostname)] flux = $(which flux)"
 echo "[$(date +'%m%d%Y-%T')@$(hostname)] flux version"
 flux version
 
-# To use module command we must source this file
-# Those options are needed on IBM machines (CORAL)
-# Documented: https://flux-framework.readthedocs.io/en/latest/tutorials/lab/coral.html
-source /etc/profile.d/z00_lmod.sh
-module use /usr/tce/modulefiles/Core
-module use /usr/global/tools/flux/blueos_3_ppc64le_ib/modulefiles
-module load pmi-shim
-
 # We create a Flux wrapper around sleep on the fly to get the main Flux URI
 FLUX_SLEEP_WRAPPER="./temp-flux.sh"
 cat << 'EOF' > $FLUX_SLEEP_WRAPPER
@@ -53,10 +45,29 @@ sleep inf
 EOF
 chmod u+x $FLUX_SLEEP_WRAPPER
 
-PMIX_MCA_gds="^ds12,ds21" \
+MACHINE=$(echo $HOSTNAME | sed -e 's/[0-9]*$//')
+if [[ "$MACHINE" == "lassen" ]] ; then
+  # To use module command we must source this file
+  # Those options are needed on IBM machines (CORAL)
+  # Documented: https://flux-framework.readthedocs.io/en/latest/tutorials/lab/coral.html
+  source /etc/profile.d/z00_lmod.sh
+  module use /usr/tce/modulefiles/Core
+  module use /usr/global/tools/flux/blueos_3_ppc64le_ib/modulefiles
+  module load pmi-shim
+
+  PMIX_MCA_gds="^ds12,ds21" \
     jsrun -a 1 -c ALL_CPUS -g ALL_GPUS -n ${FLUX_NODES} \
-    --bind=none --smpiargs="-disable_gpu_hooks" \
-    flux start -o,-S,log-filename=$FLUX_LOG -v $FLUX_SLEEP_WRAPPER $FLUX_SERVER &
+      --bind=none --smpiargs="-disable_gpu_hooks" \
+      flux start -o,-S,log-filename=$FLUX_LOG -v $FLUX_SLEEP_WRAPPER $FLUX_SERVER &
+    
+elif [[ "$MACHINE" == "pascal" || "$MACHINE" == "ruby" ]] ; then
+    srun -n ${FLUX_NODES} -N ${FLUX_NODES} --pty --mpi=none --mpibind=off \
+      flux start -o,-S,log-filename=$FLUX_LOG -v $FLUX_SLEEP_WRAPPER $FLUX_SERVER &
+else
+  echo "[$(date +'%m%d%Y-%T')@$(hostname)] machine $MACHINE is not supported at the moment."
+  exit 1
+fi
+
 echo ""
 
 # ------------------------------------------------------------------------------
@@ -109,6 +120,9 @@ if ! [[ $GPUS_PHYSICS =~ $re && $GPUS_ML =~ $re && $CORES_CONTAINERS =~ $re ]] ;
 fi
 
 # Partition resources for physics, ML and containers (RabbitMQ, filtering)
+# TODO: Here we could (should?) use "flux alloc --bg options" instead of batch
+# but flux alloc --bg is only avalable with the recent flux releases
+# TODO: move  to flux alloc
 JOBID_PHYSICS=$(
     flux mini batch --job-name="ams-physics" \
     --output="ams-physics-{{id}}.log" \
@@ -117,9 +131,14 @@ JOBID_PHYSICS=$(
     --gpus-per-slot=$GPUS_PHYSICS \
     --wrap sleep inf
 )
-FLUX_PHYSICS_URI=$(flux uri --remote $JOBID_PHYSICS)
-echo "[$(date +'%m%d%Y-%T')@$(hostname)] Physics batch job ($JOBID_PHYSICS) \
-started with nodes=${NODES_PHYSICS}, cores=${CORES_PHYSICS}, gpus=${GPUS_PHYSICS}"
+if [[ "$(flux jobs --no-header -o '{status}' $JOBID_PHYSICS)" == "RUN" ]]; then
+  FLUX_PHYSICS_URI=$(flux uri --remote $JOBID_PHYSICS)
+  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Physics batch job ($JOBID_PHYSICS) \
+  started with nodes=${NODES_PHYSICS}, cores=${CORES_PHYSICS}, gpus=${GPUS_PHYSICS}"
+else
+  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Failed to launch physics batch job ($JOBID_PHYSICS)"
+  exit 1
+fi
 
 JOBID_ML=$(
     flux mini batch --job-name="ams-ml" \
@@ -129,9 +148,14 @@ JOBID_ML=$(
     --gpus-per-slot=$GPUS_ML \
     --wrap sleep inf
 )
-FLUX_ML_URI=$(flux uri --remote $JOBID_ML)
-echo "[$(date +'%m%d%Y-%T')@$(hostname)] ML batch job ($JOBID_ML) \
-started with nodes=${NODES_ML}, cores=${CORES_ML}, gpus=${GPUS_ML}"
+if [[ "$(flux jobs --no-header -o '{status}' $JOBID_ML)" == "RUN" ]]; then
+  FLUX_ML_URI=$(flux uri --remote $JOBID_ML)
+  echo "[$(date +'%m%d%Y-%T')@$(hostname)] ML batch job ($JOBID_ML) \
+  started with nodes=${NODES_ML}, cores=${CORES_ML}, gpus=${GPUS_ML}"
+else
+  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Failed to launch ML batch job ($JOBID_ML)"
+  exit 1
+fi
 
 JOBID_CONTAINERS=$(
     flux mini batch --job-name="ams-containers" \
@@ -141,9 +165,14 @@ JOBID_CONTAINERS=$(
     --gpus-per-slot=$GPUS_CONTAINERS \
     --wrap sleep inf
 )
-FLUX_CONTAINERS_URI=$(flux uri --remote $JOBID_CONTAINERS)
-echo "[$(date +'%m%d%Y-%T')@$(hostname)] Containers batch job ($JOBID_CONTAINERS) \
-started with nodes=${NODES_CONTAINERS}, cores=${CORES_CONTAINERS}, gpus=${GPUS_CONTAINERS}"
+if [[ "$(flux jobs --no-header -o '{status}' $JOBID_CONTAINERS)" == "RUN" ]]; then
+  FLUX_CONTAINERS_URI=$(flux uri --remote $JOBID_CONTAINERS)
+  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Containers batch job ($JOBID_CONTAINERS) \
+  started with nodes=${NODES_CONTAINERS}, cores=${CORES_CONTAINERS}, gpus=${GPUS_CONTAINERS}"
+else
+  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Failed to launch containers batch job ($JOBID_CONTAINERS)"
+  exit 1
+fi
 
 # Add all URIs to existing AMS JSON file
 AMS_JSON_BCK=${AMS_JSON}.bck
@@ -154,8 +183,9 @@ jq --arg flux_uri "$FLUX_PHYSICS_URI" '.flux += {"physics_uri":$flux_uri}' $AMS_
 jq --arg flux_uri "$FLUX_ML_URI" '.flux += {"ml_uri":$flux_uri}' $AMS_JSON > $AMS_JSON_BCK && cp $AMS_JSON_BCK $AMS_JSON
 jq --arg flux_uri "$FLUX_CONTAINERS_URI" '.flux += {"container_uri":$flux_uri}' $AMS_JSON_BCK > $AMS_JSON && cp $AMS_JSON_BCK $AMS_JSON
 
+# We move the file only if jq is sucessful otherwise jq will likey erase the original file
 if [[ $? -ne 0 ]]; then
-  mv -f $AMS_JSON_BCK $AMS_JSON
+  mv -f $AMS_JSON_BCK $AMS_JSON && rm -f $AMS_JSON_BCK
 fi
 
 cat $AMS_JSON
