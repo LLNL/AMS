@@ -142,9 +142,7 @@ JOBID_PHYSICS=$(
     --nslots=1 --nodes=$NODES_PHYSICS \
     --cores-per-slot=$CORES_PHYSICS \
     --gpus-per-slot=$GPUS_PHYSICS
-    # --wrap sleep inf
 )
-# sleep 3s
 
 if [[ "$(flux jobs --no-header -o '{status}' $JOBID_PHYSICS)" == "RUN" ]]; then
   FLUX_PHYSICS_URI=$(flux uri --remote $JOBID_PHYSICS)
@@ -160,9 +158,7 @@ JOBID_ML=$(
     --nslots=1 --nodes=$NODES_ML\
     --cores-per-slot=$CORES_ML \
     --gpus-per-slot=$GPUS_ML
-    # --wrap sleep inf
 )
-# sleep 3s
 
 if [[ "$(flux jobs --no-header -o '{status}' $JOBID_ML)" == "RUN" ]]; then
   FLUX_ML_URI=$(flux uri --remote $JOBID_ML)
@@ -178,9 +174,7 @@ JOBID_CONTAINERS=$(
     --nslots=1 --nodes=$NODES_CONTAINERS \
     --cores-per-slot=$CORES_CONTAINERS \
     --gpus-per-slot=$GPUS_CONTAINERS
-    # --wrap sleep inf
 )
-# sleep 3s
 
 if [[ "$(flux jobs --no-header -o '{status}' $JOBID_CONTAINERS)" == "RUN" ]]; then
   FLUX_CONTAINERS_URI=$(flux uri --remote $JOBID_CONTAINERS)
