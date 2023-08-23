@@ -31,8 +31,7 @@ unset FLUX_URI
 export LC_ALL="C"
 export FLUX_F58_FORCE_ASCII=1
 export FLUX_SSH="ssh"
-
-# CLeanup
+# Cleanup from previous runs
 rm -f $FLUX_SERVER $FLUX_LOG
 
 if ! [[ -x "$(command -v flux)" ]]; then
@@ -104,8 +103,6 @@ export FLUX_URI=$(cat $FLUX_SERVER)
 echo "[$(date +'%m%d%Y-%T')@$(hostname)] Flux launch successful with $(flux getattr size) nodes"
 echo "[$(date +'%m%d%Y-%T')@$(hostname)] You can run: export FLUX_URI=$(cat $FLUX_SERVER)"
 
-rm $FLUX_SLEEP_WRAPPER
-
 # Read configuration file with number of nodes/cores for each sub allocations
 NODES_PHYSICS=$(jq ".physics.nodes" $AMS_JSON)
 NODES_ML=$(jq ".ml.nodes" $AMS_JSON)
@@ -123,7 +120,6 @@ CORES_CONTAINERS=$(jq ".containers.cores" $AMS_JSON)
 if ! [[ $CORES_PHYSICS =~ $re && $CORES_ML =~ $re && $CORES_CONTAINERS =~ $re ]] ; then
   echo "[$(date +'%m%d%Y-%T')@$(hostname)] Error: number of cores is not an integer\
   (${CORES_PHYSICS}, ${CORES_ML}, ${CORES_CONTAINERS})"
-  exit 1
 fi
 
 GPUS_PHYSICS=$(jq ".physics.gpus" $AMS_JSON)
@@ -139,6 +135,7 @@ fi
 JOBID_PHYSICS=$(
   flux alloc --bg --job-name="ams-physics" \
     --output="ams-physics-{{id}}.log" \
+    --exclusive \
     --nslots=1 --nodes=$NODES_PHYSICS \
     --cores-per-slot=$CORES_PHYSICS \
     --gpus-per-slot=$GPUS_PHYSICS
@@ -149,12 +146,13 @@ if [[ "$(flux jobs --no-header -o '{status}' $JOBID_PHYSICS)" == "RUN" ]]; then
   echo "[$(date +'%m%d%Y-%T')@$(hostname)] Physics batch job ($JOBID_PHYSICS)\
   started with nodes=${NODES_PHYSICS}, cores=${CORES_PHYSICS}, gpus=${GPUS_PHYSICS}"
 else
-  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Warning: Failed to launch physics batch job ($JOBID_PHYSICS)"
+  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Warning: failed to launch physics batch job ($JOBID_PHYSICS)"
 fi
 
 JOBID_ML=$(
   flux alloc --bg --job-name="ams-ml" \
     --output="ams-ml-{{id}}.log" \
+    --exclusive \
     --nslots=1 --nodes=$NODES_ML\
     --cores-per-slot=$CORES_ML \
     --gpus-per-slot=$GPUS_ML
@@ -165,7 +163,7 @@ if [[ "$(flux jobs --no-header -o '{status}' $JOBID_ML)" == "RUN" ]]; then
   echo "[$(date +'%m%d%Y-%T')@$(hostname)] ML batch job ($JOBID_ML)\
   started with nodes=${NODES_ML}, cores=${CORES_ML}, gpus=${GPUS_ML}"
 else
-  echo "[$(date +'%m%d%Y-%T')@$(hostname)]  Warning: Failed to launch ML batch job ($JOBID_ML)"
+  echo "[$(date +'%m%d%Y-%T')@$(hostname)]  Warning: failed to launch ML batch job ($JOBID_ML)"
 fi
 
 JOBID_CONTAINERS=$(
@@ -197,5 +195,3 @@ jq --arg flux_uri "$FLUX_CONTAINERS_URI" '.flux += {"container_uri":$flux_uri}' 
 if [[ "$?" -ne 0 ]]; then
   mv -f $AMS_JSON_BCK $AMS_JSON && rm -f $AMS_JSON_BCK
 fi
-
-cat $AMS_JSON
