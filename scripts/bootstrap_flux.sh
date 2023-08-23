@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 usage="Usage: $(basename "$0") [#NODES] [JSON file] -- Script that bootstrap Flux on NNODES and writes Flux URIs to the JSON file."
-
 function version { echo "$@" | awk -F. '{ printf("%d%03d%03d%03d\n", $1,$2,$3,$4); }'; }
 
 # the script needs the number of nodes for flux
@@ -17,6 +16,11 @@ re='^[0-9]+$'
 if ! [[ $FLUX_NODES =~ $re ]] ; then
   echo "[$(date +'%m%d%Y-%T')@$(hostname)] ERROR: '$FLUX_NODES' is not a number."
   echo $usage  
+  exit 1
+fi
+
+if ! [[ -f "$AMS_JSON" ]]; then
+  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Error: $AMS_JSON does not exists."
   exit 1
 fi
 
@@ -38,11 +42,11 @@ fi
 echo "[$(date +'%m%d%Y-%T')@$(hostname)] flux = $(which flux)"
 
 flux_version=$(version $(flux version | awk '/^commands/ {print $2}'))
-MIN_VAR_FLUX=$(version ${MIN_VAR_FLUX})
+MIN_VAR_FLUX_LONG=$(version ${MIN_VAR_FLUX})
 # We need to remove leading 0 because they are interpreted as octal numbers in bash
-if [[ "${flux_version#00}" -lt "${MIN_VAR_FLUX#00}" ]]; then
-  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Error Flux $flux_version is not supported.\
-  AMS requires at least Flux $MIN_VAR_FLUX".
+if [[ "${flux_version#00}" -lt "${MIN_VAR_FLUX_LONG#00}" ]]; then
+  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Error Flux $(flux version | awk '/^commands/ {print $2}') is not supported.\
+  AMS requires flux>=${MIN_VAR_FLUX}"
   exit 1
 fi
 
@@ -132,18 +136,15 @@ if ! [[ $GPUS_PHYSICS =~ $re && $GPUS_ML =~ $re && $CORES_CONTAINERS =~ $re ]] ;
 fi
 
 # Partition resources for physics, ML and containers (RabbitMQ, filtering)
-# TODO: Here we could (should?) use "flux alloc --bg options" instead of batch
-# but flux alloc --bg is only avalable with the recent flux releases
-# TODO: move  to flux alloc
 JOBID_PHYSICS=$(
-    flux batch --job-name="ams-physics" \
+  flux alloc --bg --job-name="ams-physics" \
     --output="ams-physics-{{id}}.log" \
     --nslots=1 --nodes=$NODES_PHYSICS \
     --cores-per-slot=$CORES_PHYSICS \
-    --gpus-per-slot=$GPUS_PHYSICS \
-    --wrap sleep inf
+    --gpus-per-slot=$GPUS_PHYSICS
+    # --wrap sleep inf
 )
-sleep 3s
+# sleep 3s
 
 if [[ "$(flux jobs --no-header -o '{status}' $JOBID_PHYSICS)" == "RUN" ]]; then
   FLUX_PHYSICS_URI=$(flux uri --remote $JOBID_PHYSICS)
@@ -154,14 +155,14 @@ else
 fi
 
 JOBID_ML=$(
-    flux batch --job-name="ams-ml" \
+  flux alloc --bg --job-name="ams-ml" \
     --output="ams-ml-{{id}}.log" \
     --nslots=1 --nodes=$NODES_ML\
     --cores-per-slot=$CORES_ML \
-    --gpus-per-slot=$GPUS_ML \
-    --wrap sleep inf
+    --gpus-per-slot=$GPUS_ML
+    # --wrap sleep inf
 )
-sleep 3s
+# sleep 3s
 
 if [[ "$(flux jobs --no-header -o '{status}' $JOBID_ML)" == "RUN" ]]; then
   FLUX_ML_URI=$(flux uri --remote $JOBID_ML)
@@ -172,14 +173,14 @@ else
 fi
 
 JOBID_CONTAINERS=$(
-    flux batch --job-name="ams-containers" \
+  flux alloc --bg --job-name="ams-containers" \
     --output="ams-containers-{{id}}.log" \
     --nslots=1 --nodes=$NODES_CONTAINERS \
     --cores-per-slot=$CORES_CONTAINERS \
-    --gpus-per-slot=$GPUS_CONTAINERS \
-    --wrap sleep inf
+    --gpus-per-slot=$GPUS_CONTAINERS
+    # --wrap sleep inf
 )
-sleep 3s
+# sleep 3s
 
 if [[ "$(flux jobs --no-header -o '{status}' $JOBID_CONTAINERS)" == "RUN" ]]; then
   FLUX_CONTAINERS_URI=$(flux uri --remote $JOBID_CONTAINERS)
