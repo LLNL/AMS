@@ -100,8 +100,14 @@ while [ ! -f $FLUX_SERVER ]; do
 done
 
 export FLUX_URI=$(cat $FLUX_SERVER)
-echo "[$(date +'%m%d%Y-%T')@$(hostname)] Flux launch successful with $(flux getattr size) nodes"
 echo "[$(date +'%m%d%Y-%T')@$(hostname)] You can run: export FLUX_URI=$(cat $FLUX_SERVER)"
+
+if [[ "$(flux getattr size)" -eq "${FLUX_NODES}" ]]; then
+  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Flux launch successful with $(flux getattr size) nodes"
+else
+  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Error: Requested nodes=${FLUX_NODES} but Flux allocation size=$(flux getattr size)"
+  exit 1
+fi
 
 # Read configuration file with number of nodes/cores for each sub allocations
 NODES_PHYSICS=$(jq ".physics.nodes" $AMS_JSON)
