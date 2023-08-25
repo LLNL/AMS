@@ -10,7 +10,7 @@ if ! [[ -f "$AMS_JSON" ]]; then
 fi
 
 # Flux-core Minimum version required by AMS (TODO: we should move that config file)
-MIN_VAR_FLUX="0.48.0"
+MIN_VAR_FLUX="0.45.0"
 export LC_ALL="C"
 export FLUX_F58_FORCE_ASCII=1
 export FLUX_SSH="ssh"
