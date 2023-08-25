@@ -10,7 +10,7 @@ AMS_JSON="$2"
 FLUX_SERVER="ams-uri.log"
 FLUX_LOG="ams-flux.log"
 # Flux-core Minimum version required by AMS
-MIN_VAR_FLUX="0.48.0"
+MIN_VAR_FLUX="0.45.0"
 
 re='^[0-9]+$'
 if ! [[ $FLUX_NODES =~ $re ]] ; then
@@ -53,7 +53,7 @@ echo "[$(date +'%m%d%Y-%T')@$(hostname)] flux version"
 flux version
 
 # We create a Flux wrapper around sleep on the fly to get the main Flux URI
-FLUX_SLEEP_WRAPPER="./temp-flux.sh"
+FLUX_SLEEP_WRAPPER="./$(mktemp flux-wrapper.XXXXXX).sh"
 cat << 'EOF' > $FLUX_SLEEP_WRAPPER
 #!/usr/bin/env bash
 echo "ssh://$(hostname)$(flux getattr local-uri | sed -e 's!local://!!')" > "$1"
@@ -138,16 +138,20 @@ if ! [[ $GPUS_PHYSICS =~ $re && $GPUS_ML =~ $re && $CORES_CONTAINERS =~ $re ]] ;
 fi
 
 # Partition resources for physics, ML and containers (RabbitMQ, filtering)
+# NOTE: with more recent Flux (>=0.46), we could use flux alloc --bg instead
 JOBID_PHYSICS=$(
-  flux alloc --bg --job-name="ams-physics" \
+  flux mini batch --job-name="ams-physics" \
     --output="ams-physics-{{id}}.log" \
     --exclusive \
     --nslots=1 --nodes=$NODES_PHYSICS \
     --cores-per-slot=$CORES_PHYSICS \
-    --gpus-per-slot=$GPUS_PHYSICS
+    --gpus-per-slot=$GPUS_PHYSICS \
+    --wrap sleep inf
 )
+sleep 2s
 
-if [[ "$(flux jobs --no-header -o '{status}' $JOBID_PHYSICS)" == "RUN" ]]; then
+# NOTE: with more recent versions of Flux, instead of sed here we could use flux jobs --no-header
+if [[ "$(flux jobs -o '{status}' $JOBID_PHYSICS | sed -n '1!p')" == "RUN" ]]; then
   FLUX_PHYSICS_URI=$(flux uri --remote $JOBID_PHYSICS)
   echo "[$(date +'%m%d%Y-%T')@$(hostname)] Physics batch job ($JOBID_PHYSICS)\
   started with nodes=${NODES_PHYSICS}, cores=${CORES_PHYSICS}, gpus=${GPUS_PHYSICS}"
@@ -156,15 +160,17 @@ else
 fi
 
 JOBID_ML=$(
-  flux alloc --bg --job-name="ams-ml" \
+  flux mini batch --job-name="ams-ml" \
     --output="ams-ml-{{id}}.log" \
     --exclusive \
     --nslots=1 --nodes=$NODES_ML\
     --cores-per-slot=$CORES_ML \
-    --gpus-per-slot=$GPUS_ML
+    --gpus-per-slot=$GPUS_ML \
+    --wrap sleep inf
 )
+sleep 2s
 
-if [[ "$(flux jobs --no-header -o '{status}' $JOBID_ML)" == "RUN" ]]; then
+if [[ "$(flux jobs -o '{status}' $JOBID_ML | sed -n '1!p')" == "RUN" ]]; then
   FLUX_ML_URI=$(flux uri --remote $JOBID_ML)
   echo "[$(date +'%m%d%Y-%T')@$(hostname)] ML batch job ($JOBID_ML)\
   started with nodes=${NODES_ML}, cores=${CORES_ML}, gpus=${GPUS_ML}"
@@ -173,14 +179,16 @@ else
 fi
 
 JOBID_CONTAINERS=$(
-  flux alloc --bg --job-name="ams-containers" \
+  flux mini batch --job-name="ams-containers" \
     --output="ams-containers-{{id}}.log" \
     --nslots=1 --nodes=$NODES_CONTAINERS \
     --cores-per-slot=$CORES_CONTAINERS \
-    --gpus-per-slot=$GPUS_CONTAINERS
+    --gpus-per-slot=$GPUS_CONTAINERS \
+    --wrap sleep inf
 )
+sleep 2s
 
-if [[ "$(flux jobs --no-header -o '{status}' $JOBID_CONTAINERS)" == "RUN" ]]; then
+if [[ "$(flux jobs -o '{status}' $JOBID_CONTAINERS | sed -n '1!p')" == "RUN" ]]; then
   FLUX_CONTAINERS_URI=$(flux uri --remote $JOBID_CONTAINERS)
   echo "[$(date +'%m%d%Y-%T')@$(hostname)] Containers batch job ($JOBID_CONTAINERS)\
   started with nodes=${NODES_CONTAINERS}, cores=${CORES_CONTAINERS}, gpus=${GPUS_CONTAINERS}"
