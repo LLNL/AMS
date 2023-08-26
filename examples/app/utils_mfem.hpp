@@ -42,7 +42,7 @@ using dt3 = mfem::DeviceTensor<3, T>;
 
 
 template <typename Tin, typename Tout>
-PERFFASPECT()
+__attribute__((annotate("@critical_path(pointcut='around')")))
 static inline void pack_ij(const int k,
                            const int sz_i,
                            const int sz_sparse_j,
@@ -64,7 +64,7 @@ static inline void pack_ij(const int k,
 }
 
 template <typename Tin, typename Tout>
-PERFFASPECT()
+__attribute__((annotate("@critical_path(pointcut='around')")))
 static inline void unpack_ij(const int k,
                              const int sz_i,
                              const int sz_sparse_j,
