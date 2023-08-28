@@ -5,7 +5,7 @@
 
 function (ADDTEST binary_name src_file test_name)
   add_executable(${binary_name} ${src_file})
-  target_include_directories(${binary_name} PRIVATE "${PROJECT_SOURCE_DIR}/src" umpire ${caliper_INCLUDE_DIR} ${MPI_INCLUDE_PATH})
+  target_include_directories(${binary_name} PRIVATE "${PROJECT_SOURCE_DIR}/src/AMSlib" umpire ${caliper_INCLUDE_DIR} ${MPI_INCLUDE_PATH})
   target_link_directories(${binary_name} PRIVATE ${AMS_APP_LIB_DIRS})
   target_link_libraries(${binary_name} PRIVATE AMS umpire MPI::MPI_CXX)
 

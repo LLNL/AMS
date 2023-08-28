@@ -43,6 +43,7 @@ option(WITH_HDF5           "Use HDF5 as a database back end" OFF)
 option(WITH_RMQ            "Use RabbitMQ as a database back end (require a reachable and running RabbitMQ server service)" OFF)
 option(WITH_AMS_DEBUG      "Enable verbose messages" OFF)
 option(WITH_PERFFLOWASPECT "Use PerfFlowAspect for Profiling" OFF)
+option(WITH_WORKFLOW       "Install python drivers used by the outer workflow" OFF)
 option(BUILD_SHARED_LIBS "Build using shared libraries" ON)
 
 if (WITH_MPI)
