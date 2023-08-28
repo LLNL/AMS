@@ -3,8 +3,11 @@
 #
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-add_subdirectory(AMSlib)
 
-if (WITH_WORKFLOW)
-  add_subdirectory(AMSWorkflow)
-endif()
+import argparse
+
+def main():
+    print('Hello from AMS-Orchestrator.py')
+
+if __name__ == '__main__':
+    main()
