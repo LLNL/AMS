@@ -40,6 +40,8 @@ USE_GPU=$(jq -r ".ams_app.use_gpu" $AMS_JSON)
 USE_DB=$(jq -r ".ams_app.use_db" $AMS_JSON)
 DBTYPE=$(jq -r ".ams_app.dbtype" $AMS_JSON)
 MPI_RANKS=$(jq -r ".ams_app.mpi_ranks" $AMS_JSON)
+# -1 for all debug messages, 0 for no debug messages
+VERBOSE=$(jq -r ".ams_app.verbose" $AMS_JSON)
 
 AMS_ARGS="-S ${ML_PATH}"
 
@@ -62,13 +64,14 @@ fi
 
 echo "[$(date +'%m%d%Y-%T')@$(hostname)] Launching AMS on ${NODES_PHYSICS} nodes"
 echo "[$(date +'%m%d%Y-%T')@$(hostname)] AMS binary         = ${EXEC}"
+echo "[$(date +'%m%d%Y-%T')@$(hostname)] AMS verbose level  = ${VERBOSE}"
 echo "[$(date +'%m%d%Y-%T')@$(hostname)] AMS Arguments      = ${AMS_ARGS}"
 echo "[$(date +'%m%d%Y-%T')@$(hostname)] MPI ranks          = ${MPI_RANKS}"
 echo "[$(date +'%m%d%Y-%T')@$(hostname)]   > Cores/rank = 1"
 echo "[$(date +'%m%d%Y-%T')@$(hostname)]   > GPUs/rank  = 1"
 
 ams_jobid=$(
-  FLUX_URI=$PHYSICS_URI flux submit \
+  LIBAMS_VERBOSITY_LEVEL=${VERBOSE} FLUX_URI=$PHYSICS_URI flux mini submit \
     --job-name="ams-app" \
     -N ${NODES_PHYSICS} -n $MPI_RANKS -c 1 -g 1 \
     -o mpi=spectrum -o cpu-affinity=per-task -o gpu-affinity=per-task \
