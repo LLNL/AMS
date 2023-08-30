@@ -5,7 +5,9 @@
 
 import sys
 import os
-from ..core.ams_rmq import RMQClient
+from ams.rmq import RMQClient
+from ams.orchestrator import AMSDaemon
+from ams.orchestrator import FluxDaemonWrapper
 
 import argparse
 
@@ -18,9 +20,9 @@ def main():
     parser.add_argument(
         "-a",
         "--action",
-        dest=action,
+        dest='action',
         choices=daemon_actions,
-        description="Decide whether to start daemon process directly or through flux wrap script",
+        help="Decide whether to start daemon process directly or through flux wrap script",
         required=True,
     )
 
