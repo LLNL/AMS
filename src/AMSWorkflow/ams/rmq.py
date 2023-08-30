@@ -42,7 +42,7 @@ class RMQClient:
         def close(self):
             self.channel.close()
 
-        def receive(self, n_msg: accum_msg = list(), int = None):
+        def receive(self, n_msg: int = None, accum_msg = list()):
             """
             Consume a message on the queue and post processing by calling the callback.
             @param n_msg The number of messages to receive.
@@ -107,7 +107,7 @@ class RMQClient:
             if self.channel and self.channel.is_open:
                 self.channel.queue_purge(self.q_name)
 
-    def __init__(self, vhost, port, user, password, cert, logger: logging.Logger = LOGGER):
+    def __init__(self, vhost, port, user, password, cert, logger: logging.Logger = None):
         # CA Cert, can be generated with (where $REMOTE_HOST and $REMOTE_PORT can be found in the JSON file):
         # openssl s_client -connect $REMOTE_HOST:$REMOTE_PORT -showcerts < /dev/null 2>/dev/null | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' rmq-pds.crt
         self.logger = logger if logger else logging.getLogger(__name__)

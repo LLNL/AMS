@@ -84,8 +84,8 @@ class FluxDaemonWrapper(Orchestrator):
             msg = channel.receive(n_msg=1).pop()
         return msg['ml_uri']
 
-    def __call__(self, application_cmd):
-        if not isinstance(application_cmd, list)
+    def __call__(self, application_cmd : list):
+        if not isinstance(application_cmd, list):
             raise TypeError('StartDaemon requires application_cmd as a list')
 
         with RMQClient(self.host, self.port, self.user, self.password, self.certificate) as client:
