@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Copyright 2021-2023 Lawrence Livermore National Security, LLC and other
+# AMSLib Project Developers
+#
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 usage="Usage: $(basename "$0") [JSON file] -- Script that launch AMS based on settings defined in the JSON file."
 function version { echo "$@" | awk -F. '{ printf("%d%03d%03d%03d\n", $1,$2,$3,$4); }'; }
