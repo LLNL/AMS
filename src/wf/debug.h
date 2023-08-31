@@ -29,6 +29,9 @@ enum AMSVerbosity{
   AMSDEBUG = 0x008,
 };
 
+
+void memUsage(double& vm_usage, double& resident_set);
+
 inline std::atomic<uint32_t> &getInfoLevelInternal() {
   static std::atomic<uint32_t> InfoLevel;
   static std::once_flag Flag{};
@@ -92,6 +95,13 @@ inline uint32_t getVerbosityLevel() { return getInfoLevelInternal().load() | AMS
 #define DBG(id, ...)                                                          \
   CDEBUG(id, true, __VA_ARGS__)
 
+#define REPORT_MEM_USAGE(id, phase)                                                \
+  do {                                                                             \
+    double vm, rs;                                                                 \
+    memUsage(vm, rs);                                                              \
+    DBG(id, "Memory usage at %s is VM:%g RS:%g", phase, vm, rs);                  \
+  } while (0);
+
 #else // LIBAMS_VERBOSE is disabled
 #define CWARNING(id, condition, ...)
 
@@ -104,6 +114,7 @@ inline uint32_t getVerbosityLevel() { return getInfoLevelInternal().load() | AMS
 #define CDEBUG(id, condition, ...)
 
 #define DBG(id, ...)
+
 
 #endif // LIBAMS_VERBOSE
 

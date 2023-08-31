@@ -18,7 +18,6 @@
 
 #include "wf/debug.h"
 
-
 //! ----------------------------------------------------------------------------
 //! An implementation for a surrogate model
 //! ----------------------------------------------------------------------------
@@ -151,8 +150,11 @@ PERFFASPECT()
                         const TypeInValue** inputs,
                         TypeInValue** outputs)
   {
+    //torch::NoGradGuard no_grad;
+    c10::InferenceMode guard(true);
     auto input = arrayToTensor(num_elements, num_in, inputs);
-    at::Tensor output = module.forward({input}).toTensor();
+    input.set_requires_grad(false);
+    at::Tensor output = module.forward({input}).toTensor().detach();
 
     DBG(Surrogate, "Evaluate surrogate model (%ld, %ld) -> (%ld, %ld)",
         num_elements, num_in, num_elements, num_out);
