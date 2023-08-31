@@ -298,6 +298,8 @@ public:
     std::vector<const FPTypeValue *> origInputs(inputs, inputs + inputDim);
     std::vector<FPTypeValue *> origOutputs(outputs, outputs + outputDim);
 
+    REPORT_MEM_USAGE(Workflow, "Start")
+
     if ( surrogate == nullptr ){
       FPTypeValue **tmpInputs = const_cast<FPTypeValue**>(inputs);
 
@@ -429,6 +431,7 @@ public:
         "using physics out of the %ld items (%.2f)",
         packedElements, totalElements, (float) (packedElements) / float( totalElements))
 
+    REPORT_MEM_USAGE(Workflow, "End")
   }
 };
 
