@@ -5,7 +5,68 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 usage="Usage: $(basename "$0") [#NODES] [JSON file] -- Script that bootstrap Flux on NNODES and writes Flux URIs to the JSON file."
-function version { echo "$@" | awk -F. '{ printf("%d%03d%03d%03d\n", $1,$2,$3,$4); }'; }
+
+function version() {
+  echo "$@" | awk -F. '{ printf("%d%03d%03d%03d\n", $1,$2,$3,$4); }';
+}
+
+# Check if the allocation has the right size
+# args:
+#   - $1 : number of nodes requested for Flux
+function check_main_allocation() {
+  if [[ "$(flux getattr size)" -eq "$1" ]]; then
+    echo "[$(date +'%m%d%Y-%T')@$(hostname)] Flux launch successful with $(flux getattr size) nodes"
+  else
+    echo "[$(date +'%m%d%Y-%T')@$(hostname)] Error: Requested nodes=$1 but Flux allocation size=$(flux getattr size)"
+    exit 1
+  fi
+}
+
+# Check if the 3 inputs are integers
+function check_input_integers() {
+  re='^[0-9]+$'
+  if ! [[ $1 =~ $re && $2 =~ $re && $3 =~ $re ]] ; then
+    echo "[$(date +'%m%d%Y-%T')@$(hostname)] Error: number of nodes is not an integer ($1, $2, $3)"
+    exit 1
+  fi
+}
+
+# Check if an allocation is running and if yes set the second parameter to the URI
+#   - $1 : Flux Job ID
+#   - $2 : the resulting URI
+function check_allocation_running() {
+  local JOBID="$1"
+  local _result=$2
+  local temp_uri=''
+  # NOTE: with more recent versions of Flux, instead of sed here we could use flux jobs --no-header
+  if [[ "$(flux jobs -o '{status}' $JOBID | sed -n '1!p')" == "RUN" ]]; then
+    echo "[$(date +'%m%d%Y-%T')@$(hostname)] Job $JOBID is running"
+    temp_uri=$(flux uri --remote $JOBID)
+  else
+    echo "[$(date +'%m%d%Y-%T')@$(hostname)] Warning: failed to launch job ($JOBID)"
+  fi
+  eval $_result="'$temp_uri'"
+}
+
+# Wait for a file to be created
+#   - $1 : the file
+#   - $2 : Max number of retry (one retry every 5 seconds)
+function wait_for_file() {
+  local FLUX_SERVER="$1"
+  local EXIT_COUNTER=0
+  local MAX_COUNTER="$2"
+  while [ ! -f $FLUX_SERVER ]; do
+    sleep 5s
+    echo "[$(date +'%m%d%Y-%T')@$(hostname)] $FLUX_SERVER does not exist yet."
+    exit_counter=$((EXIT_COUNTER + 1))
+    if [ "$EXIT_COUNTER" -eq "$MAX_COUNTER" ]; then
+      echo "[$(date +'%m%d%Y-%T')@$(hostname)] Timeout: Failed to find file (${FLUX_SERVER})."
+      exit 1
+    fi
+  done
+}
+
+# ------------------------------------------------------------------------------
 
 # the script needs the number of nodes for flux
 FLUX_NODES="$1"
@@ -88,58 +149,28 @@ else
 fi
 
 echo ""
-
-# ------------------------------------------------------------------------------
 # now, wait for the flux info file
-EXIT_COUNTER=0
-MAX_COUNTER=20
-while [ ! -f $FLUX_SERVER ]; do
-  sleep 5s
-  echo "[$(date +'%m%d%Y-%T')@$(hostname)] $FLUX_SERVER does not exist yet."
-  exit_counter=$((EXIT_COUNTER + 1))
-  if [ "$EXIT_COUNTER" -eq "$MAX_COUNTER" ]; then
-    echo "[$(date +'%m%d%Y-%T')@$(hostname)] Timeout: Failed to find file (${FLUX_SERVER})."
-    exit 1
-  fi
-done
-
+# we retry 20 times (one retry every 5 seconds)
+wait_for_file $FLUX_SERVER 20
 export FLUX_URI=$(cat $FLUX_SERVER)
-echo "[$(date +'%m%d%Y-%T')@$(hostname)] You can run: export FLUX_URI=$(cat $FLUX_SERVER)"
-
-if [[ "$(flux getattr size)" -eq "${FLUX_NODES}" ]]; then
-  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Flux launch successful with $(flux getattr size) nodes"
-else
-  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Error: Requested nodes=${FLUX_NODES} but Flux allocation size=$(flux getattr size)"
-  exit 1
-fi
+echo "[$(date +'%m%d%Y-%T')@$(hostname)] Run: export FLUX_URI=$(cat $FLUX_SERVER)"
+check_main_allocation ${FLUX_NODES}
 
 # Read configuration file with number of nodes/cores for each sub allocations
 NODES_PHYSICS=$(jq ".physics.nodes" $AMS_JSON)
 NODES_ML=$(jq ".ml.nodes" $AMS_JSON)
 NODES_CONTAINERS=$(jq ".containers.nodes" $AMS_JSON)
-re='^[0-9]+$'
-if ! [[ $NODES_PHYSICS =~ $re && $NODES_ML =~ $re && $NODES_CONTAINERS =~ $re ]] ; then
-  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Error: number of nodes is not an integer\
-  (${NODES_PHYSICS}, ${NODES_ML}, ${NODES_CONTAINERS})"
-  exit 1
-fi
+check_input_integers $NODES_PHYSICS $NODES_ML $NODES_CONTAINERS 
 
 CORES_PHYSICS=$(jq ".physics.cores" $AMS_JSON)
 CORES_ML=$(jq ".ml.cores" $AMS_JSON)
 CORES_CONTAINERS=$(jq ".containers.cores" $AMS_JSON)
-if ! [[ $CORES_PHYSICS =~ $re && $CORES_ML =~ $re && $CORES_CONTAINERS =~ $re ]] ; then
-  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Error: number of cores is not an integer\
-  (${CORES_PHYSICS}, ${CORES_ML}, ${CORES_CONTAINERS})"
-fi
+check_input_integers $CORES_PHYSICS $CORES_ML $CORES_CONTAINERS 
 
 GPUS_PHYSICS=$(jq ".physics.gpus" $AMS_JSON)
 GPUS_ML=$(jq ".ml.gpus" $AMS_JSON)
 GPUS_CONTAINERS=$(jq ".containers.gpus" $AMS_JSON)
-if ! [[ $GPUS_PHYSICS =~ $re && $GPUS_ML =~ $re && $CORES_CONTAINERS =~ $re ]] ; then
-  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Error: number of GPUs is not an integer\
-  (${GPUS_PHYSICS}, ${GPUS_ML}, ${GPUS_CONTAINERS})"
-  exit 1
-fi
+check_input_integers $GPUS_PHYSICS $GPUS_ML $GPUS_CONTAINERS 
 
 # Partition resources for physics, ML and containers (RabbitMQ, filtering)
 # NOTE: with more recent Flux (>=0.46), we could use flux alloc --bg instead
@@ -153,15 +184,7 @@ JOBID_PHYSICS=$(
     --wrap sleep inf
 )
 sleep 2s
-
-# NOTE: with more recent versions of Flux, instead of sed here we could use flux jobs --no-header
-if [[ "$(flux jobs -o '{status}' $JOBID_PHYSICS | sed -n '1!p')" == "RUN" ]]; then
-  FLUX_PHYSICS_URI=$(flux uri --remote $JOBID_PHYSICS)
-  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Physics batch job ($JOBID_PHYSICS)\
-  started with nodes=${NODES_PHYSICS}, cores=${CORES_PHYSICS}, gpus=${GPUS_PHYSICS}"
-else
-  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Warning: failed to launch physics batch job ($JOBID_PHYSICS)"
-fi
+check_allocation_running $JOBID_PHYSICS FLUX_PHYSICS_URI
 
 JOBID_ML=$(
   flux mini batch --job-name="ams-ml" \
@@ -173,14 +196,7 @@ JOBID_ML=$(
     --wrap sleep inf
 )
 sleep 2s
-
-if [[ "$(flux jobs -o '{status}' $JOBID_ML | sed -n '1!p')" == "RUN" ]]; then
-  FLUX_ML_URI=$(flux uri --remote $JOBID_ML)
-  echo "[$(date +'%m%d%Y-%T')@$(hostname)] ML batch job ($JOBID_ML)\
-  started with nodes=${NODES_ML}, cores=${CORES_ML}, gpus=${GPUS_ML}"
-else
-  echo "[$(date +'%m%d%Y-%T')@$(hostname)]  Warning: failed to launch ML batch job ($JOBID_ML)"
-fi
+check_allocation_running $JOBID_ML FLUX_ML_URI
 
 JOBID_CONTAINERS=$(
   flux mini batch --job-name="ams-containers" \
@@ -191,14 +207,7 @@ JOBID_CONTAINERS=$(
     --wrap sleep inf
 )
 sleep 2s
-
-if [[ "$(flux jobs -o '{status}' $JOBID_CONTAINERS | sed -n '1!p')" == "RUN" ]]; then
-  FLUX_CONTAINERS_URI=$(flux uri --remote $JOBID_CONTAINERS)
-  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Containers batch job ($JOBID_CONTAINERS)\
-  started with nodes=${NODES_CONTAINERS}, cores=${CORES_CONTAINERS}, gpus=${GPUS_CONTAINERS}"
-else
-  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Warning: Failed to launch containers batch job ($JOBID_CONTAINERS)"
-fi
+check_allocation_running $JOBID_CONTAINERS FLUX_CONTAINERS_URI
 
 # Add all URIs to existing AMS JSON file
 AMS_JSON_BCK=${AMS_JSON}.bck
