@@ -67,6 +67,13 @@ function wait_for_file() {
 }
 
 # ------------------------------------------------------------------------------
+source /etc/profile.d/z00_lmod.sh
+# source /g/g92/pottier1/ams/AMS-flux-support/setup/mysetup_env.sh
+# source /usr/WS1/mummiusr/mummi-dev-spack/spack/0.19/share/spack/setup-env.sh
+source /usr/workspace/pottier1/myspack/spack/dev/share/spack/setup-env.sh 
+spack load flux-sched arch=$(spack arch)
+spack unload flux-core arch=$(spack arch)
+spack load flux-core@0.45 arch=$(spack arch)
 
 # the script needs the number of nodes for flux
 FLUX_NODES="$1"
@@ -75,7 +82,7 @@ AMS_JSON="$2"
 FLUX_SERVER="ams-uri.log"
 FLUX_LOG="ams-flux.log"
 # Flux-core Minimum version required by AMS
-MIN_VAR_FLUX="0.45.0"
+[[ -z ${MIN_VER_FLUX+z} ]] && MIN_VER_FLUX="0.45.0"
 
 re='^[0-9]+$'
 if ! [[ $FLUX_NODES =~ $re ]] ; then
@@ -106,11 +113,11 @@ fi
 echo "[$(date +'%m%d%Y-%T')@$(hostname)] flux = $(which flux)"
 
 flux_version=$(version $(flux version | awk '/^commands/ {print $2}'))
-MIN_VAR_FLUX_LONG=$(version ${MIN_VAR_FLUX})
+MIN_VER_FLUX_LONG=$(version ${MIN_VER_FLUX})
 # We need to remove leading 0 because they are interpreted as octal numbers in bash
-if [[ "${flux_version#00}" -lt "${MIN_VAR_FLUX_LONG#00}" ]]; then
+if [[ "${flux_version#00}" -lt "${MIN_VER_FLUX_LONG#00}" ]]; then
   echo "[$(date +'%m%d%Y-%T')@$(hostname)] Error Flux $(flux version | awk '/^commands/ {print $2}') is not supported.\
-  AMS requires flux>=${MIN_VAR_FLUX}"
+  AMS requires flux>=${MIN_VER_FLUX}"
   exit 1
 fi
 

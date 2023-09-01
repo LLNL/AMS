@@ -13,8 +13,9 @@ if ! [[ -f "$AMS_JSON" ]]; then
   exit 1
 fi
 
-# Flux-core Minimum version required by AMS (TODO: we should move that config file)
-MIN_VAR_FLUX="0.45.0"
+# Flux-core Minimum version required by AMS
+[[ -z ${MIN_VER_FLUX+z} ]] && MIN_VER_FLUX="0.45.0"
+
 export LC_ALL="C"
 export FLUX_F58_FORCE_ASCII=1
 export FLUX_SSH="ssh"
@@ -26,11 +27,11 @@ if ! [[ -x "$(command -v flux)" ]]; then
 fi
 
 flux_version=$(version $(flux version | awk '/^commands/ {print $2}'))
-MIN_VAR_FLUX_LONG=$(version ${MIN_VAR_FLUX})
+MIN_VER_FLUX_LONG=$(version ${MIN_VER_FLUX})
 # We need to remove leading 0 because they are interpreted as octal numbers in bash
-if [[ "${flux_version#00}" -lt "${MIN_VAR_FLUX_LONG#00}" ]]; then
+if [[ "${flux_version#00}" -lt "${MIN_VER_FLUX_LONG#00}" ]]; then
   echo "[$(date +'%m%d%Y-%T')@$(hostname)] Error: Flux $(flux version | awk '/^commands/ {print $2}') is not supported.\
-  AMS requires flux>=${MIN_VAR_FLUX}"
+  AMS requires flux>=${MIN_VER_FLUX}"
   exit 1
 fi
 

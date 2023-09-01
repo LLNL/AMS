@@ -6,6 +6,7 @@
 
 usage="Usage: $(basename "$0") [JSON file] [USER (optional)] -- Script that adds the JSON file as secrets in OpenShift"
 
+#TODO: Only for LC (add it somewhere as config value)
 export PATH="$PATH:/usr/global/openshift/bin/"
 
 AMS_JSON="$1"
