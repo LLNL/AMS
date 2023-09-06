@@ -17,7 +17,8 @@ class Orchestrator:
         with open(server_config_fn, "r") as fd:
             server_config = json.load(fd)
 
-        self.host = (server_config["service-vhost"],)
+        self.host = (server_config["service-host"],)
+        self.vhost = (server_config["rabbitmq-vhost"],)
         self.port = (server_config["service-port"],)
         self.user = (server_config["rabbitmq-user"],)
         self.password = server_config["rabbitmq-password"]
@@ -51,7 +52,7 @@ class AMSDaemon(Orchestrator):
     def __call__(self):
         flux_handle = flux.Flux()
 
-        with RMQClient(self.host, self.port, self.user, self.password, self.certificate) as client:
+        with RMQClient(self.host, self.port, self.vhost, self.user, self.password, self.certificate) as client:
             # We currently assume a single ML job specification
             ml_job_spec = self.getMLJobSpec(client)
 
@@ -88,7 +89,7 @@ class FluxDaemonWrapper(Orchestrator):
         if not isinstance(application_cmd, list):
             raise TypeError('StartDaemon requires application_cmd as a list')
 
-        with RMQClient(self.host, self.port, self.user, self.password, self.certificate) as client:
+        with RMQClient(self.host, self.port, self.vhost, self.user, self.password, self.certificate) as client:
             self.uri = getFluxUri(client)
 
         flux_cmd = [
