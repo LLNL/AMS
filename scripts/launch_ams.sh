@@ -63,7 +63,7 @@ $BOOTSTRAP $FLUX_NODES $AMS_JSON
 RMQ_TMP="rmq.json"
 CERT_TLS="rmq.cert"
 # This require to install the AMS python package
-AMS_BROKER_EXE="/g/g92/pottier1/ams/AMS-python/ams-lassen/bin/AMSBroker"
+AMS_BROKER_EXE="AMSBroker"
 
 # 3. We send the current UID and the Flux ML URI to the AMS daemon listening
 if [[ $USE_DB && $DBTYPE = "rmq" ]]; then
