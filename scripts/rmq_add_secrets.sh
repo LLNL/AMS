@@ -5,9 +5,21 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 usage="Usage: $(basename "$0") [JSON file] [USER (optional)] -- Script that adds the JSON file as secrets in OpenShift"
-
 #TODO: Only for LC (add it somewhere as config value)
 export PATH="$PATH:/usr/global/openshift/bin/"
+
+check_cmd() {
+  err=$($@ 2>&1)
+  if [ $? -ne 0 ]; then
+    echo "[$(date +'%m%d%Y-%T')@$(hostname)] error: $err"
+    # if [[ -x "$(command -v oc)" ]]; then
+    #   oc logout
+    # fi
+    exit 1
+  else
+    echo $err
+  fi
+}
 
 AMS_JSON="$1"
 USER="$2"
@@ -19,7 +31,7 @@ RMQ_CREDS="creds.json"
 SECRET="rabbitmq-creds"
 
 if ! [[ -f "$AMS_JSON" ]]; then
-  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Error: $AMS_JSON does not exists."
+  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Error: config file \"$AMS_JSON\" does not exists."
   exit 1
 fi
 
@@ -34,27 +46,24 @@ echo "$RMQ_CONFIG" > $RMQ_CREDS
 
 echo "[$(date +'%m%d%Y-%T')@$(hostname)] Login in ${URL}:${PORT} as ${USER}"
 oc login --insecure-skip-tls-verify=true --server=${URL}:${PORT} -u ${USER}
-echo "[$(date +'%m%d%Y-%T')@$(hostname)] Switching to project ${PROJECT_NAME}"
-oc project $PROJECT_NAME
+# Warning: Do not use function check_cmd to wrap oc login here (it will block oc login)
+if [[ "$?" -ne 0 ]]; then
+  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Error while connecting to OpenShift."
+  exit 1
+fi
+echo "[$(date +'%m%d%Y-%T')@$(hostname)] Logged in as $(oc whoami), switching to project ${PROJECT_NAME}"
+check_cmd oc project $PROJECT_NAME
 
 err=$(oc create secret generic $SECRET --from-file=$RMQ_CREDS 2>&1)
 
 if [[ "$?" -ne 0 ]]; then
-  test_err=$(echo $err | grep "already exists")
-  # Unknown error so we exit
-  if [[ "$?" -ne 0 ]]; then
-    echo "[$(date +'%m%d%Y-%T')@$(hostname)] Error while adding secret: $err"
-    exit 1
-  fi
+  check_cmd echo $err | grep "already exists"
   echo "[$(date +'%m%d%Y-%T')@$(hostname)] secret already exists, we are updating it."
-  err=$(oc delete secret $SECRET 2>&1)
-  if [[ "$?" -ne 0 ]]; then
-    echo "[$(date +'%m%d%Y-%T')@$(hostname)] Error while deleting secret: $err"
-    exit 1
-  fi
-  err=$(oc create secret generic $SECRET --from-file=$RMQ_CREDS 2>&1)
-  if [[ "$?" -ne 0 ]]; then
-    echo "[$(date +'%m%d%Y-%T')@$(hostname)] Error while adding secret: $err"
-    exit 1
-  fi
+  check_cmd oc delete secret $SECRET
+  check_cmd oc create secret generic $SECRET --from-file=$RMQ_CREDS
+else
+  check_cmd oc get secrets $SECRET
+  echo "[$(date +'%m%d%Y-%T')@$(hostname)] Added secrets successfully."
 fi
+
+# check_cmd oc logout

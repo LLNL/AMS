@@ -67,14 +67,6 @@ function wait_for_file() {
 }
 
 # ------------------------------------------------------------------------------
-source /etc/profile.d/z00_lmod.sh
-# source /g/g92/pottier1/ams/AMS-flux-support/setup/mysetup_env.sh
-# source /usr/WS1/mummiusr/mummi-dev-spack/spack/0.19/share/spack/setup-env.sh
-source /usr/workspace/pottier1/myspack/spack/dev/share/spack/setup-env.sh 
-spack load flux-sched arch=$(spack arch)
-spack unload flux-core arch=$(spack arch)
-spack load flux-core@0.45 arch=$(spack arch)
-
 # the script needs the number of nodes for flux
 FLUX_NODES="$1"
 # JSON configuration for AMS that will get updated by this script
@@ -125,7 +117,7 @@ echo "[$(date +'%m%d%Y-%T')@$(hostname)] flux version"
 flux version
 
 # We create a Flux wrapper around sleep on the fly to get the main Flux URI
-FLUX_SLEEP_WRAPPER="./$(mktemp flux-wrapper.XXXXXX).sh"
+FLUX_SLEEP_WRAPPER="./$(mktemp flux-wrapper.XXXX.sh)"
 cat << 'EOF' > $FLUX_SLEEP_WRAPPER
 #!/usr/bin/env bash
 echo "ssh://$(hostname)$(flux getattr local-uri | sed -e 's!local://!!')" > "$1"
@@ -227,6 +219,6 @@ jq --arg flux_uri "$FLUX_ML_URI" '.flux += {"ml_uri":$flux_uri}' $AMS_JSON > $AM
 jq --arg flux_uri "$FLUX_CONTAINERS_URI" '.flux += {"container_uri":$flux_uri}' $AMS_JSON > $AMS_JSON_BCK && cp $AMS_JSON_BCK $AMS_JSON
 
 # We move the file only if jq is sucessful otherwise jq will likey erase the original file
-if [[ "$?" -ne 0 ]]; then
+if [[ "$?" -eq 0 ]]; then
   mv -f $AMS_JSON_BCK $AMS_JSON && rm -f $AMS_JSON_BCK
 fi
