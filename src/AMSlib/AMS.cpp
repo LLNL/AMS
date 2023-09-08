@@ -87,7 +87,12 @@ AMSExecutor AMSCreateExecutor(const AMSConfig config)
                                      config.SPath,
                                      config.DBPath,
                                      config.dbType,
+<<<<<<< HEAD:src/AMSlib/AMS.cpp
                                      config.device,
+=======
+                                     config.physics_device,
+                                     config.ml_device,
+>>>>>>> 85c492f (Version that allows inference to take place on a different device than physics):src/AMS.cpp
                                      config.threshold,
                                      config.uqPolicy,
                                      config.nClusters,
@@ -105,7 +110,8 @@ AMSExecutor AMSCreateExecutor(const AMSConfig config)
                                     config.SPath,
                                     config.DBPath,
                                     config.dbType,
-                                    config.device,
+                                    config.physics_device,
+                                    config.ml_device,
                                     static_cast<float>(config.threshold),
                                     config.uqPolicy,
                                     config.nClusters,

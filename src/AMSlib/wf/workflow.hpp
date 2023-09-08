@@ -68,8 +68,9 @@ class AMSWorkflow
    * (world_size for MPI) */
   int wSize;
 
-  /** @brief  Location of the original application data  (CPU or GPU) */
-  AMSResourceType appDataLoc;
+  /** @brief  Location of data during simulation (CPU or GPU) */
+  AMSResourceType mlLoc;
+  AMSResourceType phLoc;
 
   /** @brief execution policy of the distributed system. Load balance or not. */
   const AMSExecPolicy ePolicy;
@@ -101,8 +102,7 @@ class AMSWorkflow
 
     std::vector<FPTypeValue *> hInputs, hOutputs;
 
-    if (appDataLoc == AMSResourceType::HOST)
-      return DB->store(num_elements, inputs, outputs);
+    if ( phLoc == AMSResourceType::HOST ) return DB->store(num_elements, inputs, outputs);
 
     // Compute number of elements that fit inside the buffer
     size_t bElements = bSize / sizeof(FPTypeValue);
@@ -150,9 +150,10 @@ public:
       : AppCall(nullptr),
         DB(nullptr),
         dbType(AMSDBType::None),
-        appDataLoc(AMSResourceType::HOST),
         ePolicy(AMSExecPolicy::UBALANCED)
   {
+   phLoc = AMSResourceType::HOST;
+   mlLoc = AMSResourceType::DEVICE;
 
 #ifdef __ENABLE_DB__
     DB = createDB<FPTypeValue>("miniApp_data.txt", dbType, 0);
@@ -165,7 +166,8 @@ public:
               char *surrogate_path,
               char *db_path,
               const AMSDBType dbType,
-              AMSResourceType appDataLoc,
+              const AMSResourceType physics_device,
+              const AMSResourceType ml_device,
               FPTypeValue threshold,
               const AMSUQPolicy uqPolicy,
               const int nClusters,
@@ -176,7 +178,8 @@ public:
         dbType(dbType),
         rId(_pId),
         wSize(_wSize),
-        appDataLoc(appDataLoc),
+        phLoc(physics_device),
+        mlLoc(ml_device),
         uqPolicy(uqPolicy),
         ePolicy(policy)
   {
@@ -194,6 +197,70 @@ public:
 
   ~AMSWorkflow() { DBG(Workflow, "Destroying Workflow Handler"); }
 
+
+  void ml_step(std::vector<const FPTypeValue*>& Inputs,
+               std::vector<FPTypeValue*>& Outputs,
+               int totalElements,
+               bool *_p_ml_acceptable) {
+    // The predicate with which we will split the data on a later step
+
+    bool *p_ml_acceptable = _p_ml_acceptable;
+    std::vector<const FPTypeValue *> tmpInputs = Inputs;
+    std::vector<FPTypeValue *> tmpOutputs = Outputs;
+    if ( phLoc != mlLoc ){
+      p_ml_acceptable = ams::ResourceManager::allocate<bool>(totalElements, mlLoc);
+
+      for (int i = 0; i < Inputs.size(); i++)
+        tmpInputs[i] =
+          ams::ResourceManager::allocate<FPTypeValue>(totalElements, mlLoc);
+      for (int i = 0; i < Outputs.size(); i++)
+        tmpOutputs[i] =
+          ams::ResourceManager::allocate<FPTypeValue>(totalElements, mlLoc);
+
+      for (int i = 0; i < Inputs.size(); i++) {
+        ResourceManager::copy( const_cast<FPTypeValue*> (Inputs[i]),
+            const_cast<FPTypeValue*>(tmpInputs[i]));
+      }
+    }
+
+    // -------------------------------------------------------------
+    // STEP 1: call the hdcache to look at input uncertainties
+    //         to decide if making a ML inference makes sense
+    // -------------------------------------------------------------
+    if (hdcache != nullptr) {
+      CALIPER(CALI_MARK_BEGIN("UQ_MODULE");)
+      hdcache->evaluate(totalElements, tmpInputs, p_ml_acceptable);
+      CALIPER(CALI_MARK_END("UQ_MODULE");)
+    }
+
+    DBG(Workflow, "Computed Predicates")
+
+    CALIPER(CALI_MARK_BEGIN("SURROGATE");)
+    // We need to call the model on all data values.
+    // Because we expect it to be faster.
+    // I guess we may need to add some policy to do this
+    DBG(Workflow, "Model exists, I am calling surrogate (for all data)");
+    surrogate->evaluate(totalElements, tmpInputs, tmpOutputs);
+    CALIPER(CALI_MARK_END("SURROGATE");)
+
+    if ( phLoc != mlLoc ){
+      // Copy out the result
+      ResourceManager::copy(p_ml_acceptable, _p_ml_acceptable);
+      ResourceManager::deallocate(p_ml_acceptable, mlLoc);
+      for (int i = 0; i < Outputs.size(); i++){
+        ResourceManager::copy(tmpOutputs[i], Outputs[i]);
+
+      // De-allocate temp data
+      for (int i = 0; i < Inputs.size(); i++)
+          ams::ResourceManager::deallocate(const_cast<FPTypeValue*>(tmpInputs[i]), mlLoc);
+      for (int i = 0; i < Outputs.size(); i++)
+          ams::ResourceManager::deallocate((tmpOutputs[i]), mlLoc);
+      ams::ResourceManager::deallocate(p_ml_acceptable, mlLoc);
+
+      }
+    }
+
+  }
 
   /** @brief This is the main entry point of AMSLib and replaces the original
    * execution path of the application.
@@ -291,7 +358,9 @@ public:
     UQModel->evaluate(totalElements, origInputs, origOutputs, p_ml_acceptable);
     CALIPER(CALI_MARK_END("UQ_MODULE");)
 
-    DBG(Workflow, "Computed Predicates")
+
+    bool *p_ml_acceptable = ams::ResourceManager::allocate<bool>(totalElements, phLoc);
+    ml_step(origInputs, origOutputs, totalElements, p_ml_acceptable);
 
     // Pointer values which store input data values
     // to be computed using the eos function.
@@ -302,8 +371,6 @@ public:
           ams::ResourceManager::allocate<FPTypeValue>(totalElements,
                                                       appDataLoc));
     }
-
-    DBG(Workflow, "Allocated input resources")
 
     bool *predicate = p_ml_acceptable;
 
@@ -328,18 +395,17 @@ public:
       void **oPtr = reinterpret_cast<void **>(packedOutputs.data());
       long lbElements = packedElements;
 
-#ifdef __ENABLE_MPI__
-      CALIPER(CALI_MARK_BEGIN("LOAD BALANCE MODULE");)
-      AMSLoadBalancer<FPTypeValue> lBalancer(
-          rId, wSize, packedElements, Comm, inputDim, outputDim, appDataLoc);
-      if (ePolicy == AMSExecPolicy::BALANCED && Comm) {
-        lBalancer.scatterInputs(packedInputs, appDataLoc);
-        iPtr = reinterpret_cast<void **>(lBalancer.inputs());
-        oPtr = reinterpret_cast<void **>(lBalancer.outputs());
-        lbElements = lBalancer.getBalancedSize();
-      }
-      CALIPER(CALI_MARK_END("LOAD BALANCE MODULE");)
-#endif
+//#ifdef __ENABLE_MPI__
+//    CALIPER(CALI_MARK_BEGIN("LOAD BALANCE MODULE");)
+//    AMSLoadBalancer<FPTypeValue> lBalancer(rId, wSize, packedElements, Comm, inputDim, outputDim, mLoc);
+//    if (ePolicy == AMSExecPolicy::BALANCED && Comm) {
+//      lBalancer.scatterInputs(packedInputs, mLoc);
+//      iPtr = reinterpret_cast<void **>(lBalancer.inputs());
+//      oPtr = reinterpret_cast<void **>(lBalancer.outputs());
+//      lbElements = lBalancer.getBalancedSize();
+//    }
+//    CALIPER(CALI_MARK_END("LOAD BALANCE MODULE");)
+//#endif
 
       // ---- 3b: call the physics module and store in the data base
       if (packedElements > 0) {
@@ -348,13 +414,13 @@ public:
         CALIPER(CALI_MARK_END("PHYSICS MODULE");)
       }
 
-#ifdef __ENABLE_MPI__
-      CALIPER(CALI_MARK_BEGIN("LOAD BALANCE MODULE");)
-      if (ePolicy == AMSExecPolicy::BALANCED && Comm) {
-        lBalancer.gatherOutputs(packedOutputs, appDataLoc);
-      }
-      CALIPER(CALI_MARK_END("LOAD BALANCE MODULE");)
-#endif
+//#ifdef __ENABLE_MPI__
+//    CALIPER(CALI_MARK_BEGIN("LOAD BALANCE MODULE");)
+//    if (ePolicy == AMSExecPolicy::BALANCED && Comm) {
+//      lBalancer.gatherOutputs(packedOutputs, mLoc);
+//    }
+//    CALIPER(CALI_MARK_END("LOAD BALANCE MODULE");)
+//#endif
     }
 
     // ---- 3c: unpack the data

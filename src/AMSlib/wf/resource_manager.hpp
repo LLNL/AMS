@@ -145,7 +145,7 @@ public:
   static void deallocate(std::vector<T*>& dPtr, AMSResourceType resource)
   {
     for (auto* I : dPtr)
-      RMAllocators[resource]->deallocate(I);
+      RMAllocators[resource]->deallocate(I, dev);
   }
 
   static void init()
