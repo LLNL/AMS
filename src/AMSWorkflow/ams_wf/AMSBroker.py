@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 # Copyright 2021-2023 Lawrence Livermore National Security, LLC and other
 # AMSLib Project Developers
 #
