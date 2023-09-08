@@ -12,6 +12,7 @@ setuptools.setup(
     install_requires = [
         'argparse',
         'pika>=1.3.0',
+        'numpy>=1.2.0'
         ],
     entry_points={
         'console_scripts': [
@@ -20,4 +21,10 @@ setuptools.setup(
             'AMSOrchestrator=ams_wf.AMSOrchestrator:main',
             'AMSTrain=ams_wf.AMSTrain:main']
     },
+    classifiers = [
+        "Development Status :: 3 - Alpha",
+        "Operating System :: POSIX :: Linux",
+        "Programming Language :: Python",
+        "Programming Language :: Python :: 3 :: Only",
+    ]
 )
