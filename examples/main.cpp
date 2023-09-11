@@ -178,6 +178,7 @@ int run(const char *device_name,
   const bool physics_use_device = ((std::strcmp(device_name, "gpu_cpu") == 0) || std::strcmp(device_name, "gpu_gpu") == 0);
   const bool ml_use_device = ((std::strcmp(device_name, "gpu_cpu") == 0) || std::strcmp(device_name, "gpu_gpu") == 0);
 
+
   AMSDBType dbType = AMSDBType::None;
   if (std::strcmp(db_type, "csv") == 0) {
     dbType = AMSDBType::CSV;
@@ -272,7 +273,13 @@ int run(const char *device_name,
   mfem::Device::SetMemoryTypes(mfem::MemoryType::HOST_UMPIRE,
                                mfem::MemoryType::DEVICE_UMPIRE);
 
-  mfem::Device device(device_name);
+  mfem::Device device;
+
+  if ( physics_use_device )
+    device.Configure("cuda");
+  else
+    device.Configure("cpu");
+
   std::cout << std::endl;
   device.Print();
   std::cout << std::endl;
