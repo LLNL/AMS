@@ -200,7 +200,7 @@ public:
     if (!fd.is_open()) {
       std::cerr << "Cannot open db file: " << this->fn << std::endl;
     }
-    DBG(DB, "DB Type: %s", type())
+    DBG(DB, "DB Type: %s", type().c_str())
   }
 
   /**

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 # Copyright 2021-2023 Lawrence Livermore National Security, LLC and other
 # AMSLib Project Developers
 #
@@ -22,8 +21,8 @@ class DBInterface(ABC):
     @classmethod
     def __subclasshook__(cls, subclass):
         """
-        Ensure subclass implement all the abstrac method 
-        defined in the interface. Errors will be raised 
+        Ensure subclass implement all the abstract method
+        defined in the interface. Errors will be raised
         if all methods aren't overridden.
         """
         return (hasattr(subclass, "__str__") and
@@ -44,7 +43,7 @@ class DBInterface(ABC):
     def __repr__(self) -> str:
         """ Return a string representation of the broker """
         return self.__str__()
-    
+
     @abstractmethod
     def open(self):
         """ Connect to the DB (or open file if file-based DB) """
@@ -54,11 +53,11 @@ class DBInterface(ABC):
     def close(self):
         """ Close DB """
         raise NotImplementedError
-    
+
     @abstractmethod
     def store(self, inputs, outputs) -> int:
         """
-        Store the two arrays using a given backend 
+        Store the two arrays using a given backend
         Return the number of characters written
         """
         raise NotImplementedError
