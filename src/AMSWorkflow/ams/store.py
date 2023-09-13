@@ -11,7 +11,7 @@ from pathlib import Path
 
 class AMSDataStore:
     data_schema = {"problem": str, "version": int}
-    valid_entries = { "data", "models", "candidates" }
+    valid_entries = {"data", "models", "candidates"}
 
     def __init__(self, store_path, store_name, name, delete_all_contents=False):
         self._delete_contents = delete_all_contents
@@ -35,15 +35,15 @@ class AMSDataStore:
 
     def _get_or_create_dataset(self, ensemble, _name, version):
         dsets = ensemble.find_datasets(name=_name)
-        versions = { d.version : d for d in dsets }
+        versions = {d.version: d for d in dsets}
 
         if version is None:
-            version = 0 if not versions else max(versions.keys()) +1
+            version = 0 if not versions else max(versions.keys()) + 1
 
         if version in versions:
             return versions[version]
 
-        ds = ensemble.create(name=_name, metadata = { 'version' : version} )
+        ds = ensemble.create(name=_name, metadata={"version": version})
         print(ds)
         return ds
 
@@ -54,11 +54,11 @@ class AMSDataStore:
 
         return ensemble
 
-    def _add_entry(self, entry, mime_type, data_files=list(), version=None, metadata = dict()):
+    def _add_entry(self, entry, mime_type, data_files=list(), version=None, metadata=dict()):
         if not self.is_open():
             raise RuntimeError("Trying to add data in a closed database")
 
-        data_files = [ str(Path(d).absolute()) for d in data_files ]
+        data_files = [str(Path(d).absolute()) for d in data_files]
 
         ensemble = self._get_or_create_ensebmle()
         metadata["date"] = str(datetime.datetime.now())
@@ -67,20 +67,20 @@ class AMSDataStore:
         for f in data_files:
             ds.associate(f, mime_type=mime_type, metadata=metadata, absolute_path=True)
 
-    def add_data(self, data_files=list(), version=None, metadata = dict()):
+    def add_data(self, data_files=list(), version=None, metadata=dict()):
         self._add_entry("data", "hdf5", data_files, version, metadata)
 
-    def add_model(self, model, version=None, metadata = dict()):
+    def add_model(self, model, version=None, metadata=dict()):
         self._add_entry("models", "zip", [model], version, metadata)
 
-    def add_candidates(self, data_files=list(), version=None, metadata = dict()):
+    def add_candidates(self, data_files=list(), version=None, metadata=dict()):
         self._add_entry("candidates", "hdf5", data_files, version, metadata)
 
     def _remove_entry_file(self, entry, data_files=list(), delete_files=False):
         if not data_files:
             return
 
-        data_files = [ str(Path(d).absolute()) for d in data_files ]
+        data_files = [str(Path(d).absolute()) for d in data_files]
 
         ensembles = self._store.find_ensembles(name=self._name)
         for e in ensembles:
@@ -99,16 +99,16 @@ class AMSDataStore:
                 os.remove(d)
 
     def remove_data(self, data_files=list(), delete_files=False):
-        self._remove_entry_file('data', data_files, delete_files)
+        self._remove_entry_file("data", data_files, delete_files)
 
     def remove_models(self, model=list(), delete_files=False):
         if not model:
             return
 
-        self._remove_entry_file('models', model, delete_files)
+        self._remove_entry_file("models", model, delete_files)
 
     def remove_candidates(self, data_files=list(), delete_files=False):
-        self._remove_entry_file('candidates', data_files, delete_files)
+        self._remove_entry_file("candidates", data_files, delete_files)
 
     def close(self):
         self._store.close()
@@ -122,7 +122,7 @@ class AMSDataStore:
 
     def get_raw_content(self):
         ensembles = self._store.find_ensembles(name=self._name)
-        data = { 'data' : {}, 'models' : {}, 'candidates' : {} }
+        data = {"data": {}, "models": {}, "candidates": {}}
         for e in ensembles:
             for entry_type in AMSDataStore.valid_entries:
                 for d in e.find_datasets(name=entry_type):
@@ -135,5 +135,5 @@ class AMSDataStore:
 
     def __str__(self):
         return "AMS Kosh Wrapper Store(path={0}, name={1}, status={2})".format(
-            self._store_path, self._name, "Open" if self.is_open() else "Closed")
-
+            self._store_path, self._name, "Open" if self.is_open() else "Closed"
+        )

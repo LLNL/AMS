@@ -8,12 +8,15 @@ import json
 from pathlib import Path
 from os import environ
 
+
 class AMSSingleton(type):
     instance = None
+
     def __call__(cls, *args, **kwargs):
         if cls.instance is None:
             cls.instance = super(AMSSingleton, cls).__call__(*args, **kwargs)
         return cls.instance
+
 
 class AMSInstance(metaclass=AMSSingleton):
     """
@@ -23,39 +26,41 @@ class AMSInstance(metaclass=AMSSingleton):
     System is a singleton class.
     """
 
-    def __init__(self, config = None):
-        if environ.get('AMS_CONFIG_FILE') is not None:
-            ams_conf_fn = Path(environ.get('AMS_CONFIG_FILE'))
+    def __init__(self, config=None):
+        if environ.get("AMS_CONFIG_FILE") is not None:
+            ams_conf_fn = Path(environ.get("AMS_CONFIG_FILE"))
             if not ams_conf_fn.exists():
-                raise RuntimeError(f'AMS_CONFIG_FILE is set to {ams_conf_fn} but file does not exist')
+                raise RuntimeError(
+                    f"AMS_CONFIG_FILE is set to {ams_conf_fn} but file does not exist"
+                )
             config = ams_conf_fn
 
         if config is None:
-            raise RuntimeError(f'{self.__class__.__name__} valid config is missing')
+            raise RuntimeError(f"{self.__class__.__name__} valid config is missing")
 
         self._config = config
 
-        with open(config, 'r') as fd:
+        with open(config, "r") as fd:
             self._options = json.load(fd)
 
-        if 'name' not in self._options:
-            raise RuntimeError('AMS configuration does not include \'name\' field.')
+        if "name" not in self._options:
+            raise RuntimeError("AMS configuration does not include 'name' field.")
 
-        self._name = self._options['name']
+        self._name = self._options["name"]
 
-        db = self._options['db']
+        db = self._options["db"]
         if db is None:
-            raise RuntimeError('AMS config file expects a \'db\' entry\n')
+            raise RuntimeError("AMS config file expects a 'db' entry\n")
 
-        self._db_path = db['path']
+        self._db_path = db["path"]
         if not Path(self._db_path).exists():
-            raise RuntimeError(f'AMS data base path {self._db_path} should exist\n')
+            raise RuntimeError(f"AMS data base path {self._db_path} should exist\n")
 
-        self._db_type = db['type']
+        self._db_type = db["type"]
 
-        self._db_store = 'ams_store.sql'
-        if 'store' in db:
-            self._db_store = db['store']
+        self._db_store = "ams_store.sql"
+        if "store" in db:
+            self._db_store = db["store"]
 
     @property
     def name(self) -> str:
@@ -76,4 +81,3 @@ class AMSInstance(metaclass=AMSSingleton):
     @property
     def config(self) -> str:
         return self._config
-
