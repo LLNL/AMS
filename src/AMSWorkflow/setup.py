@@ -11,6 +11,7 @@ setuptools.setup(
     packages=['ams_wf', 'ams'],
     install_requires = [
         'argparse',
+        'kosh>=3.0.1',
         'pika>=1.3.0',
         'numpy>=1.2.0'
         ],
@@ -19,6 +20,7 @@ setuptools.setup(
             'AMSBroker=ams_wf.AMSBroker:main',
             'AMSDBStage=ams_wf.AMSDBStage:main',
             'AMSOrchestrator=ams_wf.AMSOrchestrator:main',
+            'AMSStore=ams_wf.AMSStore:main',
             'AMSTrain=ams_wf.AMSTrain:main']
     },
     classifiers = [
