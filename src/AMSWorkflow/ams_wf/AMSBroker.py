@@ -62,7 +62,7 @@ def main():
 
     with open(args.config, "r") as fd:
         config = json.load(fd)
-    
+
     host = config["service-host"]
     vhost = config["rabbitmq-vhost"]
     port = config["service-port"]

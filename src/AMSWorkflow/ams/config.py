@@ -48,13 +48,11 @@ class AMSInstance(metaclass=AMSSingleton):
 
         self._name = self._options["name"]
 
-        db = self._options["db"]
+        db = self._options.get("ams_persistent_db", None)
         if db is None:
             raise RuntimeError("AMS config file expects a 'db' entry\n")
 
         self._db_path = db["path"]
-        if not Path(self._db_path).exists():
-            raise RuntimeError(f"AMS data base path {self._db_path} should exist\n")
 
         self._db_type = db["type"]
 
@@ -81,3 +79,11 @@ class AMSInstance(metaclass=AMSSingleton):
     @property
     def config(self) -> str:
         return self._config
+
+    @property
+    def do_stage(self) -> bool:
+        return self._stage
+
+    @property
+    def stage_dir(self) -> str:
+        return self._stage_dir

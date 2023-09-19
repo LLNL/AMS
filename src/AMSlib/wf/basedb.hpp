@@ -182,6 +182,7 @@ class csvDB final : public FileDB<TypeValue>
 {
 private:
   /** @brief file descriptor */
+  bool writeHeader;
   std::fstream fd;
 
 public:
@@ -196,6 +197,7 @@ public:
    */
   csvDB(std::string path, uint64_t rId) : FileDB<TypeValue>(path, ".csv", rId)
   {
+    writeHeader = !fs::exists(this->fn);
     fd.open(this->fn, std::ios_base::app | std::ios_base::out);
     if (!fd.is_open()) {
       std::cerr << "Cannot open db file: " << this->fn << std::endl;
@@ -238,6 +240,15 @@ public:
 
     const size_t num_in = inputs.size();
     const size_t num_out = outputs.size();
+
+    if ( writeHeader ){
+      for (size_t i = 0; i < num_in; i++)
+        fd << "input_" << i << ":";
+      for (size_t i = 0; i < num_out - 1; i++)
+        fd << "output_" << i << ":";
+      fd << "output_" << num_out-1 << "\n";
+      writeHeader = false;
+    }
 
     for (size_t i = 0; i < num_elements; i++) {
       for (size_t j = 0; j < num_in; j++) {
@@ -927,7 +938,7 @@ private:
                false,
                "Buffer seems corrupted or not the right type of TypeValue");
       }
-      auto data = std::make_unique<TypeValue[]>(datlen);
+      auto data = std::make_unique<TypeValue[]>(6 + datlen);
 
       evbuffer_lock(buffer);
       // Now we drain the evbuffer structure to fill up the destination buffer

@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import datetime
-from .config import AMSConfig
+from ams.config import AMSInstance
 import kosh
 from pathlib import Path
 
@@ -44,7 +44,6 @@ class AMSDataStore:
             return versions[version]
 
         ds = ensemble.create(name=_name, metadata={"version": version})
-        print(ds)
         return ds
 
     def _get_or_create_ensebmle(self):
@@ -128,7 +127,6 @@ class AMSDataStore:
                 for d in e.find_datasets(name=entry_type):
                     dset = list()
                     for associated in d.find():
-                        print(associated.listattributes(True))
                         dset.append(associated.listattributes(True))
                     data[entry_type][d.version] = dset
         return data
@@ -137,3 +135,15 @@ class AMSDataStore:
         return "AMS Kosh Wrapper Store(path={0}, name={1}, status={2})".format(
             self._store_path, self._name, "Open" if self.is_open() else "Closed"
         )
+
+def create_store_directories(store_path):
+    store_path = Path(store_path)
+    if not store_path.exists():
+        store_path.mkdir(parents=True, exist_ok=True)
+
+    for fn in list(AMSDataStore.valid_entries):
+        _tmp = store_path / Path(fn)
+        if not store_path.exists():
+            _tmp.mkdir(parents=True, exist_ok=True)
+
+
