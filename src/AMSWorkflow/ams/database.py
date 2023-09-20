@@ -13,7 +13,7 @@ import h5py
 import numpy as np
 
 
-class DBReader(ABC):
+class FileReader(ABC):
     @classmethod
     def __subclasshook__(cls, subclass):
         """
@@ -41,25 +41,25 @@ class DBReader(ABC):
 
     @abstractmethod
     def open(self):
-        """Connect to the DB (or open file if file-based DB)"""
+        """Open File"""
         raise NotImplementedError
 
     @abstractmethod
     def close(self):
-        """Close DB"""
+        """Close File"""
         raise NotImplementedError
 
     @abstractmethod
-    def load(self) -> dict:
+    def load(self) -> tuple:
         """
         load the data in the file and return a tupple of the inputs, outputs
         """
         raise NotImplementedError
 
 
-class CSVReader(DBReader):
+class CSVReader(FileReader):
     """
-    A simple CSV backend.
+    A CSV File Reader
     """
 
     suffix = "csv"
@@ -87,10 +87,16 @@ class CSVReader(DBReader):
     def load(self) -> tuple:
         """
         load the data in the file and return a tupple of the inputs, outputs
+
+        We assume the file is produced by the C/C++ front-end. Thus the file
+        will have a generic header row specifying the inputs/outputs
+
+        Returns:
+            A pair of input, output data values
         """
 
         if self.fd and self.fd.closed:
-            return 0
+            return None, None
 
         file_data = list(csv.reader(self.fd, delimiter=self.delimiter))
         header = file_data[0]
@@ -106,7 +112,7 @@ class CSVReader(DBReader):
         return cls.suffix
 
 
-class HDF5CLibReader(DBReader):
+class HDF5CLibReader(FileReader):
     """
     An HDF5 reader for files generated directly by the C/C++ code.
     """
@@ -139,6 +145,12 @@ class HDF5CLibReader(DBReader):
     def load(self) -> tuple:
         """
         load the data in the file and return a tupple of the inputs, outputs
+
+        We assume the file is produced by the C/C++ front-end. Thus the file
+        will have a generic header row specifying the inputs/outputs
+
+        Returns:
+            A pair of input, output data values
         """
 
         dsets = self.fd.keys()
@@ -155,9 +167,15 @@ class HDF5CLibReader(DBReader):
         return cls.suffix
 
 
-class HDF5PackedReader(DBReader):
+class HDF5PackedReader(FileReader):
     """
-    An HDF5 reader for files generated directly by the C/C++ code.
+    load the data in the file and return a tupple of the inputs, outputs
+
+    This reader DOES NOT assume the data being written by the application in C/C++.
+    Instead it assumes 2 datasets in the hdf5 file one for the inputs and one for the outputs
+
+    Returns:
+        A pair of input, output numpy darrays
     """
 
     suffix = "h5"
@@ -195,9 +213,9 @@ class HDF5PackedReader(DBReader):
         return cls.suffix
 
 
-class DBWriter(ABC):
+class FileWriter(ABC):
     """
-    Represents a database instance in AMS.
+    Represents a File to be written by AMS.
     """
 
     @classmethod
@@ -221,11 +239,11 @@ class DBWriter(ABC):
 
     @abstractmethod
     def __str__(self) -> str:
-        """Return a string representation of the Database interface"""
+        """Return a string representation of the FileWriter interface"""
         raise NotImplementedError
 
     def __repr__(self) -> str:
-        """Return a string representation of the Database interface"""
+        """Return a string representation of the FileWriter interface"""
         return self.__str__()
 
     @abstractmethod
@@ -242,12 +260,11 @@ class DBWriter(ABC):
     def store(self, inputs, outputs) -> int:
         """
         Store the two arrays using a given backend
-        Return the number of characters written
         """
         raise NotImplementedError
 
 
-class CSVWriter(DBWriter):
+class CSVWriter(FileWriter):
     """
     A simple CSV backend.
     """
@@ -309,7 +326,7 @@ class CSVWriter(DBWriter):
         return cls.suffix
 
 
-class HDF5Writer(DBWriter):
+class HDF5Writer(FileWriter):
     """
     A simple hdf5 backend.
     """
@@ -393,13 +410,20 @@ class HDF5PackedWriter(HDF5Writer):
     def get_file_format_suffix(cls):
         return cls.suffix
 
-
 def get_reader(ftype="hdf5"):
+    """
+    Factory method return a AMS file reader depending on the requested filetype
+    """
+
     readers = {"hdf5": HDF5CLibReader, "csv": CSVReader}
     return readers[ftype]
 
 
 def get_writer(ftype="hdf5"):
+    """
+    Factory method return a AMS file writer depending on the requested filetype
+    """
+
     writers = {"hdf5": HDF5Writer, "csv": CSVWriter}
     return writers[ftype]
 
