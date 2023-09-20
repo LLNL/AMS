@@ -65,14 +65,6 @@ using namespace sw::redis;
 #include <tuple>
 #include <unordered_map>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-#include "base64.h"
-#ifdef __cplusplus
-}
-#endif
-
 #endif  // __ENABLE_RMQ__
 
 /**
@@ -200,7 +192,7 @@ public:
     if (!fd.is_open()) {
       std::cerr << "Cannot open db file: " << this->fn << std::endl;
     }
-    DBG(DB, "DB Type: %s", type())
+    DBG(DB, "DB Type: %s", type().c_str())
   }
 
   /**
@@ -919,15 +911,13 @@ private:
         info->orig_size)
 
     if (info->n_added > 0) {
-      // Destination buffer (of TypeValue size, either float or double)
       size_t datlen = info->n_added;  // Total number of bytes
-      int k = datlen / sizeof(TypeValue);
-      if (datlen % sizeof(TypeValue) != 0) {
-        CFATAL(RabbitMQDB,
-               false,
-               "Buffer seems corrupted or not the right type of TypeValue");
-      }
-      auto data = std::make_unique<TypeValue[]>(datlen);
+      // We get a blob of bytes here
+      auto data = std::make_unique<uint8_t[]>(datlen);
+      // This assert is to check that char is 1 bytes
+      // as we have to cast uint8_t -> char for AMQP-CPP
+      // On the vast majority of machines this should be true
+      assert(sizeof(char) == sizeof(uint8_t));
 
       evbuffer_lock(buffer);
       // Now we drain the evbuffer structure to fill up the destination buffer
@@ -938,54 +928,28 @@ private:
                 nbyte_drained);
       }
       evbuffer_unlock(buffer);
-
-      std::string result =
-          std::to_string(self->_rank) + ":";
-      for (int i = 0; i < k - 1; i++) {
-        result.append(std::to_string(data[i]) + ":");
-      }
-      result.append(std::to_string(data[k - 1]) + "\n");
-      
-      // For resiliency reasons we encode the result in base64
-      // Not that it increases the size (n) of messages by approx 4*(n/3)
-      std::string result_b64 = self->encode64(result);
-      DBG(RabbitMQDB,
-          "[rank=%d] #elements (float/double) = %d, stringify size = %d, size in base64 "
-          "= %d",
-          self->_rank,
-          k,
-          result.size(),
-          result_b64.size())
-      if (result_b64.size() % 4 != 0) {
-        WARNING(EventBuffer,
-                "[rank=%d] Frame size (%d elements)"
-                "cannot be %d more than a multiple of 4!",
-                self->_rank,
-                result_b64.size(),
-                result_b64.size() % 4)
-      }
-
+      double mbyte_sent = nbyte_drained / (1024.0 * 1024.0);
       // publish a message via the reliable-channel
-      self->_rchannel->publish("", self->_queue, result_b64)
-          .onAck([self, nbyte_drained]() {
+      self->_rchannel->publish("", self->_queue, reinterpret_cast<char*>(data.get()), datlen)
+          .onAck([self, mbyte_sent, nbyte_drained]() {
             DBG(RabbitMQDB,
-                "[rank=%d] message got ack successfully",
-                self->_rank)
+                "[rank=%d] message (%0.3f MB) got acknowledged successfully",
+                self->_rank, mbyte_sent)
             self->_byte_to_send = self->_byte_to_send - nbyte_drained;
             self->_counter_ack++;
           })
-          .onNack([self]() {
+          .onNack([self, mbyte_sent]() {
             self->_counter_nack++;
-            WARNING(RabbitMQDB, "[rank=%d] message negative ack", self->_rank)
+            WARNING(RabbitMQDB, "[rank=%d] message (%0.3f MB) received negative acknowledged", self->_rank, mbyte_sent)
           })
-          .onLost([self]() {
-            CFATAL(RabbitMQDB, false, "[rank=%d] message got lost", self->_rank)
+          .onLost([self, mbyte_sent]() {
+            CFATAL(RabbitMQDB, false, "[rank=%d] message (%0.3f MB) likely got lost", self->_rank, mbyte_sent)
           })
-          .onError([self](const char* message) {
+          .onError([self, mbyte_sent](const char* message) {
             CFATAL(RabbitMQDB,
                    false,
-                   "[rank=%d] message did not get send: %s",
-                   self->_rank,
+                   "[rank=%d] message (%0.3f MB) did not get send: %s",
+                   self->_rank, mbyte_sent,
                    message)
           });
     }
@@ -1003,7 +967,7 @@ private:
     EventBuffer* self = static_cast<EventBuffer*>(argc);
     DBG(RabbitMQDB,
         "caught an interrupt signal; exiting cleanly event loop after %d "
-        "messages ack (%d negative ack) ...",
+        "messages acknowledged (%d negative acknowledged) ...",
         self->_counter_ack,
         self->_counter_nack)
     event_base_loopexit(self->_loop, NULL);
@@ -1063,8 +1027,8 @@ public:
   }
 
   /**
-   *  @brief   Push data to the underlying event buffer, which
-   * will trigger the callback.
+   *  @brief   Return the number of bytes that has been pushed 
+   *  to the underlying shared evbuffer.
    *  @return  The number of bytes that has to be sent.
    */
   size_t get_byte_to_send() { return _byte_to_send; }
@@ -1075,7 +1039,7 @@ public:
    *  @param[in]  data            The data pointer
    *  @param[in]  data_size       The number of bytes in the data pointer
    */
-  void push(void* data, size_t data_size)
+  void push(uint8_t* data, size_t data_size)
   {
     evbuffer_lock(_buffer);
     DBG(RabbitMQDB,
@@ -1083,34 +1047,12 @@ public:
         "size of evbuffer %zu",
         data_size,
         size())
-
-    int ret = evbuffer_add(_buffer, data, data_size);
-    if (ret == -1) {
+    if (evbuffer_add(_buffer, data, data_size) == -1) {
       perror("Error evbuffer_add()\n");
+      WARNING(RabbitMQDB, "evbuffer_add(): cannot add data to buffer");
     }
     _byte_to_send = _byte_to_send + data_size;
     evbuffer_unlock(_buffer);
-  }
-
-  /**
-   *  @brief  Method to encode a string into base64
-   *  @param[in]  input       The input string
-   *  @return                 The encoded string
-   */
-  std::string encode64(const std::string& input)
-  {
-    if (input.size() == 0) return "";
-    size_t unencoded_length = input.size();
-    size_t encoded_length = base64_encoded_length(unencoded_length);
-    char* base64_encoded_string =
-        (char*)malloc((encoded_length + 1) * sizeof(char));
-    ssize_t encoded_size = base64_encode(base64_encoded_string,
-                                         encoded_length + 1,
-                                         input.c_str(),
-                                         unencoded_length);
-    std::string result(base64_encoded_string);
-    free(base64_encoded_string);
-    return result;
   }
 
   /** @brief Destructor */
@@ -1162,8 +1104,8 @@ private:
   /** @brief The worker in charge of sending data to the broker (dedicated
    * thread) */
   std::shared_ptr<struct rmq_consumer> _receiver;
-  /** @brief The number of messages to be sent */
-  int _nb_msg_send;
+  /** @brief The number of messages that has been pushed to broker */
+  int _pushed_msg;
   /** @brief Queue that contains all the messages received on receiver queue */
   std::shared_ptr<std::vector<inbound_msg>> _messages;
 
@@ -1211,47 +1153,6 @@ private:
       throw std::runtime_error(err);
     }
     return connection_info;
-  }
-
-  /** @brief linearize all elements of a vector of C-vectors
-   * in a single C-vector. Data are transposed.
-   *
-   * @tparam TypeInValue Type of the source value.
-   * @param[in] n The number of elements of the vectors.
-   * @param[in] features A vector containing C-vector of feature values.
-   * @param[in] add_dims A bool. if true we add the dimensions of the 
-   * flatten feature as first element and second element of the result array.
-   * @return A pointer to a C-vector containing the linearized values. The
-   * C-vector is_same resident in the same device as the input feature pointers.
-   */
-  template <typename TypeInValue>
-  PERFFASPECT()
-  static inline TypeValue* flatten_features(
-      const size_t n,
-      const std::vector<TypeInValue*>& features,
-      bool add_dims = false)
-  {
-    const size_t nfeatures = features.size();
-    const size_t nvalues = n * nfeatures;
-
-    size_t offset = 0;
-    // Offset to have space to write off the dimensions at the begiginning of the array
-    if (add_dims)
-      offset = 2;
-
-    TypeValue* data = (TypeValue*) malloc((nvalues + offset) * sizeof(TypeValue));
-
-    if (add_dims) {
-      data[0] = (TypeValue) n;
-      data[1] = (TypeValue) features.size();
-    }
-
-    for (size_t d = 0; d < nfeatures; d++) {
-      for (size_t i = 0; i < n; i++) {
-        data[offset + (i * nfeatures) + d] = static_cast<TypeValue>(features[d][i]);
-      }
-    }
-    return data;
   }
 
   /**
@@ -1381,7 +1282,7 @@ public:
   RabbitMQDB(char* config, uint64_t id)
       : BaseDB<TypeValue>(id),
         _rank(0),
-        _nb_msg_send(0),
+        _pushed_msg(0),
         _handler_sender(nullptr),
         _evbuffer(nullptr),
         _address(nullptr),
@@ -1422,10 +1323,14 @@ public:
 #endif
     _loop_sender = event_base_new();
     _loop_receiver = event_base_new();
-    CDEBUG(RabbitMQDB, _rank == 0, "Libevent %s\n", event_get_version());
     CDEBUG(RabbitMQDB,
            _rank == 0,
-           "%s (OPENSSL_VERSION_NUMBER = %#010x)\n",
+           "Libevent %s (LIBEVENT_VERSION_NUMBER = %#010x)",
+           event_get_version(),
+           event_get_version_number());
+    CDEBUG(RabbitMQDB,
+           _rank == 0,
+           "%s (OPENSSL_VERSION_NUMBER = %#010x)",
            OPENSSL_VERSION_TEXT,
            OPENSSL_VERSION_NUMBER);
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
@@ -1523,10 +1428,26 @@ public:
 
   /**
    * @brief Takes an input and an output vector each holding 1-D vectors data, and push
-   * it onto the libevent buffer. We flatten the inputs/outputs and send one 
-   * message for each. The first two elements of the message are num_elements 
-   * and the feature size. These elements are needed to reconstruct the inputs
-   * and outputs on the other side (RabbitMQ).
+   * it onto the libevent buffer. We encode the message as follow:
+   * The header is 12 bytes long and structured as follows:
+   *   - 1 byte is the size of the header (here 12). Limit max: 255
+   *   - 1 byte is the precision (4 for float, 8 for double). Limit max: 255
+   *   - 2 bytes are the MPI rank (0 if AMS is not running with MPI). Limit max: 65535
+   *   - 4 bytes are the number of elements in the message. Limit max: 2^32 - 1
+   *   - 2 bytes are the input dimension. Limit max: 65535
+   *   - 2 bytes are the output dimension. Limit max: 65535
+   * 
+   * |__Header__|__Datatype__|___Rank___|__#elems__|___InDim___|___OutDim___|...real data...|
+   * ^          ^            ^          ^          ^           ^            ^               ^
+   * |  Byte 1  |   Byte 2   | Byte 3-4 | Byte 4-8 | Byte 8-10 | Byte 10-12 |   Byte 12-X   |
+   *
+   * where X = datatype * num_element * (InDim + OutDim). Total message size is 12+X. 
+   *
+   * The data starts at byte 12, ends at byte X.
+   * The data is structured as pairs of input/outputs. Let K be the total number of 
+   * elements, then we have K pairs of inputs/outputs (either float or double):
+   *
+   *  |__Header_(12B)__|__Input 1__|__Output 1__|...|__Input_K__|__Output_K__|
    * 
    * @param[in] num_elements Number of elements of each 1-D vector
    * @param[in] inputs Vector of 1-D vectors containing the inputs to be sent
@@ -1538,48 +1459,70 @@ public:
              std::vector<TypeValue*>& inputs,
              std::vector<TypeValue*>& outputs) override
   {
-    CINFO(RabbitMQDB,
-          true,
-          "RabbitMQDB of type %s stores %ld elements of input/output "
+    DBG(RabbitMQDB,
+          "%s stores %ld elements of input/output "
           "dimensions (%d, %d)",
           type().c_str(),
           num_elements,
           inputs.size(),
           outputs.size())
 
-    const size_t inputs_size = num_elements * inputs.size();
-    auto inputs_data = flatten_features(num_elements, inputs, true);
-    DBG(RabbitMQDB,
-        "[store(%d, %d, %d)] input sent %d B",
-        num_elements,
-        inputs.size(),
-        outputs.size(),
-        inputs_size * sizeof(TypeValue))
-    _nb_msg_send++;
-    _evbuffer->push(static_cast<void*>(inputs_data),
-                    inputs_size * sizeof(TypeValue));
+    const size_t num_in = inputs.size();
+    const size_t num_out = outputs.size();
+    const size_t header_size = 2*sizeof(uint8_t) + sizeof(uint32_t) + 3*sizeof(uint16_t);
+    const size_t blob_size = header_size + (num_elements * (num_in + num_out)) * sizeof(TypeValue);
+    uint8_t* data_blob = static_cast<uint8_t*>(std::malloc(blob_size*sizeof(uint8_t)));
 
-    // TODO: investigate that
-    // Necessary for some reasons, other the event buffer overheat
-    // "[err] buffer.c:1066: Assertion chain || datlen==0 failed in
-    // evbuffer_copyout" potentially segfault, and with CUDA could also lead to
-    // packet losses
-    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+    uint16_t mpirank = static_cast<uint16_t>(_rank);
+    uint32_t num_elem = static_cast<uint32_t>(num_elements);
+    uint16_t input_dim = static_cast<uint16_t>(num_in);
+    uint16_t output_dim = static_cast<uint16_t>(num_out);
 
-    const size_t outputs_size = num_elements * outputs.size();
-    auto outputs_data = flatten_features(num_elements, outputs, true);
-    DBG(RabbitMQDB,
-        "[store(%d, %d, %d)] output sent %d B",
-        num_elements,
-        inputs.size(),
-        outputs.size(),
-        outputs_size * sizeof(TypeValue))
-    _nb_msg_send++;
-    _evbuffer->push(static_cast<void*>(outputs_data),
-                    outputs_size * sizeof(TypeValue));
+    size_t current_offset = 0;
+    data_blob[current_offset] = static_cast<uint8_t>(header_size); // Header size (should be 12 bytes here)
+    current_offset += sizeof(uint8_t);
 
-    free(inputs_data);
-    free(outputs_data);
+    data_blob[current_offset] = static_cast<uint8_t>(sizeof(TypeValue)); // Data type (should be 1 bytes)
+    current_offset += sizeof(uint8_t);
+
+    std::memcpy(data_blob+current_offset, &(mpirank), sizeof(uint16_t)); // MPI rank (should be 2 bytes)
+    current_offset += sizeof(uint16_t);
+
+    std::memcpy(data_blob+current_offset, &(num_elem), sizeof(uint32_t)); // Num elem (should be 4 bytes)
+    current_offset += sizeof(uint32_t);
+
+    std::memcpy(data_blob+current_offset, &(input_dim), sizeof(uint16_t)); // Input dim (should be 2 bytes)
+    current_offset += sizeof(uint16_t);
+
+    std::memcpy(data_blob+current_offset, &(output_dim), sizeof(uint16_t)); // Output dim (should be 2 bytes)
+    current_offset += sizeof(uint16_t);
+
+    assert(current_offset == header_size);
+
+    for (size_t i = 0; i < num_elements; i++) {
+      for (size_t j = 0; j < num_in; j++) {
+        std::memcpy(data_blob+current_offset, &(inputs[j][i]), sizeof(TypeValue));
+        current_offset += sizeof(TypeValue); // We move on to the next TypeValue
+      }
+      for (size_t j = 0; j < num_out; j++) {
+        std::memcpy(data_blob+current_offset, &(outputs[j][i]), sizeof(TypeValue));
+        current_offset += sizeof(TypeValue);
+      }
+    }
+    assert(current_offset == blob_size);
+  
+    _evbuffer->push(data_blob, blob_size);
+    _pushed_msg++;
+    if (event_get_version_number() <= 0x02001500L) {
+      // With old libevent version (<=2.0.21-stable)
+      // there is a bug in buffer.c:1066:
+      //    Assertion chain || datlen==0 failed in evbuffer_copyout
+      // To bypass that, we add an artificial sleep 
+      // so libevent will not buffer multiple messages together.
+      // if the bug still persists, increase value of the sleep.
+      std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    }
+    std::free(data_blob);
   }
 
   /**
@@ -1590,10 +1533,10 @@ public:
 
   /**
    * @brief Return the number of messages that 
-   * has been push to the buffer
+   * has been pushed to the buffer
    * @return The number of messages sent
    */
-  int nb_msg() const { return _nb_msg_send; }
+  int pushed_msg() const { return _pushed_msg; }
 
   ~RabbitMQDB()
   {

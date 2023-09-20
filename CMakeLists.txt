@@ -195,39 +195,6 @@ if (WITH_TORCH)
 endif()
 
 # ------------------------------------------------------------------------------
-if (WITH_RMQ)
-  if (WITH_CUDA)
-    add_compile_definitions(THRUST_IGNORE_CUB_VERSION_CHECK)
-  endif()
-  list(APPEND AMS_APP_DEFINES "-D__ENABLE_RMQ__")
-
-  find_package(amqpcpp REQUIRED)
-  get_target_property(amqpcpp_INCLUDE_DIR amqpcpp INTERFACE_INCLUDE_DIRECTORIES)
-  list(APPEND AMS_APP_INCLUDES ${amqpcpp_INCLUDE_DIR})
-
-  find_package(OpenSSL REQUIRED)
-  if (OPENSSL_FOUND)
-    list(APPEND AMS_APP_INCLUDES ${OPENSSL_INCLUDE_DIR})
-    list(APPEND AMS_APP_LIBRARIES "${OPENSSL_LIBRARIES}")
-    list(APPEND AMS_APP_LIBRARIES ssl)
-    message(STATUS "OpenSSL includes found: " ${OPENSSL_INCLUDE_DIR})
-    message(STATUS "OpenSSL libraries found: " ${OPENSSL_LIBRARIES})
-  else()
-    message(STATUS "OpenSSL Not Found")
-  endif()
-
-  find_package(libevent REQUIRED) # event loop library
-  list(APPEND AMS_APP_INCLUDES ${LIBEVENT_INCLUDE_DIR})
-  list(APPEND AMS_APP_LIBRARIES "${LIBEVENT_LIBRARIES}")
-  list(APPEND AMS_APP_LIBRARIES amqpcpp event_pthreads event)
-  # if (WITH_MPI)
-  #   # Mandatory otherwise MPI_Init hangs forever for unknown reasons
-  #   # probably linked to libevent, pthread ot OpenSSL
-  #   list(APPEND AMS_APP_LIBRARIES MPI::MPI_CXX)
-  # endif()
-endif()
-
-# ------------------------------------------------------------------------------
 if (WITH_FAISS)
   ## TODO: still need to create FindFaiss.cmake
   #find_package(FAISS REQUIRED HINTS ${FAISS_DIR})
