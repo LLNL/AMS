@@ -9,6 +9,7 @@ import csv
 import numpy as np
 import h5py
 import argparse
+from pathlib import Path
 
 class DBReader(ABC):
 
@@ -66,6 +67,7 @@ class CSVReader(DBReader):
 
     def open(self):
         self.fd = open(self.file_name, 'r')
+        return self
 
     def close(self):
         self.fd.close()
@@ -92,7 +94,7 @@ class CSVReader(DBReader):
         data = np.array(data)
         input_data = data[:,:output_start]
         output_data= data[:,output_start:]
-        return (input_data, output_data)
+        return (input_data.astype(np.float64), output_data.astype(np.float64))
 
     @classmethod
     def get_file_format_suffix(cls):
@@ -112,13 +114,13 @@ class HDF5CLibReader(DBReader):
 
     def open(self):
         self.fd = h5py.File(self.file_name, 'r')
+        return self
 
     def close(self):
         self.fd.close()
 
     def __enter__(self):
-        self.open()
-        return self
+        return self.open()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
@@ -145,6 +147,47 @@ class HDF5CLibReader(DBReader):
     @classmethod
     def get_file_format_suffix(cls):
         return cls.suffix
+
+class HDF5PackedReader(DBReader):
+    """
+    An HDF5 reader for files generated directly by the C/C++ code.
+    """
+
+    suffix = "h5"
+
+    def __init__(self, file_name: str):
+        super().__init__()
+        self.file_name = file_name
+        self.fd = None
+
+    def open(self):
+        self.fd = h5py.File(self.file_name, 'r')
+        return self
+
+    def close(self):
+        self.fd.close()
+
+    def __enter__(self):
+        return self.open()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def load(self) -> tuple:
+        """
+        load the data in the file and return a tupple of the inputs, outputs
+        """
+
+        dsets = self.fd.keys()
+        input_data = self.fd['inputs']
+        output_data = self.fd['outputs']
+
+        return np.array(input_data), np.array(output_data)
+
+    @classmethod
+    def get_file_format_suffix(cls):
+        return cls.suffix
+
 
 class DBWriter(ABC):
     """
@@ -217,14 +260,14 @@ class CSVWriter(DBWriter):
             self.write_header = True
 
         self.fd = open(self.file_name, 'a')
+        return self
 
     def close(self):
         self.write_header = False
         self.fd.close()
 
     def __enter__(self):
-        self.open()
-        return self
+        return self.open()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
@@ -235,7 +278,7 @@ class CSVWriter(DBWriter):
         if self.fd and self.fd.closed:
             return 0
         if self.write_header:
-            writer = csv.DictWriter(self.fd, fieldnames = [f'input_{i}' for i in inputs.shape[-1]] + [f'output_{i}' for i in output.shape[-1]])
+            writer = csv.DictWriter(self.fd, fieldnames = [f'input_{i}' for i in range(inputs.shape[-1])] + [f'output_{i}' for i in range(outputs.shape[-1])], delimiter=self.delimiter)
             writer.writeheader()
             self.write_header = False
 
@@ -255,7 +298,7 @@ class CSVWriter(DBWriter):
     def get_file_format_suffix(cls):
         return cls.suffix
 
-class HDF5CLibWriter(DBWriter):
+class HDF5Writer(DBWriter):
     """
     A simple hdf5 backend.
     """
@@ -281,8 +324,7 @@ class HDF5CLibWriter(DBWriter):
         self.fd = None
 
     def __enter__(self):
-        self.open()
-        return self
+        return self.open()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
@@ -313,7 +355,7 @@ class HDF5CLibWriter(DBWriter):
     def get_file_format_suffix(cls):
         return cls.suffix
 
-class HDF5PackedWriter(HDF5CLibWriter):
+class HDF5PackedWriter(HDF5Writer):
     """
     A simple hdf5 backend.
     """
@@ -346,7 +388,7 @@ def get_reader(ftype='hdf5'):
     return readers[ftype]
 
 def get_writer(ftype='hdf5'):
-    writers = { 'hdf5' : HDF5CLibWriter,
+    writers = { 'hdf5' : HDF5Writer,
                 'csv' : CSVWriter}
     return writers[ftype]
 

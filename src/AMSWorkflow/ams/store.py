@@ -97,6 +97,23 @@ class AMSDataStore:
             for d in data_files:
                 os.remove(d)
 
+    def _get_entry_versions(self, entry):
+        ensembles = self._store.find_ensembles(name=self._name)
+        versions = list()
+        for e in ensembles:
+            for dset in e.find_datasets(name=entry):
+                versions.append(dset.version)
+        return versions
+
+    def get_data_versions(self):
+        return self._get_entry_versions("data")
+
+    def get_model_versions(self):
+        return self._get_entry_versions("models")
+
+    def get_candidates_versions(self):
+        return self._get_entry_versions("candidates")
+
     def remove_data(self, data_files=list(), delete_files=False):
         self._remove_entry_file("data", data_files, delete_files)
 
@@ -145,5 +162,4 @@ def create_store_directories(store_path):
         _tmp = store_path / Path(fn)
         if not store_path.exists():
             _tmp.mkdir(parents=True, exist_ok=True)
-
 
