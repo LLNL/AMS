@@ -5,8 +5,8 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import json
-from pathlib import Path
 from os import environ
+from pathlib import Path
 
 
 class AMSSingleton(type):
@@ -30,9 +30,7 @@ class AMSInstance(metaclass=AMSSingleton):
         if environ.get("AMS_CONFIG_FILE") is not None:
             ams_conf_fn = Path(environ.get("AMS_CONFIG_FILE"))
             if not ams_conf_fn.exists():
-                raise RuntimeError(
-                    f"AMS_CONFIG_FILE is set to {ams_conf_fn} but file does not exist"
-                )
+                raise RuntimeError(f"AMS_CONFIG_FILE is set to {ams_conf_fn} but file does not exist")
             config = ams_conf_fn
 
         if config is None:
