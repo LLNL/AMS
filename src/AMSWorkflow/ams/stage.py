@@ -16,7 +16,7 @@ from typing import Callable
 import numpy as np
 
 from ams.config import AMSInstance
-from ams.database import get_reader, get_writer
+from ams.faccessors import get_reader, get_writer
 from ams.store import AMSDataStore
 
 

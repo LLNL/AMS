@@ -410,6 +410,7 @@ class HDF5PackedWriter(HDF5Writer):
     def get_file_format_suffix(cls):
         return cls.suffix
 
+
 def get_reader(ftype="hdf5"):
     """
     Factory method return a AMS file reader depending on the requested filetype
