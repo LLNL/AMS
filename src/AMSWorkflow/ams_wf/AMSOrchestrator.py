@@ -3,24 +3,20 @@
 #
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-import sys
-import os
-from ams.rmq import RMQClient
-from ams.orchestrator import AMSDaemon
-from ams.orchestrator import FluxDaemonWrapper
-
 import argparse
+import os
+import sys
+
+from ams.orchestrator import AMSDaemon, FluxDaemonWrapper
 
 
 def main():
     daemon_actions = ["start", "wrap"]
-    parser = argparse.ArgumentParser(
-        description="AMS Machine Learning Daemon running on Training allocation"
-    )
+    parser = argparse.ArgumentParser(description="AMS Machine Learning Daemon running on Training allocation")
     parser.add_argument(
         "-a",
         "--action",
-        dest='action',
+        dest="action",
         choices=daemon_actions,
         help="Decide whether to start daemon process directly or through flux wrap script",
         required=True,

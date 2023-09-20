@@ -7,16 +7,14 @@
 import argparse
 from pprint import pprint
 
-from ams.config import AMSInstance
 from ams.AMSStore import AMSDataStore
+from ams.config import AMSInstance
 
 
 def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--action", "-a", choices=["add", "remove", "print"], required=True)
-    parser.add_argument(
-        "--entry-type", "-e", choices=["data", "candidate", "model"], required=True
-    )
+    parser.add_argument("--entry-type", "-e", choices=["data", "candidate", "model"], required=True)
     parser.add_argument("--version", "-v", help="version to assign to data file", type=int)
     parser.add_argument("filename")
     args = parser.parse_args()

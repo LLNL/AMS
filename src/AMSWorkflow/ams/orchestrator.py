@@ -3,11 +3,13 @@
 #
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-import flux
 import json
-from flux.security import SecurityContext
+import subprocess
+
+import flux
 from flux import job
 from flux.job import JobspecV1
+from flux.security import SecurityContext
 
 from .ams_rmq import RMQClient
 
@@ -23,6 +25,7 @@ class Orchestrator:
         self.user = (server_config["rabbitmq-user"],)
         self.password = server_config["rabbitmq-password"]
         self.certificate = certificate
+
 
 class AMSDaemon(Orchestrator):
     """
@@ -45,7 +48,8 @@ class AMSDaemon(Orchestrator):
             while True:
                 # Currently we ignore the message
                 channel.receive(n_msg=1)
-                jobid = flux.job.submit(flux_handle, jobspec, pre_signed=True, wait=True)
+                # jobid =
+                flux.job.submit(flux_handle, jobspec, pre_signed=True, wait=True)
                 job.wait()
                 # TODO: Send completed message in RMQ
 
@@ -66,11 +70,10 @@ class AMSDaemon(Orchestrator):
             )
 
             ctx = SecurityContext()
-            signed_jobspec = ctx.sign_wrap_as(
-                ml_job_spec["uid"], jobspec.dumps(), mech_type="none"
-            ).decode("utf-8")
+            signed_jobspec = ctx.sign_wrap_as(ml_job_spec["uid"], jobspec.dumps(), mech_type="none").decode("utf-8")
             # This is a 'busy' loop
             self.__run(flux_handle, client, signed_jobspec)
+
 
 class FluxDaemonWrapper(Orchestrator):
     """
@@ -83,21 +86,15 @@ class FluxDaemonWrapper(Orchestrator):
     def getFluxUri(self, client):
         with client.connect("test3") as channel:
             msg = channel.receive(n_msg=1).pop()
-        return msg['ml_uri']
+        return msg["ml_uri"]
 
-    def __call__(self, application_cmd : list):
+    def __call__(self, application_cmd: list):
         if not isinstance(application_cmd, list):
-            raise TypeError('StartDaemon requires application_cmd as a list')
+            raise TypeError("StartDaemon requires application_cmd as a list")
 
         with RMQClient(self.host, self.port, self.vhost, self.user, self.password, self.certificate) as client:
-            self.uri = getFluxUri(client)
+            self.uri = self.getFluxUri(client)
 
-        flux_cmd = [
-            "flux",
-            "proxy",
-            "--force",
-            f"{self.uri}",
-            "flux"]
+        flux_cmd = ["flux", "proxy", "--force", f"{self.uri}", "flux"]
         cmd = flux_cmd + application_cmd
         subprocess.run(cmd)
-

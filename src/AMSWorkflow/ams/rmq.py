@@ -3,16 +3,16 @@
 #
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-import pika
-import ssl
-import sys
-import os
 import logging
-import json
+import ssl
+import traceback
+
+import pika
+
 
 class RMQChannel:
     """
-        A wrapper around RMQ channel
+    A wrapper around RMQ channel
     """
 
     def __init__(self, connection, q_name):
@@ -32,12 +32,12 @@ class RMQChannel:
 
     def open(self):
         self.channel = self.connection.channel()
-        self.channel.queue_declare(queue = self.q_name)
+        self.channel.queue_declare(queue=self.q_name)
 
     def close(self):
         self.channel.close()
 
-    def receive(self, n_msg: int = None, accum_msg = list()):
+    def receive(self, n_msg: int = None, accum_msg=list()):
         """
         Consume a message on the queue and post processing by calling the callback.
         @param n_msg The number of messages to receive.
@@ -105,6 +105,7 @@ class RMQClient:
     """
     RMQClient is a class that manages the RMQ client lifecycle.
     """
+
     def __init__(self, host, port, vhost, user, password, cert, logger: logging.Logger = None):
         # CA Cert, can be generated with (where $REMOTE_HOST and $REMOTE_PORT can be found in the JSON file):
         # openssl s_client -connect $REMOTE_HOST:$REMOTE_PORT -showcerts < /dev/null 2>/dev/null | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' rmq-pds.crt
@@ -119,8 +120,7 @@ class RMQClient:
         self.user = user
         self.password = password
 
-        self.credentials = pika.PlainCredentials(
-            self.user, self.password)
+        self.credentials = pika.PlainCredentials(self.user, self.password)
 
         self.connection_params = pika.ConnectionParameters(
             host=self.host,
@@ -140,4 +140,3 @@ class RMQClient:
     def connect(self, queue):
         """Connect to the queue"""
         return RMQChannel(self.connection, queue)
-
