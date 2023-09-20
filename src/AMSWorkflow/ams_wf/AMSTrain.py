@@ -3,10 +3,10 @@
 #
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-import argparse
 
 def main():
-    print('Hello from AMSTrain.py')
+    print("Hello from AMSTrain.py")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

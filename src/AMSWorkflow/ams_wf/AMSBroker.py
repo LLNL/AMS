@@ -12,10 +12,9 @@ import sys
 
 from ams.rmq import RMQClient
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="AMS Broker interface to send/receive messages."
-    )
+    parser = argparse.ArgumentParser(description="AMS Broker interface to send/receive messages.")
 
     parser.add_argument(
         "-c",
@@ -72,6 +71,7 @@ def main():
     with RMQClient(host, port, vhost, user, password, args.certificate) as client:
         with client.connect(args.queue) as channel:
             channel.send(args.msg_send)
+
 
 if __name__ == "__main__":
     try:

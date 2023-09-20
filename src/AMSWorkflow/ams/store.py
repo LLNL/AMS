@@ -4,9 +4,10 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import datetime
-from ams.config import AMSInstance
-import kosh
+import os
 from pathlib import Path
+
+import kosh
 
 
 class AMSDataStore:
@@ -27,9 +28,7 @@ class AMSDataStore:
         if self.is_open():
             return self
 
-        self._store = kosh.connect(
-            str(self._store_path), delete_all_contents=self._delete_contents
-        )
+        self._store = kosh.connect(str(self._store_path), delete_all_contents=self._delete_contents)
 
         return self
 
@@ -153,6 +152,7 @@ class AMSDataStore:
             self._store_path, self._name, "Open" if self.is_open() else "Closed"
         )
 
+
 def create_store_directories(store_path):
     store_path = Path(store_path)
     if not store_path.exists():
@@ -162,4 +162,3 @@ def create_store_directories(store_path):
         _tmp = store_path / Path(fn)
         if not store_path.exists():
             _tmp.mkdir(parents=True, exist_ok=True)
-
