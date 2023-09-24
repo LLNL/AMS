@@ -96,7 +96,9 @@ class TestH5PackedWriter(TestWriter):
     def test_csv_open_close(
         self,
     ):
-        super()._open_close(faccessors.HDF5PackedWriter, "ams_test." + faccessors.HDF5PackedWriter.get_file_format_suffix())
+        super()._open_close(
+            faccessors.HDF5PackedWriter, "ams_test." + faccessors.HDF5PackedWriter.get_file_format_suffix()
+        )
 
     def test_csv_store(self):
         fn = "ams_test." + faccessors.HDF5PackedWriter.get_file_format_suffix()

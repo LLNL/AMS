@@ -34,7 +34,9 @@ class AMSInstance(metaclass=AMSSingleton):
             config = ams_conf_fn
 
         if config is None:
-            raise RuntimeError(f"{self.__class__.__name__} valid config is missing")
+            raise RuntimeError(
+                f"{self.__class__.__name__} valid config is missing please set AMS_CONFIG_FILE env variable to point to a valid config file"
+            )
 
         self._config = config
 
