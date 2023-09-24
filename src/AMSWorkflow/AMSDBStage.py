@@ -6,56 +6,71 @@
 import argparse
 import time
 
-from ams.config import AMSInstance
-from ams.stage import DataBlobAction, get_pipeline
-from ams.store import create_store_directories
-
-
-class RandomPruneAction(DataBlobAction):
-    def __init__(self, drop_rate):
-        super().__init__()
-        self.drop_rate = drop_rate
-
-    def __call__(self, inputs, outputs):
-        if len(inputs) == 0:
-            return
-
-        # randIndexes = np.random.randint(inputs.shape[0], size=int(self.drop_rate * inputs.shape[0]))
-        pruned_inputs = inputs  # [randIndexes
-        pruned_outputs = outputs  # [randIndexes]
-        return pruned_inputs, pruned_outputs
-
+from ams.loader import load_class
+from ams.stage import get_pipeline
 
 def main():
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--config", "-c", default=None)
-    parser.add_argument("--src", "-s", required=True)
-    parser.add_argument("--pattern", "-p", required=True)
-    parser.add_argument("--mechansism", "-m", choices=["fs", "network"], default="fs")
-    # We will need to implement this as a nested subparser
-    parser.add_argument(
-        "--type",
-        "-t",
-        choices=["network", "fs"],
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description="AMS Stage mechanism. The mechanism moves data to the file-system and optionally registers them in a kosh store",
     )
-    parser.add_argument("--stage-dir", default=None)
-    parser.add_argument("--policy", choices=["process", "thread", "sequential"], default="process")
-    parser.add_argument("--fraction", "-f", type=float, default=1.0)
-    args = parser.parse_args()
-    ams_config = AMSInstance()
-    create_store_directories(ams_config.db_path)
-    # Create AMS Kosh wrapper
-    # The AMSPipeline represents a series of actions to be performed
-    # from reading the data until storing them
-    # into the candidates data base
-    pipeline = get_pipeline(args.mechansism)(args.src, args.pattern)
+    parser.add_argument(
+        "--load", "-l", dest="user_module", help="Path implementing a custom pipeline stage module", default=None
+    )
+    parser.add_argument(
+        "--class", "-cls", dest="user_class", help="Class implementing the 'Action' performed on data", default=None
+    )
+    parser.add_argument(
+        "--policy",
+        "-p",
+        help="The execution vehicle of every stage in the pipeline",
+        choices=["process", "thread", "sequential"],
+        default="process",
+    )
+    parser.add_argument("--mechansism", "-m", dest="mechanism", choices=["fs", "network"], default="fs")
 
-    # Add an action to be performed before pushing to the candidates store
-    pipeline.add_data_action(RandomPruneAction(args.fraction))
+    args, extras = parser.parse_known_args()
 
-    # If we want to 'stage' data to local storage before moving them to the PFS we can do so
-    if args.stage_dir:
-        pipeline.enable_stage(args.stage_dir)
+    if (args.user_module is not None) and args.user_class is None:
+        raise argparse.ArgumentTypeError("User custom module was specified but the 'class' was not defined")
+
+    user_class = None
+    user_prog = ""
+
+    if args.user_module is not None:
+        user_class = load_class(args.user_module, args.user_class)
+        user_prog = user_class.__name__
+        user_parser = argparse.ArgumentParser(
+            prog=user_prog,
+            description="User provided class to prune data before storing into candidate database",
+            epilog=f"Executed in conjustion with {parser.prog}",
+        )
+        user_class.add_cli_args(user_parser)
+        user_args, extras = user_parser.parse_known_args(extras)
+
+    pipeline_cls = get_pipeline(args.mechanism)
+    pipeline_parser = argparse.ArgumentParser(
+        prog=pipeline_cls.__name__,
+        description="Pipeline mechanism to load data from specified end-point",
+        epilog=f"Executed in conjustion with {parser.prog} and {user_prog}",
+    )
+
+    pipeline_cls.add_cli_args(pipeline_parser)
+    pipeline_args, extras = pipeline_parser.parse_known_args(extras)
+
+    if len(extras) != 0:
+        options = " ".join(extras)
+        raise argparse.ArgumentTypeError(f"Could not parse the {options}")
+
+    pipeline = pipeline_cls.from_cli(pipeline_args)
+
+    if user_class is not None:
+        print(user_class)
+        print(user_args)
+        print(pipeline)
+        obj = user_class.from_cli(user_args)
+        print(obj)
+        pipeline.add_data_action(obj)
 
     start = time.time()
     pipeline.execute(args.policy)
