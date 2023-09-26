@@ -230,24 +230,34 @@ class AMSDataStore:
 
         self._remove_entry_file("candidates", data_files, delete_files)
 
-    def _get_entry_versions(self, entry):
+    def _get_entry_versions(self, entry, associcate_files=False):
         """
         Returns a list of versions existing for the specified entry
 
         Args:
             entry: The entry type we are looking for
+            associcate_files: Associate files in store with the versions
 
         Returns:
-            A list of existing versions in our database
+            A list of existing versions in our database or a dictionary of versions to lists associating files with the specific version
         """
         ensembles = self._store.find_ensembles(name=self._name)
-        versions = list()
+        if associcate_files:
+            versions = dict()
+        else:
+            versions = list()
         for e in ensembles:
             for dset in e.find_datasets(name=entry):
-                versions.append(dset.version)
+                if associcate_files:
+                    if dset.version not in versions:
+                        versions[dset.version] = list()
+                    for associated in dset.find():
+                        versions[dset.version].append(associated.uri)
+                else:
+                    versions.append(dset.version)
         return versions
 
-    def get_data_versions(self):
+    def get_data_versions(self, associcate_files=False):
         """
         Returns a list of versions existing for the data entry
 
@@ -255,9 +265,9 @@ class AMSDataStore:
         Returns:
             A list of existing versions in our database
         """
-        return self._get_entry_versions("data")
+        return self._get_entry_versions("data", associcate_files)
 
-    def get_model_versions(self):
+    def get_model_versions(self, associcate_files=False):
         """
         Returns a list of versions existing for the model entry
 
@@ -266,9 +276,9 @@ class AMSDataStore:
             A list of existing model versions in our database
         """
 
-        return self._get_entry_versions("models")
+        return self._get_entry_versions("models", associcate_files)
 
-    def get_candidates_versions(self):
+    def get_candidates_versions(self, associcate_files=False):
         """
         Returns a list of versions existing for the candidate entry
 
@@ -277,7 +287,7 @@ class AMSDataStore:
             A list of existing candidate versions in our database
         """
 
-        return self._get_entry_versions("candidates")
+        return self._get_entry_versions("candidates", associcate_files)
 
     def close(self):
         """
@@ -316,6 +326,7 @@ class AMSDataStore:
                         dset.append(associated.listattributes(True))
                     data[entry_type][d.version] = dset
         return data
+
 
     def __str__(self):
         return "AMS Kosh Wrapper Store(path={0}, name={1}, status={2})".format(
