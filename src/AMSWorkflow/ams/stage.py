@@ -139,7 +139,7 @@ class ForwardTask(Task):
         the output to the output queue. In the case of receiving a 'termination' messages informs
         the tasks waiting on the output queues about the terminations and returns from the function.
         """
-        start = time.time()
+
         while True:
             # This is a blocking call
             item = self.i_queue.get(block=True)
@@ -152,8 +152,6 @@ class ForwardTask(Task):
             elif item.is_new_model():
                 # This is not handled yet
                 continue
-        end = time.time()
-        print(f"Spend {end - start} at {self.callback}")
         return
 
 
@@ -183,6 +181,7 @@ class FSLoaderTask(Task):
 
         start = time.time()
         for fn in glob.glob(self.pattern):
+            print(f"Opening file: {fn}")
             with self.loader(fn) as fd:
                 input_data, output_data = fd.load()
                 # FIXME: How should we decide the number of batches?
@@ -333,12 +332,12 @@ class Pipeline(ABC):
     """
 
     supported_policies = {"sequential", "thread", "process"}
-    supported_writers = ("hdf5", "csv")
+    supported_writers = {"h5", "csv"}
 
-    def __init__(self, store, dest_dir=None, stage_dir=None, db_type="hdf5"):
+    def __init__(self, store, dest_dir=None, stage_dir=None, db_type="h5"):
         """
         initializes the Pipeline class to write the final data in the 'dest_dir' using a file writer of type 'db_type'
-        and ptionally caching the data in the 'stage_dir' before making them available in the cache store.
+        and optionally caching the data in the 'stage_dir' before making them available in the cache store.
         """
         self.ams_config = None
         if store:
@@ -358,10 +357,8 @@ class Pipeline(ABC):
         self.actions = list()
 
         self.db_type = db_type
-        print("Db type is ", self.db_type)
 
         self._writer = get_writer(self.db_type)
-        print(self._writer)
 
         self.store = store
 
@@ -485,7 +482,7 @@ class Pipeline(ABC):
             dest="db_type",
             choices=Pipeline.supported_writers,
             help="File format to store the data to",
-            default="hdf5",
+            default="h5",
         )
         parser.add_argument("--store", dest="store", action="store_true")
         parser.add_argument("--no-store", dest="store", action="store_false")
@@ -516,7 +513,7 @@ class FSPipeline(Pipeline):
         src_type: The file format of the source data
     """
 
-    supported_readers = ("hdf5", "csv")
+    supported_readers = ("h5", "csv")
 
     def __init__(self, store, dest_dir, stage_dir, db_type, src, src_type, pattern):
         """
@@ -547,7 +544,7 @@ class FSPipeline(Pipeline):
         """
         Pipeline.add_cli_args(parser)
         parser.add_argument("--src", "-s", help="Where to copy the data from", required=True)
-        parser.add_argument("--src-type", "-st", choices=FSPipeline.supported_readers, default="hdf5")
+        parser.add_argument("--src-type", "-st", choices=FSPipeline.supported_readers, default="h5")
         parser.add_argument("--pattern", "-p", help="Glob pattern to read data from", required=True)
         return
 

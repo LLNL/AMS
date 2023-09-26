@@ -32,16 +32,16 @@ class AMSInstance(metaclass=AMSSingleton):
             if not ams_conf_fn.exists():
                 raise RuntimeError(f"AMS_CONFIG_FILE is set to {ams_conf_fn} but file does not exist")
             config = ams_conf_fn
+            with open(config, "r") as fd:
+                self._options = json.load(fd)
+        else:
+            self._options = config
 
         if config is None:
             raise RuntimeError(
                 f"{self.__class__.__name__} valid config is missing please set AMS_CONFIG_FILE env variable to point to a valid config file"
             )
 
-        self._config = config
-
-        with open(config, "r") as fd:
-            self._options = json.load(fd)
 
         if "name" not in self._options:
             raise RuntimeError("AMS configuration does not include 'name' field.")
@@ -75,10 +75,6 @@ class AMSInstance(metaclass=AMSSingleton):
     @property
     def db_store(self) -> str:
         return self._db_store
-
-    @property
-    def config(self) -> str:
-        return self._config
 
     @property
     def do_stage(self) -> bool:
