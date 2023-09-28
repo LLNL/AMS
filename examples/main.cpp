@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
  */
 
+#include <adiak.hpp>
+
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
@@ -72,6 +74,29 @@ int main(int argc, char **argv)
   if (rId != 0) {
     std::cout.setstate(std::ios::failbit);
   }
+
+  // add adiak init here
+  // ------------------------------------------------------------------------ 
+  adiak::init(nullptr);
+
+  // adiak::value("compiler", adiak::version("gcc@8.1.0"));
+  const adiak::path adiak_ams_compiler = std::string("@RAJAPERF_COMPILER@");
+  adiak::uid();
+  adiak::launchdate();
+  adiak::launchday();
+  adiak::executable();
+  adiak::executablepath();
+  adiak::workdir();
+  adiak::libraries();
+  adiak::cmdline();
+  adiak::hostname();
+  adiak::clustername();
+  adiak::walltime();
+  adiak::systime();
+  adiak::cputime();
+  adiak::jobsize();
+  adiak::hostlist();
+  adiak::numhosts();
 
   const char *device_name = "cpu";
   const char *eos_name = "ideal_gas";
@@ -693,6 +718,11 @@ int main(int argc, char **argv)
     MPI_CALL(MPI_Barrier(MPI_COMM_WORLD));
   }
   CALIPER(CALI_MARK_END("TimeStepLoop"););
+
+// ---------------------------------------------------------------------------
+// adiak finalize
+  adiak::fini(); 
+
   MPI_CALL(MPI_Finalize());
   return 0;
 }
