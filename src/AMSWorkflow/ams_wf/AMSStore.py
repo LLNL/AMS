@@ -7,8 +7,8 @@
 import argparse
 from pprint import pprint
 
-from ams.AMSStore import AMSDataStore
 from ams.config import AMSInstance
+from ams.store import AMSDataStore
 
 
 def main():
