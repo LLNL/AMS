@@ -4,12 +4,9 @@
 #
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-import datetime
 import glob
 import shutil
-import socket
 import time
-import uuid
 from abc import ABC, abstractmethod
 from enum import Enum
 from multiprocessing import Process
@@ -24,6 +21,9 @@ import numpy as np
 from ams.config import AMSInstance
 from ams.faccessors import get_reader, get_writer
 from ams.store import AMSDataStore
+from ams.util import get_unique_fn
+
+BATCH_SIZE = 32 * 1024 * 1024
 
 
 class MessageType(Enum):
@@ -184,10 +184,12 @@ class FSLoaderTask(Task):
             print(f"Opening file: {fn}")
             with self.loader(fn) as fd:
                 input_data, output_data = fd.load()
-                # FIXME: How should we decide the number of batches?
-                input_batches = np.split(input_data, 100)
-                output_batches = np.split(output_data, 100)
-                for i, o in zip(input_batches, output_batches):
+                row_size = input_data[0, :].nbytes + output_data[0, :].nbytes
+                rows_per_batch = int(np.ceil(BATCH_SIZE / row_size))
+                num_batches = int(np.ceil(input_data.shape[0] / rows_per_batch))
+                input_batches = np.array_split(input_data, num_batches)
+                output_batches = np.array_split(output_data, num_batches)
+                for j, (i, o) in enumerate(zip(input_batches, output_batches)):
                     self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(i, o)))
         self.o_queue.put(QueueMessage(MessageType.Terminate, None))
 
@@ -226,14 +228,7 @@ class FSWriteTask(Task):
 
         start = time.time()
         while True:
-            # Randomly generate the output file name. We use the uuid4 function with the socket name and the current
-            # date,time to create a unique filename with some 'meaning'.
-            fn = [
-                uuid.uuid4().hex,
-                socket.gethostname(),
-                str(datetime.datetime.now()).replace("-", "D").replace(" ", "T").replace(":", "C").replace(".", "p"),
-            ]
-            fn = "_".join(fn)
+            fn = get_unique_fn()
             fn = f"{self.out_dir}/{fn}.{self.suffix}"
             is_terminate = False
             with self.data_writer_cls(fn) as fd:
@@ -332,9 +327,9 @@ class Pipeline(ABC):
     """
 
     supported_policies = {"sequential", "thread", "process"}
-    supported_writers = {"h5", "csv"}
+    supported_writers = {"hdf5", "csv"}
 
-    def __init__(self, store, dest_dir=None, stage_dir=None, db_type="h5"):
+    def __init__(self, store, dest_dir=None, stage_dir=None, db_type="hdf5"):
         """
         initializes the Pipeline class to write the final data in the 'dest_dir' using a file writer of type 'db_type'
         and optionally caching the data in the 'stage_dir' before making them available in the cache store.
@@ -482,7 +477,7 @@ class Pipeline(ABC):
             dest="db_type",
             choices=Pipeline.supported_writers,
             help="File format to store the data to",
-            default="h5",
+            default="hdf5",
         )
         parser.add_argument("--store", dest="store", action="store_true")
         parser.add_argument("--no-store", dest="store", action="store_false")
@@ -513,7 +508,7 @@ class FSPipeline(Pipeline):
         src_type: The file format of the source data
     """
 
-    supported_readers = ("h5", "csv")
+    supported_readers = ("hdf5", "csv")
 
     def __init__(self, store, dest_dir, stage_dir, db_type, src, src_type, pattern):
         """
@@ -544,7 +539,7 @@ class FSPipeline(Pipeline):
         """
         Pipeline.add_cli_args(parser)
         parser.add_argument("--src", "-s", help="Where to copy the data from", required=True)
-        parser.add_argument("--src-type", "-st", choices=FSPipeline.supported_readers, default="h5")
+        parser.add_argument("--src-type", "-st", choices=FSPipeline.supported_readers, default="hdf5")
         parser.add_argument("--pattern", "-p", help="Glob pattern to read data from", required=True)
         return
 

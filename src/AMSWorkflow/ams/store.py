@@ -5,9 +5,12 @@
 
 import datetime
 import os
+import shutil
 from pathlib import Path
 
 import kosh
+
+from ams.util import get_unique_fn
 
 
 class AMSDataStore:
@@ -30,17 +33,21 @@ class AMSDataStore:
 
     data_schema = {"problem": str, "version": int}
     valid_entries = {"data", "models", "candidates"}
+    entry_suffix = {"data": "h5", "models": "pt", "candidates": "h5"}
 
     def __init__(self, store_path, store_name, name, delete_all_contents=False):
         """
         Initializes the AMSDataStore class. Upon init the kosh-store is closed and not connected
         """
 
+        create_store_directories(store_path)
+
         self._delete_contents = delete_all_contents
         self._name = name
         self._store_path = Path(store_path) / Path(store_name)
         self._AMS_schema = kosh.KoshSchema(required=AMSDataStore.data_schema)
         self._store = None
+        self._entry_paths = {k: Path(store_path) / Path(k) for k in self.__class__.valid_entries}
 
     def is_open(self):
         """
@@ -278,7 +285,7 @@ class AMSDataStore:
 
         return self._get_entry_versions("models", associcate_files)
 
-    def get_candidates_versions(self, associcate_files=False):
+    def get_candidate_versions(self, associcate_files=False):
         """
         Returns a list of versions existing for the candidate entry
 
@@ -288,6 +295,84 @@ class AMSDataStore:
         """
 
         return self._get_entry_versions("candidates", associcate_files)
+
+    def get_files(self, entry, versions):
+        """
+        Returns a list of paths to files for the specified version
+
+        Args:
+            entry: The entry in the ensemble can be any of candidates, model, data
+            versions: A list of versions we are looking for.
+                If 'None'   return all files in entry
+                If "latest" return the latest version in the store
+                If "list" return only files matching these versions
+
+        Returns:
+            A list of existing files in the kosh-store
+        """
+
+        files = self._get_entry_versions(entry, True)
+
+        if len(files) == 0:
+            return list()
+
+        if isinstance(versions, str) and versions == "latest":
+            max_version = max(files.keys())
+            return files[max_version]
+
+        file_paths = list()
+        for k, v in files.items():
+            if versions is None or v in versions:
+                file_paths = file_paths + v
+        return file_paths
+
+    def get_candidate_files(self, versions=None):
+        """
+        Returns a list of paths to files for the specified version
+
+        Args:
+            versions: A list of versions we are looking for.
+                If 'None'   return all files in entry
+                If "latest" return the latest version in the store
+                If "list" return only files matching these versions
+
+        Returns:
+            A list of existing files in the kosh-store candidates ensemble
+        """
+
+        return self.get_files("candidates", versions)
+
+    def get_model_files(self, versions=None):
+        """
+        Returns a list of paths to files for the specified version
+
+        Args:
+            versions: A list of versions we are looking for.
+                If 'None'   return all files in entry
+                If "latest" return the latest version in the store
+                If "list" return only files matching these versions
+
+        Returns:
+            A list of existing files in the kosh-store model ensemble
+        """
+
+        return self.get_files("models", versions)
+
+    def get_data_files(self, versions=None):
+        """
+        Returns a list of paths to files for the specified version
+
+        Args:
+            versions: A list of versions we are looking for.
+                If 'None'   return all files in entry
+                If "latest" return the latest version in the store
+                If "list" return only files matching these versions
+
+        Returns:
+            A list of existing files in the kosh-store model ensemble
+        """
+
+        return self.get_files("data", versions)
 
     def close(self):
         """
@@ -327,11 +412,40 @@ class AMSDataStore:
                     data[entry_type][d.version] = dset
         return data
 
+    def move(self, src_entry, dest_entry, files):
+        # we first copy the files. This is sub-optimal, but 'safer'.
+        if src_entry not in self.__class__.valid_entries:
+            raise RuntimeError(f"Entry: {src_entry} not a valid AMSDataStore entry")
+
+        if dest_entry not in self.__class__.valid_entries:
+            raise RuntimeError(f"Entry: {dest_entry} not a valid AMSDataStore entry")
+
+        dest_dir = self._entry_paths[dest_entry]
+        new_files = list()
+        for f in files:
+            dest_name = dest_dir / Path(f).name
+            shutil.copy(f, dest_name)
+            new_files.append(str(dest_name))
+
+        self._add_entry(dest_entry, "hdf5", new_files)
+        self._remove_entry_file(src_entry, files, True)
 
     def __str__(self):
         return "AMS Kosh Wrapper Store(path={0}, name={1}, status={2})".format(
             self._store_path, self._name, "Open" if self.is_open() else "Closed"
         )
+
+    def _suggest_entry_file_name(self, entry):
+        return str(self._entry_paths[entry] / Path(f"{get_unique_fn()}.{self.__class__.entry_suffix[entry]}"))
+
+    def suggest_model_file_name(self):
+        return self._suggest_entry_file_name("models")
+
+    def suggest_candidate_file_name(self):
+        return self._suggest_entry_file_name("candidates")
+
+    def suggest_data_file_name(self):
+        return self._suggest_entry_file_name("data")
 
 
 def create_store_directories(store_path):
@@ -344,5 +458,5 @@ def create_store_directories(store_path):
 
     for fn in list(AMSDataStore.valid_entries):
         _tmp = store_path / Path(fn)
-        if not store_path.exists():
+        if not _tmp.exists():
             _tmp.mkdir(parents=True, exist_ok=True)

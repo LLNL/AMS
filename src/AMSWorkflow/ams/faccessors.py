@@ -411,21 +411,21 @@ class HDF5PackedWriter(HDF5Writer):
         return cls.suffix
 
 
-def get_reader(ftype="5"):
+def get_reader(ftype="hdf5"):
     """
     Factory method return a AMS file reader depending on the requested filetype
     """
 
-    readers = {"h5": HDF5CLibReader, "csv": CSVReader}
+    readers = {"hdf5": HDF5CLibReader, "csv": CSVReader}
     return readers[ftype]
 
 
-def get_writer(ftype="5"):
+def get_writer(ftype="hdf5"):
     """
     Factory method return a AMS file writer depending on the requested filetype
     """
 
-    writers = {"h5": HDF5Writer, "csv": CSVWriter}
+    writers = {"hdf5": HDF5PackedWriter, "csv": CSVWriter}
     return writers[ftype]
 
 
@@ -451,7 +451,7 @@ def main():
         if args.type == "csv":
             db = CSVReader
         elif args.type == "hdf5":
-            db = HDF5CLibReader
+            db = HDF5PackedReader
 
         with db(args.filename) as fd:
             input_data, output_data = fd.load()

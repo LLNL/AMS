@@ -63,9 +63,9 @@ class TestStore(unittest.TestCase):
     def test_store_add_remove_query_candidates(self):
         ams_store = store.AMSDataStore(self.__class__.store_dir, "test.sql", "ams_test")
         ams_store = ams_store.open()
-        self._add_entries(ams_store.add_candidates, ams_store.get_candidates_versions, self.__class__.candidate_files)
+        self._add_entries(ams_store.add_candidates, ams_store.get_candidate_versions, self.__class__.candidate_files)
         versions = self._remove_entries(
-            ams_store.remove_candidates, ams_store.get_candidates_versions, self.__class__.candidate_files
+            ams_store.remove_candidates, ams_store.get_candidate_versions, self.__class__.candidate_files
         )
         self.assertTrue(len(versions) == 0, f"Store should be empty but isn't {versions}")
         ams_store.close()
@@ -75,7 +75,7 @@ class TestStore(unittest.TestCase):
         ams_store = ams_store.open()
         self._add_entries(ams_store.add_model, ams_store.get_model_versions, self.__class__.model_files, False)
         versions = self._remove_entries(
-            ams_store.remove_models, ams_store.get_candidates_versions, self.__class__.model_files
+            ams_store.remove_models, ams_store.get_candidate_versions, self.__class__.model_files
         )
         self.assertTrue(len(versions) == 0, f"Store should be empty but isn't {versions}")
         ams_store.close()
@@ -92,10 +92,10 @@ class TestStore(unittest.TestCase):
         ams_store = store.AMSDataStore(self.__class__.store_dir, "test.sql", "ams_test")
         ams_store = ams_store.open()
         self._add_entries(
-            ams_store.add_candidates, ams_store.get_candidates_versions, [self.__class__.candidate_files], False
+            ams_store.add_candidates, ams_store.get_candidate_versions, [self.__class__.candidate_files], False
         )
         versions = self._remove_entries(
-            ams_store.remove_candidates, ams_store.get_candidates_versions, self.__class__.candidate_files
+            ams_store.remove_candidates, ams_store.get_candidate_versions, self.__class__.candidate_files
         )
         self.assertTrue(len(versions) == 0, f"Store should be empty but isn't {versions}")
         ams_store.close()
