@@ -9,6 +9,7 @@ import time
 from ams.loader import load_class
 from ams.stage import get_pipeline
 
+
 def main():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,

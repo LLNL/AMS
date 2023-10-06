@@ -42,7 +42,6 @@ class AMSInstance(metaclass=AMSSingleton):
                 f"{self.__class__.__name__} valid config is missing please set AMS_CONFIG_FILE env variable to point to a valid config file"
             )
 
-
         if "name" not in self._options:
             raise RuntimeError("AMS configuration does not include 'name' field.")
 
