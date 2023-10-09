@@ -1,0 +1,80 @@
+# This is a Spack Environment file.
+#
+# It describes a set of packages to be installed, along with
+# configuration settings.
+spack:
+  # add package specs to the `specs` list
+  specs:
+  - python
+  - py-torch
+  - py-scipy
+  - py-torchvision
+  - py-horovod
+  - py-pillow
+  - py-h5py
+  - py-pandas
+  - py-scikit-learn
+  - py-matplotlib
+  - py-pip
+  - py-kosh
+  - py-mpi4py
+  - mfem
+  - umpire
+  - caliper
+  - faiss
+  - redis-plus-plus
+  - amqp-cpp +tcp
+  - flux-core
+  - flux-sched
+  - py-pika
+  view: local
+  concretizer:
+    unify: true
+    reuse: false
+  repos:
+  - ../repo
+  - $spack/var/spack/repos/builtin
+  packages:
+    all:
+      variants: [~cuda]
+      compiler: [gcc@11.2.1]
+      target: [broadwell]
+      providers:
+        mpi: [mvapich2]
+        blas: [openblas]
+        lapack: [openblas]
+    cmake:
+      require: '@3.23.1'
+    py-torch:
+      require: '@1.12~valgrind~mkldnn+distributed+mpi~cuda'
+    py-horovod:
+      require: '@0.26 frameworks=pytorch tensor_ops=mpi'
+    py-kosh:
+      require: '@3.0.1'
+    raja:
+      require: '@2022.03.0~openmp~cuda'
+    hdf5:
+      require: '@1.14~mpi api=v18'
+    mfem:
+      require: '@4.5~openmp~cuda+raja+umpire+shared+static~mpi~metis~examples~zlib'
+    umpire:
+      require: '@2022.03.1~shared~cuda'
+    caliper:
+      require: '@2.9+shared~libdw~libunwind'
+    faiss:
+      require: '@1.7.2+python+shared~cuda build_system=cmake'
+    redis-plus-plus:
+      require: '@1.3.6+tls cxxstd=14'
+    py-tqdm:
+      require: +notebook
+    cudnn:
+      require: '@8.4.0.27-11.6'
+    py-tensorboard:
+      require: '@2.4.1'
+    flux-core:
+      require: '@0.45'
+    flux-sched:
+      require: '@0.28'
+    py-pika:
+      require: '@1.3.1'
+
