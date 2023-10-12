@@ -30,11 +30,8 @@ jobs:
           export AMS_TORCH_PATH=$(spack location -i py-torch)/lib/python3.10/site-packages/torch/share/cmake/Torch
           export AMS_FAISS_PATH=`spack location -i faiss`
           export AMS_UMPIRE_PATH=`spack location -i umpire`
-          export AMS_HIREDIS_PATH=`spack location -i hiredis`
-          export AMS_REDIS_PLUS_PLUS_PATH=`spack location -i redis-plus-plus`
           export AMS_HDF5_PATH=`spack location -i hdf5`
           cmake \
-            -Damqpcpp_DIR=$AMS_AMQPCPP_PATH \
             -DBUILD_SHARED_LIBS=On \
             -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
             -DWITH_CALIPER=On \

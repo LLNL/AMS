@@ -29,5 +29,6 @@ FROM setup-spack-env AS install-spack-env
 RUN \
     source spack/share/spack/setup-env.sh &&\
     spack env activate -p ams-spack-env &&\
-    spack install
+    spack install &&\
+    spack clean --all
 

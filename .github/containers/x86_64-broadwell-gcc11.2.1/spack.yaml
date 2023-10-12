@@ -8,13 +8,7 @@ spack:
   - python
   - py-torch
   - py-scipy
-  - py-torchvision
-  - py-horovod
-  - py-pillow
   - py-h5py
-  - py-pandas
-  - py-scikit-learn
-  - py-matplotlib
   - py-pip
   - py-kosh
   - py-mpi4py
@@ -22,8 +16,6 @@ spack:
   - umpire
   - caliper
   - faiss
-  - redis-plus-plus
-  - amqp-cpp +tcp
   - flux-core
   - flux-sched
   - py-pika
@@ -47,8 +39,6 @@ spack:
       require: '@3.23.1'
     py-torch:
       require: '@1.12~valgrind~mkldnn+distributed+mpi~cuda'
-    py-horovod:
-      require: '@0.26 frameworks=pytorch tensor_ops=mpi'
     py-kosh:
       require: '@3.0.1'
     raja:
