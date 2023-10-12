@@ -22,4 +22,4 @@ endfunction()
 
 ADDTEST(ams_allocator ams_allocate.cpp AMSAllocate)
 ADDTEST(ams_packing cpu_packing_test.cpp AMSPack)
-ADDTEST(ams_inference torch_model.cpp AMSInfer /usr/workspace/AMS/miniapp_resources/trained_models/debug_model.pt)
+ADDTEST(ams_inference torch_model.cpp AMSInfer ${CMAKE_CURRENT_SOURCE_DIR}/debug_model.pt)

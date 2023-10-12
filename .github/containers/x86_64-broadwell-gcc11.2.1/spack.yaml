@@ -19,6 +19,7 @@ spack:
   - flux-core
   - flux-sched
   - py-pika
+  - amqp-cpp +tcp
   view: local
   concretizer:
     unify: true
