@@ -10,6 +10,8 @@ function (ADDTEST binary_name src_file test_name)
   target_link_libraries(${binary_name} PRIVATE AMS umpire MPI::MPI_CXX)
 
   add_test(NAME "${test_name}::HOST" COMMAND ${binary_name} 0 ${ARGN})
+
+  target_compile_definitions(${binary_name} PRIVATE ${AMS_APP_DEFINES})
   if (WITH_CUDA)
     set_target_properties(${binary_name} PROPERTIES CUDA_ARCHITECTURES "${AMS_CUDA_ARCH}")
     set_property(TARGET ${binary_name} PROPERTY CUDA_SEPARABLE_COMPILATION ON)
