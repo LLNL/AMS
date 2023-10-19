@@ -9,12 +9,15 @@ import time
 from ams.loader import load_class
 from ams.stage import get_pipeline
 
+import sys
+
 
 def main():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description="AMS Stage mechanism. The mechanism moves data to the file-system and optionally registers them in a kosh store",
     )
+
     parser.add_argument(
         "--load", "-l", dest="user_module", help="Path implementing a custom pipeline stage module", default=None
     )
@@ -28,6 +31,7 @@ def main():
         choices=["process", "thread", "sequential"],
         default="process",
     )
+
     parser.add_argument("--mechansism", "-m", dest="mechanism", choices=["fs", "network"], default="fs")
 
     args, extras = parser.parse_known_args()
@@ -36,6 +40,7 @@ def main():
         raise argparse.ArgumentTypeError("User custom module was specified but the 'class' was not defined")
 
     user_class = None
+    user_args = None
     user_prog = ""
 
     if args.user_module is not None:
@@ -66,11 +71,7 @@ def main():
     pipeline = pipeline_cls.from_cli(pipeline_args)
 
     if user_class is not None:
-        print(user_class)
-        print(user_args)
-        print(pipeline)
         obj = user_class.from_cli(user_args)
-        print(obj)
         pipeline.add_data_action(obj)
 
     start = time.time()
@@ -80,4 +81,5 @@ def main():
 
 
 if __name__ == "__main__":
+    print("{0}".format(" ".join(sys.argv)))
     main()

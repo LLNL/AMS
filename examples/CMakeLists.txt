@@ -37,3 +37,11 @@ if (WITH_CUDA)
       set_property(SOURCE ${AMS_EXAMPLE_SRC} APPEND_STRING PROPERTY COMPILE_FLAGS " -ccbin clang++ -Xcompiler=-Xclang -Xcompiler=-load -Xcompiler=-Xclang -Xcompiler=${PERFFLOWASPECT_LIB_DIR}/libWeavePass.so")
     endif()
 endif()
+
+#
+if (WITH_WORKFLOW)
+  configure_file ("${CMAKE_CURRENT_SOURCE_DIR}/prune.py" "${CMAKE_CURRENT_BINARY_DIR}/prune.py")
+  configure_file ("${CMAKE_CURRENT_SOURCE_DIR}/train.py" "${CMAKE_CURRENT_BINARY_DIR}/train.py")
+  configure_file ("${CMAKE_CURRENT_SOURCE_DIR}/sub_selection.py" "${CMAKE_CURRENT_BINARY_DIR}/sub_selection.py")
+  configure_file ("${CMAKE_CURRENT_SOURCE_DIR}/example_run.sh" "${CMAKE_CURRENT_BINARY_DIR}/example_run.sh" @ONLY)
+endif()
