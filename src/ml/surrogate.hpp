@@ -147,7 +147,7 @@ PERFFASPECT()
   inline void _evaluate(long num_elements,
                         size_t num_in,
                         size_t num_out,
-                        const TypeInValue** inputs,
+                        TypeInValue** inputs,
                         TypeInValue** outputs)
   {
     //torch::NoGradGuard no_grad;
@@ -212,7 +212,7 @@ PERFFASPECT()
     _evaluate(num_elements,
               inputs.size(),
               outputs.size(),
-              static_cast<const TypeInValue**>(inputs.data()),
+              const_cast<TypeInValue**>(inputs.data()),
               static_cast<TypeInValue**>(outputs.data()));
   }
 };
