@@ -9,8 +9,7 @@ from ams.action import UserAction
 
 class RandomPruneAction(UserAction):
     """
-    A class that will be dynamically
-    loaded by the AMS staging mechanism
+    A class that will be dynamically loaded by the AMS staging mechanism
     The class must be callable.
     """
 
@@ -35,7 +34,7 @@ class RandomPruneAction(UserAction):
         Args:
             arg_parser: argparge parser to append command line arguments
         """
-        arg_parser.add_argument("--fraction", "-f", help="The fraction of elememnts to drop", required=True, type=float)
+        arg_parser.add_argument("--fraction", "-f", help="The fraction of elements to drop", required=True, type=float)
 
     @classmethod
     def from_cli(cls, args):

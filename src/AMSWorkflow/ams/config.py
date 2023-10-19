@@ -26,38 +26,13 @@ class AMSInstance(metaclass=AMSSingleton):
     System is a singleton class.
     """
 
-    def __init__(self, config=None):
-        if environ.get("AMS_CONFIG_FILE") is not None:
-            ams_conf_fn = Path(environ.get("AMS_CONFIG_FILE"))
-            if not ams_conf_fn.exists():
-                raise RuntimeError(f"AMS_CONFIG_FILE is set to {ams_conf_fn} but file does not exist")
-            config = ams_conf_fn
-            with open(config, "r") as fd:
-                self._options = json.load(fd)
-        else:
-            self._options = config
-
-        if config is None:
-            raise RuntimeError(
-                f"{self.__class__.__name__} valid config is missing please set AMS_CONFIG_FILE env variable to point to a valid config file"
-            )
-
-        if "name" not in self._options:
-            raise RuntimeError("AMS configuration does not include 'name' field.")
-
-        self._name = self._options["name"]
-
-        db = self._options.get("ams_persistent_db", None)
-        if db is None:
-            raise RuntimeError("AMS config file expects a 'db' entry\n")
-
-        self._db_path = db["path"]
-
-        self._db_type = db["type"]
-
+    def __init__(self, name, path, ftype, fstore):
+        self._name = name
+        self._db_path = path
+        self._db_type = ftype
         self._db_store = "ams_store.sql"
-        if "store" in db:
-            self._db_store = db["store"]
+        if fstore is not None:
+            self._db_store = fstore
 
     @property
     def name(self) -> str:
@@ -75,10 +50,45 @@ class AMSInstance(metaclass=AMSSingleton):
     def db_store(self) -> str:
         return self._db_store
 
-    @property
-    def do_stage(self) -> bool:
-        return self._stage
+    @staticmethod
+    def create_config(store_path, store_name, name):
+        return {"name": name, "ams_persistent_db": {"path": str(store_path), "type": "hdf5", "store": str(name)}}
 
-    @property
-    def stage_dir(self) -> str:
-        return self._stage_dir
+    @classmethod
+    def from_dict(cls, config):
+        if len(config) == 0:
+            raise RuntimeError(f"{cls.__name__} valid config is missing ")
+
+        if "name" not in config:
+            raise RuntimeError("AMS configuration does not include 'name' field.")
+
+        db = config.get("ams_persistent_db", None)
+        if db is None:
+            raise RuntimeError("Config file expects a 'db' entry\n")
+
+        for key in {"path", "type"}:
+            assert key in db, f"Config does not have {k} entry"
+
+        return cls(config["name"], db["path"], db["type"], db["store"] if "store" in db else None)
+
+    @classmethod
+    def from_env(cls):
+        path = environ.get("AMS_CONFIG_FILE", None)
+        if path is not None:
+            ams_conf_fn = Path(path)
+            if not ams_conf_fn.exists():
+                raise RuntimeError(f"AMS_CONFIG_FILE is set to {ams_conf_fn} but file does not exist")
+            config = ams_conf_fn
+            with open(config, "r") as fd:
+                config = json.load(fd)
+            return cls.from_dict(config)
+        return None
+
+    @classmethod
+    def from_path(cls, db_path):
+        _fn = Path(db_path) / Path("ams_config.json")
+        assert _fn.exists(), "AMS Configuration file does not exist"
+        with open(str(_fn), "r") as fd:
+            config = json.load(fd)
+
+        return cls.from_dict(config)

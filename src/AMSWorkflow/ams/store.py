@@ -34,6 +34,7 @@ class AMSDataStore:
     data_schema = {"problem": str, "version": int}
     valid_entries = {"data", "models", "candidates"}
     entry_suffix = {"data": "h5", "models": "pt", "candidates": "h5"}
+    entry_mime_types = {"data": "hdf5", "models": "zip", "candidates": "hdf5"}
 
     def __init__(self, store_path, store_name, name, delete_all_contents=False):
         """
@@ -413,7 +414,17 @@ class AMSDataStore:
         return data
 
     def move(self, src_entry, dest_entry, files):
-        # we first copy the files. This is sub-optimal, but 'safer'.
+        """
+        Moves files between entries in kosh-store. It follows a "safe" approach: copy, add, delete the file instead of moving the underlying file.
+
+        Args:
+            src_entry: the ensemble name containing the original files
+            dest_entry: the ensemble name of the files
+            files: The files to be moved
+
+        NOTE: The current implementation will lose all metadata associated with the original src files. We need to consider whether we want to "migrate"
+        those to the destination entry dataset.
+        """
         if src_entry not in self.__class__.valid_entries:
             raise RuntimeError(f"Entry: {src_entry} not a valid AMSDataStore entry")
 
@@ -429,6 +440,54 @@ class AMSDataStore:
 
         self._add_entry(dest_entry, "hdf5", new_files)
         self._remove_entry_file(src_entry, files, True)
+
+    def search(self, entry=None, version=None, metadata=dict()):
+        """
+        Search for items in the database that match the metadata
+        Args:
+            entry: Which entry to search for ('data', 'models', 'candidates')
+            version: Specific version to look for, when 'version' is 'latest' we
+                return the entry with the largest version. If None, we are not matching
+                versions.
+            metadata: A dictionary of key values to search in our database
+
+        Returns:
+            A list of matching entries described as dictionaries
+        """
+
+        contents = self.get_raw_content()
+        if entry != None:
+            tmp_contents = contents[entry]
+            contents = {}
+            contents[entry] = tmp_contents
+
+        found = []
+
+        for e_name, entries in contents.items():
+            for ver, dsets in entries.items():
+                if version is not None:
+                    if (version != "latest") and (version != ver):
+                        continue
+
+                for dset in dsets:
+                    insert = True
+                    for k, v in metadata.items():
+                        if k in dset.keys():
+                            if dset[k] != v:
+                                insert = False
+                                break
+                        else:
+                            insert = False
+                            break
+                    if insert:
+                        dset["ensemble_name"] = e_name
+                        dset["version"] = ver
+                        found.append(dset)
+
+        if len(found) != 0 and version == "latest":
+            found = [max(found, key=lambda item: item["version"])]
+
+        return found
 
     def __str__(self):
         return "AMS Kosh Wrapper Store(path={0}, name={1}, status={2})".format(
