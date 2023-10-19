@@ -9,12 +9,14 @@ import shutil
 import time
 from abc import ABC, abstractclassmethod, abstractmethod
 from enum import Enum
-from multiprocessing import Process
+from multiprocessing import Process, current_process
 from multiprocessing import Queue as mp_queue
 from pathlib import Path
 from queue import Queue as ser_queue
 from threading import Thread
-from typing import Callable
+from typing import Callable, List, Tuple
+import struct
+import signal
 
 import numpy as np
 
@@ -22,6 +24,7 @@ from ams.config import AMSInstance
 from ams.faccessors import get_reader, get_writer
 from ams.store import AMSDataStore
 from ams.util import get_unique_fn
+from ams.rmq_async import RMQConsumer
 
 BATCH_SIZE = 32 * 1024 * 1024
 
@@ -196,6 +199,204 @@ class FSLoaderTask(Task):
         end = time.time()
         print(f"Spend {end - start} at {self.__class__.__name__}")
 
+class RMQMessage(object):
+    """
+    Represents a RabbitMQ incoming message from AMSLib.
+
+    Attributes:
+        body: The body of the message as received from RabbitMQ
+    """
+
+    def __init__(self, body: str):
+        self.body = body
+
+    def header_format(self) -> str:
+        """
+        This string represents the AMS format in Python pack format:
+        See https://docs.python.org/3/library/struct.html#format-characters
+        - 1 byte is the size of the header (here 12). Limit max: 255
+        - 1 byte is the precision (4 for float, 8 for double). Limit max: 255
+        - 2 bytes are the MPI rank (0 if AMS is not running with MPI). Limit max: 65535
+        - 4 bytes are the number of elements in the message. Limit max: 2^32 - 1
+        - 2 bytes are the input dimension. Limit max: 65535
+        - 2 bytes are the output dimension. Limit max: 65535
+        
+            |__Header_size__|__Datatype__|__Rank__|__#elem__|__InDim__|__OutDim__|...real data...|
+        
+        Then the data starts at 12 and is structered as pairs of input/outputs.
+        Let K be the total number of elements, then we have K pairs of inputs/outputs (either float or double):
+        
+            |__Header_(12B)__|__Input 1__|__Output 1__|...|__Input_K__|__Output_K__|
+
+        """
+        return "BBHIHH"
+
+    def endianness(self) -> str:
+        """
+        '=' means native endianness in standart size (system).
+        See https://docs.python.org/3/library/struct.html#format-characters
+        """
+        return '='
+
+    def encode(num_elem: int, input_dim: int, output_dim: int, dtype_byte: int = 4) -> bytes:
+        """
+        For debugging and testing purposes, this function encode a message identical to what AMS would send 
+        """
+        header_format = self.endianness() + self.header_format()
+        hsize = struct.calcsize(header_format)
+        assert dtype_byte in [4, 8]
+        dt = 'f' if dtype_byte == 4 else 'd'
+        mpi_rank = 0
+        data = np.random.rand(num_elem * (input_dim + output_dim))
+        header_content = (hsize, dtype_byte, mpi_rank, data.size, input_dim, output_dim)
+        # float or double
+        msg_format = f"{header_format}{data.size}{dt}"
+        return struct.pack(msg_format, *header_content, *data)
+
+    def _parse_header(self, body: str) -> dict:
+        """
+        Parse the header to extract information about data.
+        """
+        fmt = self.endianness() + self.header_format()
+        if len(body) == 0:
+            print(f"Empty message. skipping")
+            return {}
+
+        hsize = struct.calcsize(fmt)
+        res = {}
+        # Parse header
+        res["hsize"], res["datatype"], res["mpirank"], res["num_element"], res["input_dim"], res["output_dim"] = struct.unpack(fmt, body[:hsize])
+        assert hsize == res["hsize"]
+        assert res["datatype"] in [4, 8]
+        if len(body) < hsize:
+            print(f"Incomplete message of size {len(body)}. Header should be of size {hsize}. skipping")
+            return {}
+
+        # Theoritical size in Bytes for the incoming message (without the header)
+        # Int() is needed otherwise we might overflow here (because of uint16 / uint8)
+        res["dsize"] = int(res["datatype"])*int(res["num_element"])*(int(res["input_dim"])+int(res["output_dim"]))
+        res["msg_size"] = hsize + res["dsize"]
+        res["multiple_msg"] = len(body) != res["msg_size"]
+        return res
+
+    def _parse_data(self, body: str, header_info: dict) -> np.array:
+        data = np.array([])
+        if len(body) == 0:
+            return data
+        hsize = header_info["hsize"]
+        dsize = header_info["dsize"]
+        try:
+            if header_info["datatype"] == 4: #if datatype takes 4 bytes (float)
+                data = np.frombuffer(body[hsize:hsize+dsize], dtype = np.float32)
+            else:
+                data = np.frombuffer(body[hsize:hsize+dsize], dtype = np.float64)
+        except ValueError as e:
+            print(f"Error: {e} => {header_info}")
+            return np.array([])
+        
+        idim = header_info["input_dim"]
+        odim = header_info["output_dim"]
+        data = data.reshape((-1, idim+odim))
+        # Return input, output
+        return data[:, :idim], data[:, idim:]
+
+    def _decode(self, body: str) -> Tuple[np.array]:
+        input = []
+        output = []
+        # Multiple AMS messages could be packed in one RMQ message
+        while body:
+            header_info = self._parse_header(body)
+            temp_input, temp_output = self._parse_data(body, header_info)
+            # total size of byte we read for that message
+            chunk_size = header_info["hsize"] + header_info["dsize"]
+            print(f"Processing message #{i}")
+            input.append(temp_input)
+            output.append(temp_output)
+            # We remove the current message and keep going
+            body = body[chunk_size:]
+        return np.concatenate(input), np.concatenate(output)
+
+    def decode(self) -> Tuple[np.array]:
+        return self._decode(self.body)
+
+class RMQLoaderTask(Task):
+    """
+    A RMQLoaderTask consumes data from RabbitMQ bundles the data of
+    the files into batches and forwards them to the next task waiting on the
+    output queuee.
+
+    Attributes:
+        o_queue: The output queue to write the transformed messages
+        credentials: A JSON file with the credentials to log on the RabbitMQ server.
+        certificates: TLS certificates
+        rmq_queue: The RabbitMQ queue to listen to.
+        prefetch_count: Number of messages prefected by RMQ (impact performance)
+    """
+
+    def __init__(self, o_queue, credentials, cacert, rmq_queue, prefetch_count = 1):
+        self.o_queue = o_queue
+        self.credentials = credentials
+        self.cacert = cacert
+        self.rmq_queue = rmq_queue
+        self.prefetch_count = prefetch_count
+
+        # Installing signal callbacks
+        p = current_process()
+        print(f"pid = {p.pid}")
+        signal.signal(signal.SIGTERM, self.signal_wrapper(self.__class__.__name__, p.pid))
+        signal.signal(signal.SIGINT, self.signal_wrapper(self.__class__.__name__, p.pid))
+        self.total_time = 0
+
+        self.rmq_consumer = RMQConsumer(
+            credentials = self.credentials,
+            cacert = self.cacert,
+            queue = self.rmq_queue,
+            on_message_cb = self.callback_message,
+            on_close_cb = self.callback_close,
+            prefetch_count = self.prefetch_count
+        )
+
+    def callback_close(self):
+        """
+        Callback that will be called when RabbitMQ will close 
+        the connection (or if a problem happened with the connection).
+        """
+        print(f"Sending Terminate to QueueMessage")
+        self.o_queue.put(QueueMessage(MessageType.Terminate, None))
+
+    def callback_message(self, ch, basic_deliver, properties, body):
+        """
+        Callback that will be called each time a message will be consummed.
+        the connection (or if a problem happened with the connection).
+        """
+        start_time = time.time()
+        input_data, output_data = RMQMessage(body).decode()
+        row_size = input_data[0, :].nbytes + output_data[0, :].nbytes
+        rows_per_batch = int(np.ceil(BATCH_SIZE / row_size))
+        num_batches = int(np.ceil(input_data.shape[0] / rows_per_batch))
+        input_batches = np.array_split(input_data, num_batches)
+        output_batches = np.array_split(output_data, num_batches)
+
+        for j, (i, o) in enumerate(zip(input_batches, output_batches)):
+            self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(i, o)))
+        
+        self.total_time += (time.time() - start_time)
+    
+    def signal_wrapper(self, name, pid):
+        def handler(signum, frame):
+            print(f"Received SIGNUM={signum} for {name}[pid={pid}]: stopping process")
+            self.rmq_consumer.stop()
+            self.o_queue.put(QueueMessage(MessageType.Terminate, None))
+            print(f"Spend {self.total_time} at {self.__class__.__name__}")
+        return handler
+
+    def __call__(self):
+        """
+        Busy loop of reading all files matching the pattern and creating
+        '100' batches which will be pushed on the queue. Upon reading all files
+        the Task pushes a 'Terminate' message to the queue and returns.
+        """
+        self.rmq_consumer.run()
 
 class FSWriteTask(Task):
     """
@@ -560,6 +761,55 @@ class FSPipeline(Pipeline):
             args.pattern,
         )
 
+class RMQPipeline(Pipeline):
+    """
+    A 'Pipeline' reading data from RabbitMQ and storing them back to the filesystem.
+
+    Attributes:
+        credentials: The JSON credentials to connect to RMQ Server
+        cacert: The TLS certificate
+        rmq_queue: The RMQ queue to listen to.
+    """
+
+    def __init__(self, store, dest_dir, stage_dir, db_type, credentials, cacert, rmq_queue):
+        """
+        Initialize a RMQPipeline that will write data to the 'dest_dir' and optionally publish
+        these files to the kosh-store 'store' by using the stage_dir as an intermediate directory.
+        """
+        super().__init__(store, dest_dir, stage_dir, db_type)
+        self._credentials = Path(credentials)
+        self._cacert = Path(cacert)
+        self._rmq_queue = rmq_queue
+
+    def get_load_task(self, o_queue):
+        """
+        Return a Task that loads data from the filesystem
+
+        Args:
+            o_queue: The queue the load task will push read data.
+
+        Returns: An RMQLoaderTask instance reading data from the filesystem and forwarding the values to the o_queue.
+        """
+        return RMQLoaderTask(o_queue, self._credentials, self._cacert, self._rmq_queue)
+
+    @staticmethod
+    def add_cli_args(parser):
+        """
+        Add cli arguments to the parser required by this Pipeline.
+        """
+        Pipeline.add_cli_args(parser)
+        parser.add_argument("-c", "--creds", help="Credentials file (JSON)", required=True)
+        parser.add_argument("-t", "--cert", help="TLS certificate file", required=True)
+        parser.add_argument("-q", "--queue", help="On which queue to receive messages", required=True)
+        return
+
+    @classmethod
+    def from_cli(cls, args):
+        """
+        Create RMQPipeline from the user provided CLI.
+        """
+        return cls(args.store, args.dest_dir, args.stage_dir, args.db_type, args.creds, args.cert, args.queue)
+
 
 def get_pipeline(src_mechanism="fs"):
     """
@@ -570,7 +820,7 @@ def get_pipeline(src_mechanism="fs"):
 
     Returns: A Pipeline class to start the stage AMS service
     """
-    PipeMechanisms = {"fs": FSPipeline, "network": None}
+    PipeMechanisms = {"fs": FSPipeline, "network": RMQPipeline}
     if src_mechanism not in PipeMechanisms.keys():
         raise RuntimeError(f"Pipeline {src_mechanism} storing mechanism does not exist")
 
