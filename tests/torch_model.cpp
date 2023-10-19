@@ -15,7 +15,7 @@
 #include <wf/data_handler.hpp>
 #include <wf/resource_manager.hpp>
 
-#define SIZE (32 * 1024 + 3)
+#define SIZE (32L * 1024L + 3L)
 
 template <typename T>
 void inference(char *path, int device, AMSResourceType resource)
@@ -23,7 +23,7 @@ void inference(char *path, int device, AMSResourceType resource)
   using namespace ams;
   SurrogateModel<T> model(path, !device);
 
-  std::vector<T *> inputs;
+  std::vector<const T *> inputs;
   std::vector<T *> outputs;
 
   for (int i = 0; i < 2; i++)
@@ -35,8 +35,9 @@ void inference(char *path, int device, AMSResourceType resource)
   model.evaluate(
       SIZE, inputs.size(), outputs.size(), inputs.data(), outputs.data());
 
+
   for (int i = 0; i < 2; i++)
-    ResourceManager::deallocate(inputs[i], resource);
+    ResourceManager::deallocate(const_cast<T*>(inputs[i]), resource);
 
   for (int i = 0; i < 4; i++)
     ResourceManager::deallocate(outputs[i], resource);
@@ -56,7 +57,7 @@ int main(int argc, char *argv[])
   if (use_device == 1) {
     AMSSetupAllocator(AMSResourceType::DEVICE);
     AMSSetDefaultAllocator(AMSResourceType::DEVICE);
-    AMSResourceType resource = AMSResourceType::DEVICE;
+    resource = AMSResourceType::DEVICE;
   }
 
   inference<double>(model_path, use_device, resource);

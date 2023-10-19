@@ -145,7 +145,7 @@ PERFFASPECT()
   // -------------------------------------------------------------------------
 PERFFASPECT()
   inline void _evaluate(long num_elements,
-                        long num_in,
+                        size_t num_in,
                         size_t num_out,
                         const TypeInValue** inputs,
                         TypeInValue** outputs)
@@ -196,9 +196,9 @@ public:
 
 PERFFASPECT()
   inline void evaluate(long num_elements,
-                       long num_in,
+                       size_t num_in,
                        size_t num_out,
-                       TypeInValue** inputs,
+                       const TypeInValue** inputs,
                        TypeInValue** outputs)
   {
     _evaluate(num_elements, num_in, num_out, inputs, outputs);
