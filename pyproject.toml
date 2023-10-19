@@ -41,3 +41,9 @@ exclude = [
 # W503: Line break occurred before binary operator
 # E226: Missing white space around arithmetic operator
 
+[tool.ruff]
+ignore = ["E501", "W503", "E226", "BLK100", "E203"]
+show-fixes = true
+
+# change the default line length number or characters.
+line-length = 120

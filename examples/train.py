@@ -12,6 +12,26 @@ from ams.store import AMSDataStore
 from ams.views import AMSDataView
 from torch.autograd import Variable
 from torch.utils.data import DataLoader, Dataset
+from ams.views import AMSDataView
+
+
+class IdealGasView(AMSDataView):
+    """
+    A class providing semantic information
+    to the data stored in the kosh-data store
+    """
+
+    input_feature_names = ["density", "pressure"]
+    input_feature_dims = [1] * 2
+    input_feature_types = ["scalar"] * 2
+
+    output_feature_names = ["pressure", "soundspeed", "bulkmod", "temperature"]
+    output_feature_dims = [1] * 4
+    output_feature_types = ["scalar"] * 4
+
+    def __init__(self, ams_store, entry, versions=None, **options):
+        super().__init__(ams_store, entry, versions=versions, **options)
+
 
 # These make the model training "deterministic"
 # Not sure though this is sufficient. For later
@@ -81,40 +101,34 @@ def validate(model, loss_fn, val_loader, device):
             test_output = model(inputs)
             loss = loss_fn(test_output, targets)
             validation_loss += loss.item()
-    print("VALIDATION SET ACCURACY: %.2f" % validation_loss)
-    return float(validation_loss) / float(len(val_loader))
 
+    if len(val_loader) != 0:
+        validation_loss /= len(val_loader)
 
-class ExampleView(AMSDataView):
-    """
-    A class providing semantic information
-    to the data stored in the kosh-data store
-    """
-
-    input_feature_names = ["density", "pressure"]
-    input_feature_dims = [1] * 2
-    input_feature_types = ["scalar"] * 2
-
-    output_feature_names = ["pressure", "soundspeed", "bulkmod", "temperature"]
-    output_feature_dims = [1] * 4
-    output_feature_types = ["scalar"] * 4
-
-    def __init__(self, ams_store, entry, versions=None, **options):
-        super().__init__(ams_store, entry, versions=versions, **options)
+    return float(validation_loss)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Training of AMS model")
     parser.add_argument("--epochs", "-e", type=int, default=100, help="Number of training iterations")
+    parser.add_argument(
+        "--device", "-d", choices=("cpu", "gpu"), default="gpu", help="Use device or CPU to train the model"
+    )
+    parser.add_argument(
+        "--device-id", "-id", type=int, default="0", help="In case of device training, select the device to be used"
+    )
+    parser.add_argument("--learning-rate", "-lr", type=float, default=1e-2, help="The learning rate")
+    parser.add_argument("--split", "-s", type=float, default=0.2, help="Fraction of data to be used as training set")
+    parser.add_argument("--batch-size", "-bs", default=1024, help="Batch size of training")
 
-    parser.add_argument("--device", "-d", choices=("cpu", "gpu"), default="gpu")
+    parser.add_argument("--persistent-db-path", "-db", help="The path of the AMS database", required=True)
 
     args = parser.parse_args()
-    ams_config = AMSInstance()
+    ams_config = AMSInstance.from_path(args.persistent_db_path)
 
     # Open kosh-store wrapper
     with AMSDataStore(ams_config.db_path, ams_config.db_store, ams_config.name) as db:
-        with ExampleView(db, "data") as dset:
+        with IdealGasView(db, "data") as dset:
             # Pull the data from the store
             X, targets = dset.get_data()
 
@@ -124,30 +138,30 @@ def main():
             ##########################################################################
             length = X.shape[0]
 
-            split = 0.8
-            learningRate = 1e-2
+            split = args.split
+            learningRate = args.learning_rate
             model = linearRegression(X.shape[-1], targets.shape[-1])
             device = None
 
-            # Currently I am selecting cuda:3 for conveniency
             if args.device == "gpu":
-                model = model.to("cuda:3")
-                device = "cuda:3"
+                device = f"cuda:{args.device_id}"
+                model = model.to(device)
 
             criterion = torch.nn.MSELoss()
             optimizer = torch.optim.SGD(model.parameters(), lr=learningRate)
 
             # We reduce the validation/training data-size to reduce the example time.
-            train_dset = ExampleDataset(X[: int(split * length * 0.1), ...], targets[: int(split * length * 0.1), ...])
+            train_dset = ExampleDataset(X[: int(split * length), ...], targets[: int(split * length), ...])
             valid_dset = ExampleDataset(
-                X[int(split * length * 0.1) : int(split * length * 0.15), ...],
-                targets[int(split * length * 0.1) : int(split * length * 0.15), ...],
+                X[int(split * length) :, ...],
+                targets[int(split * length) :, ...],
             )
-            # Batch size is randombly picked to be 4096.
-            # For a realistic training process
-            # we will need to pick this value better
-            train_loader = DataLoader(train_dset, shuffle=False, batch_size=4096)
-            valid_loader = DataLoader(valid_dset, shuffle=False, batch_size=4096)
+
+            train_loader = DataLoader(train_dset, shuffle=False, batch_size=args.batch_size)
+            valid_loader = DataLoader(valid_dset, shuffle=False, batch_size=args.batch_size)
+            print(f"Batch Size is {args.batch_size}")
+            print(f"Split is {split}")
+            print(f"length is {length}")
 
             train(args.epochs, model, criterion, optimizer, train_loader, device)
             val_error = validate(model, criterion, valid_loader, device)
@@ -159,6 +173,7 @@ def main():
             with torch.no_grad():
                 # Set to evaluation mode
                 model.eval()
+
                 # Mentioned in the torch source code.
                 # I am not sure we need this or whether we are going to have
                 # portability issues because of constant folding and device pinning.

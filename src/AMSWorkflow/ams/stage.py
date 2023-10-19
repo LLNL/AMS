@@ -7,7 +7,7 @@
 import glob
 import shutil
 import time
-from abc import ABC, abstractmethod
+from abc import ABC, abstractclassmethod, abstractmethod
 from enum import Enum
 from multiprocessing import Process
 from multiprocessing import Queue as mp_queue
@@ -329,14 +329,13 @@ class Pipeline(ABC):
     supported_policies = {"sequential", "thread", "process"}
     supported_writers = {"hdf5", "csv"}
 
-    def __init__(self, store, dest_dir=None, stage_dir=None, db_type="hdf5"):
+    def __init__(self, db_dir, store, dest_dir=None, stage_dir=None, db_type="hdf5"):
         """
         initializes the Pipeline class to write the final data in the 'dest_dir' using a file writer of type 'db_type'
         and optionally caching the data in the 'stage_dir' before making them available in the cache store.
         """
-        self.ams_config = None
-        if store:
-            self.ams_config = AMSInstance()
+        print("DATABASE DIR IS: ", db_dir)
+        self.ams_config = AMSInstance.from_path(db_dir)
 
         if dest_dir is not None:
             self.dest_dir = dest_dir
@@ -479,13 +478,15 @@ class Pipeline(ABC):
             help="File format to store the data to",
             default="hdf5",
         )
+        # parser.add_argument("--db-dir", "-d", help="path to the AMS store directory", required=True)
+        parser.add_argument("--persistent-db-path", "-db", help="The path of the AMS database", required=True)
         parser.add_argument("--store", dest="store", action="store_true")
         parser.add_argument("--no-store", dest="store", action="store_false")
         parser.set_defaults(store=True)
         return
 
-    @classmethod
-    def from_cli(cls, args):
+    @abstractclassmethod
+    def from_cli(cls):
         pass
 
     @staticmethod
@@ -510,12 +511,12 @@ class FSPipeline(Pipeline):
 
     supported_readers = ("hdf5", "csv")
 
-    def __init__(self, store, dest_dir, stage_dir, db_type, src, src_type, pattern):
+    def __init__(self, db_dir, store, dest_dir, stage_dir, db_type, src, src_type, pattern):
         """
         Initialize a FSPipeline that will write data to the 'dest_dir' and optionally publish
         these files to the kosh-store 'store' by using the stage_dir as an intermediate directory.
         """
-        super().__init__(store, dest_dir, stage_dir, db_type)
+        super().__init__(db_dir, store, dest_dir, stage_dir, db_type)
         self._src = Path(src)
         self._pattern = pattern
         self._src_type = src_type
@@ -548,7 +549,16 @@ class FSPipeline(Pipeline):
         """
         Create FSPipeline from the user provided CLI.
         """
-        return cls(args.store, args.dest_dir, args.stage_dir, args.db_type, args.src, args.src_type, args.pattern)
+        return cls(
+            args.persistent_db_path,
+            args.store,
+            args.dest_dir,
+            args.stage_dir,
+            args.db_type,
+            args.src,
+            args.src_type,
+            args.pattern,
+        )
 
 
 def get_pipeline(src_mechanism="fs"):
