@@ -14,7 +14,6 @@
 #include <random>
 #include <vector>
 
-
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
 
@@ -54,6 +53,16 @@ void random_uq_host(bool *uq_flags, int ndata, double acceptable_error)
   for (int i = 0; i < ndata; i++) {
     uq_flags[i] = ((double)rand() / RAND_MAX) <= acceptable_error;
   }
+}
+
+inline bool is_real_equal(double l, double r)
+{
+  return r == std::nextafter(l, r);
+}
+
+inline bool is_real_equal(float l, float r)
+{
+  return r == std::nextafter(l, r);
 }
 
 

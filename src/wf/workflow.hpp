@@ -18,7 +18,6 @@
 #include "AMS.h"
 #include "ml/hdcache.hpp"
 #include "ml/surrogate.hpp"
-
 #include "wf/basedb.hpp"
 
 #ifdef __ENABLE_MPI__
@@ -50,21 +49,21 @@ class AMSWorkflow
   AMSPhysicFn AppCall;
 
   /** @brief The module that performs uncertainty quantification (UQ) */
-  HDCache<FPTypeValue> *hdcache;
+  std::shared_ptr<HDCache<FPTypeValue>> hdcache;
 
   /** The metric/type of UQ we will use to select between physics and ml computations **/
   const AMSUQPolicy uqPolicy = AMSUQPolicy::FAISSMean;
 
   /** The Number of clusters we will use to compute FAISS UQ  **/
-  const int nClusters=10;
+  const int nClusters = 10;
 
   /** @brief The torch surrogate model to replace the original physics function
    */
-  SurrogateModel<FPTypeValue> *surrogate;
+  std::shared_ptr<SurrogateModel<FPTypeValue>> surrogate;
 
   /** @brief The database to store data for which we cannot apply the current
    * model */
-  BaseDB<FPTypeValue> *DB;
+  std::shared_ptr<BaseDB<FPTypeValue>> DB;
 
   /** @brief The type of the database we will use (HDF5, CSV, etc) */
   AMSDBType dbType = AMSDBType::None;
@@ -108,8 +107,7 @@ class AMSWorkflow
     const int numOut = outputs.size();
 
     // No database, so just de-allocate and return
-    if (DB == nullptr)
-      return;
+    if (DB == nullptr) return;
 
     std::vector<FPTypeValue *> hInputs, hOutputs;
 
@@ -136,12 +134,16 @@ class AMSWorkflow
       size_t actualElems = std::min(elPerDim, num_elements - i);
       // Copy input data to host
       for (int k = 0; k < numIn; k++) {
-        ams::ResourceManager::copy(&inputs[k][i], hInputs[k], actualElems * sizeof(FPTypeValue));
+        ams::ResourceManager::copy(&inputs[k][i],
+                                   hInputs[k],
+                                   actualElems * sizeof(FPTypeValue));
       }
 
       // Copy output data to host
       for (int k = 0; k < numIn; k++) {
-        ams::ResourceManager::copy(&outputs[k][i], hOutputs[k], actualElems * sizeof(FPTypeValue));
+        ams::ResourceManager::copy(&outputs[k][i],
+                                   hOutputs[k],
+                                   actualElems * sizeof(FPTypeValue));
       }
 
       // Store to database
@@ -163,7 +165,7 @@ public:
         mLoc(AMSResourceType::DEVICE),
         ePolicy(AMSExecPolicy::UBALANCED)
   {
-    if (isCPU){
+    if (isCPU) {
       mLoc = AMSResourceType::HOST;
     }
 
@@ -184,7 +186,7 @@ public:
               const int nClusters,
               int _pId = 0,
               int _wSize = 1,
-              AMSExecPolicy policy= AMSExecPolicy::UBALANCED)
+              AMSExecPolicy policy = AMSExecPolicy::UBALANCED)
       : AppCall(_AppCall),
         dbType(dbType),
         rId(_pId),
@@ -193,27 +195,28 @@ public:
         mLoc(AMSResourceType::DEVICE),
         ePolicy(policy)
   {
-    if (isCPU){
+    if (isCPU) {
       mLoc = AMSResourceType::HOST;
     }
 
     surrogate = nullptr;
     if (surrogate_path != nullptr)
-      surrogate = new SurrogateModel<FPTypeValue>(surrogate_path, is_cpu);
+      surrogate =
+          SurrogateModel<FPTypeValue>::getInstance(surrogate_path, is_cpu);
 
     // TODO: Fix magic number. 10 represents the number of neighbours I am
     // looking at.
     if (uq_path != nullptr)
-      hdcache = new HDCache<FPTypeValue>(uq_path, !is_cpu,
-          uqPolicy, nClusters, threshold);
+      hdcache = HDCache<FPTypeValue>::getInstance(
+          uq_path, !is_cpu, uqPolicy, nClusters, threshold);
     else
       // This is a random hdcache returning true %threshold queries
-      hdcache = new HDCache<FPTypeValue>(!is_cpu, threshold);
+      hdcache = HDCache<FPTypeValue>::getInstance(!is_cpu, threshold);
 
     DB = nullptr;
     if (db_path != nullptr) {
       DBG(Workflow, "Creating Database");
-      DB = createDB<FPTypeValue>(db_path, dbType, rId);
+      DB = getDB<FPTypeValue>(db_path, dbType, rId);
     }
   }
 
@@ -229,11 +232,11 @@ public:
   ~AMSWorkflow()
   {
     DBG(Workflow, "Destroying Workflow Handler");
-    if (hdcache) delete hdcache;
+    //    if (hdcache) delete hdcache;
 
-    if (surrogate) delete surrogate;
+    //    if (surrogate) delete surrogate;
 
-    if (DB) delete DB;
+    //    if (DB) delete DB;
   }
 
 
@@ -291,17 +294,22 @@ public:
                 int outputDim,
                 MPI_Comm Comm = nullptr)
   {
-    CDEBUG(Workflow, rId==0, "Entering Evaluate "
-        "with problem dimensions [(%d, %d, %d, %d)]",
-        totalElements, inputDim, totalElements, outputDim);
+    CDEBUG(Workflow,
+           rId == 0,
+           "Entering Evaluate "
+           "with problem dimensions [(%d, %d, %d, %d)]",
+           totalElements,
+           inputDim,
+           totalElements,
+           outputDim);
     // To move around the inputs, outputs we bundle them as std::vectors
     std::vector<const FPTypeValue *> origInputs(inputs, inputs + inputDim);
     std::vector<FPTypeValue *> origOutputs(outputs, outputs + outputDim);
 
     REPORT_MEM_USAGE(Workflow, "Start")
 
-    if ( surrogate == nullptr ){
-      FPTypeValue **tmpInputs = const_cast<FPTypeValue**>(inputs);
+    if (surrogate == nullptr) {
+      FPTypeValue **tmpInputs = const_cast<FPTypeValue **>(inputs);
 
       std::vector<FPTypeValue *> tmpIn(tmpInputs, tmpInputs + inputDim);
       DBG(Workflow, "No-Model, I am calling Physics code (for all data)");
@@ -311,8 +319,7 @@ public:
               reinterpret_cast<void **>(origOutputs.data()));
       if (DB != nullptr) {
         CALIPER(CALI_MARK_BEGIN("DBSTORE");)
-        Store(totalElements,  tmpIn,
-          origOutputs);
+        Store(totalElements, tmpIn, origOutputs);
         CALIPER(CALI_MARK_END("DBSTORE");)
       }
       return;
@@ -369,38 +376,36 @@ public:
     }
 
     {
-      void** iPtr = reinterpret_cast<void **>(packedInputs.data());
-      void** oPtr = reinterpret_cast<void **>(packedOutputs.data());
+      void **iPtr = reinterpret_cast<void **>(packedInputs.data());
+      void **oPtr = reinterpret_cast<void **>(packedOutputs.data());
       long lbElements = packedElements;
 
 #ifdef __ENABLE_MPI__
-    CALIPER(CALI_MARK_BEGIN("LOAD BALANCE MODULE");)
-    AMSLoadBalancer<FPTypeValue> lBalancer(rId, wSize, packedElements, Comm, inputDim, outputDim, mLoc);
-    if (ePolicy == AMSExecPolicy::BALANCED && Comm) {
-      lBalancer.scatterInputs(packedInputs, mLoc);
-      iPtr = reinterpret_cast<void **>(lBalancer.inputs());
-      oPtr = reinterpret_cast<void **>(lBalancer.outputs());
-      lbElements = lBalancer.getBalancedSize();
-    }
-    CALIPER(CALI_MARK_END("LOAD BALANCE MODULE");)
+      CALIPER(CALI_MARK_BEGIN("LOAD BALANCE MODULE");)
+      AMSLoadBalancer<FPTypeValue> lBalancer(
+          rId, wSize, packedElements, Comm, inputDim, outputDim, mLoc);
+      if (ePolicy == AMSExecPolicy::BALANCED && Comm) {
+        lBalancer.scatterInputs(packedInputs, mLoc);
+        iPtr = reinterpret_cast<void **>(lBalancer.inputs());
+        oPtr = reinterpret_cast<void **>(lBalancer.outputs());
+        lbElements = lBalancer.getBalancedSize();
+      }
+      CALIPER(CALI_MARK_END("LOAD BALANCE MODULE");)
 #endif
 
-    // ---- 3b: call the physics module and store in the data base
-    if (packedElements > 0 ) {
-      CALIPER(CALI_MARK_BEGIN("PHYSICS MODULE");)
-      AppCall(probDescr,
-              lbElements,
-              iPtr,
-              oPtr);
-      CALIPER(CALI_MARK_END("PHYSICS MODULE");)
-    }
+      // ---- 3b: call the physics module and store in the data base
+      if (packedElements > 0) {
+        CALIPER(CALI_MARK_BEGIN("PHYSICS MODULE");)
+        AppCall(probDescr, lbElements, iPtr, oPtr);
+        CALIPER(CALI_MARK_END("PHYSICS MODULE");)
+      }
 
 #ifdef __ENABLE_MPI__
-    CALIPER(CALI_MARK_BEGIN("LOAD BALANCE MODULE");)
-    if (ePolicy == AMSExecPolicy::BALANCED && Comm) {
-      lBalancer.gatherOutputs(packedOutputs, mLoc);
-    }
-    CALIPER(CALI_MARK_END("LOAD BALANCE MODULE");)
+      CALIPER(CALI_MARK_BEGIN("LOAD BALANCE MODULE");)
+      if (ePolicy == AMSExecPolicy::BALANCED && Comm) {
+        lBalancer.gatherOutputs(packedOutputs, mLoc);
+      }
+      CALIPER(CALI_MARK_END("LOAD BALANCE MODULE");)
 #endif
     }
 
@@ -411,7 +416,9 @@ public:
 
     if (DB != nullptr) {
       CALIPER(CALI_MARK_BEGIN("DBSTORE");)
-      DBG(Workflow, "Storing data (#elements = %d) to database", packedElements);
+      DBG(Workflow,
+          "Storing data (#elements = %d) to database",
+          packedElements);
       Store(packedElements, packedInputs, packedOutputs);
       CALIPER(CALI_MARK_END("DBSTORE");)
     }
@@ -427,9 +434,13 @@ public:
     ams::ResourceManager::deallocate(p_ml_acceptable, mLoc);
 
     DBG(Workflow, "Finished AMSExecution")
-    CINFO(Workflow, rId == 0, "Computed %ld "
-        "using physics out of the %ld items (%.2f)",
-        packedElements, totalElements, (float) (packedElements) / float( totalElements))
+    CINFO(Workflow,
+          rId == 0,
+          "Computed %ld "
+          "using physics out of the %ld items (%.2f)",
+          packedElements,
+          totalElements,
+          (float)(packedElements) / float(totalElements))
 
     REPORT_MEM_USAGE(Workflow, "End")
   }

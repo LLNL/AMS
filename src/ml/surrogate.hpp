@@ -8,14 +8,16 @@
 #ifndef __AMS_SURROGATE_HPP__
 #define __AMS_SURROGATE_HPP__
 
+#include <memory>
+#include <stdexcept>
 #include <string>
+#include <unordered_map>
 
 #ifdef __ENABLE_TORCH__
 #include <torch/script.h>  // One-stop header.
 #endif
 
 #include "wf/data_handler.hpp"
-
 #include "wf/debug.h"
 
 //! ----------------------------------------------------------------------------
@@ -34,7 +36,7 @@ class SurrogateModel
 
 private:
   const std::string model_path;
-  const bool is_cpu;
+  const bool _is_cpu;
 
 
 #ifdef __ENABLE_TORCH__
@@ -48,7 +50,7 @@ private:
   // -------------------------------------------------------------------------
   // conversion to and from torch
   // -------------------------------------------------------------------------
-PERFFASPECT()
+  PERFFASPECT()
   inline at::Tensor arrayToTensor(long numRows,
                                   long numCols,
                                   TypeInValue** array)
@@ -63,7 +65,7 @@ PERFFASPECT()
     return tensor;
   }
 
-PERFFASPECT()
+  PERFFASPECT()
   inline at::Tensor arrayToTensor(long numRows,
                                   long numCols,
                                   const TypeInValue** array)
@@ -78,7 +80,7 @@ PERFFASPECT()
     return tensor;
   }
 
-PERFFASPECT()
+  PERFFASPECT()
   inline void tensorToArray(at::Tensor tensor,
                             long numRows,
                             long numCols,
@@ -87,7 +89,7 @@ PERFFASPECT()
     // Transpose to get continuous memory and
     // perform single memcpy.
     tensor = tensor.transpose(1, 0);
-    if (is_cpu) {
+    if (_is_cpu) {
       for (long j = 0; j < numCols; j++) {
         auto tmp = tensor[j].contiguous();
         TypeInValue* ptr = tmp.data_ptr<TypeInValue>();
@@ -105,7 +107,7 @@ PERFFASPECT()
   // -------------------------------------------------------------------------
   // loading a surrogate model!
   // -------------------------------------------------------------------------
-PERFFASPECT()
+  PERFFASPECT()
   void _load_torch(const std::string& model_path,
                    c10::Device&& device,
                    at::ScalarType dType)
@@ -122,32 +124,32 @@ PERFFASPECT()
 
   template <typename T,
             std::enable_if_t<std::is_same<T, double>::value>* = nullptr>
-PERFFASPECT()
+  PERFFASPECT()
   inline void _load(const std::string& model_path,
                     const std::string& device_name)
   {
-    DBG(Surrogate, "Using model at double precision")
+    DBG(Surrogate, "Using model at double precision");
     _load_torch(model_path, torch::Device(device_name), torch::kFloat64);
   }
 
   template <typename T,
             std::enable_if_t<std::is_same<T, float>::value>* = nullptr>
-PERFFASPECT()
+  PERFFASPECT()
   inline void _load(const std::string& model_path,
                     const std::string& device_name)
   {
-    DBG(Surrogate, "Using model at single precision")
+    DBG(Surrogate, "Using model at single precision");
     _load_torch(model_path, torch::Device(device_name), torch::kFloat32);
   }
 
   // -------------------------------------------------------------------------
   // evaluate a torch model
   // -------------------------------------------------------------------------
-PERFFASPECT()
+  PERFFASPECT()
   inline void _evaluate(long num_elements,
                         size_t num_in,
                         size_t num_out,
-                        TypeInValue** inputs,
+                        const TypeInValue** inputs,
                         TypeInValue** outputs)
   {
     //torch::NoGradGuard no_grad;
@@ -156,20 +158,24 @@ PERFFASPECT()
     input.set_requires_grad(false);
     at::Tensor output = module.forward({input}).toTensor().detach();
 
-    DBG(Surrogate, "Evaluate surrogate model (%ld, %ld) -> (%ld, %ld)",
-        num_elements, num_in, num_elements, num_out);
+    DBG(Surrogate,
+        "Evaluate surrogate model (%ld, %ld) -> (%ld, %ld)",
+        num_elements,
+        num_in,
+        num_elements,
+        num_out);
     tensorToArray(output, num_elements, num_out, outputs);
   }
 
 #else
   template <typename T>
-PERFFASPECT()
+  PERFFASPECT()
   inline void _load(const std::string& model_path,
                     const std::string& device_name)
   {
   }
 
-PERFFASPECT()
+  PERFFASPECT()
   inline void _evaluate(long num_elements,
                         long num_in,
                         size_t num_out,
@@ -180,21 +186,80 @@ PERFFASPECT()
 
 #endif
 
-  // -------------------------------------------------------------------------
-  // public interface
-  // -------------------------------------------------------------------------
-public:
   SurrogateModel(const char* model_path, bool is_cpu = true)
-      : model_path(model_path), is_cpu(is_cpu)
+      : model_path(model_path), _is_cpu(is_cpu)
   {
 
-    if (is_cpu)
+    if (_is_cpu)
       _load<TypeInValue>(model_path, "cpu");
     else
       _load<TypeInValue>(model_path, "cuda");
   }
 
-PERFFASPECT()
+protected:
+  template <typename T,
+            std::enable_if_t<std::is_same<T, float>::value>* = nullptr>
+  static bool same_type(bool is_double)
+  {
+    return !is_double;
+  }
+
+  template <typename T,
+            std::enable_if_t<std::is_same<T, double>::value>* = nullptr>
+  static bool same_type(bool is_double)
+  {
+    return is_double;
+  }
+
+  static std::unordered_map<std::string,
+                            std::shared_ptr<SurrogateModel<TypeInValue>>>
+      instances;
+
+public:
+  // -------------------------------------------------------------------------
+  // public interface
+  // -------------------------------------------------------------------------
+
+  static std::shared_ptr<SurrogateModel<TypeInValue>> getInstance(
+      const char* model_path,
+      bool is_cpu = true)
+  {
+    auto model =
+        SurrogateModel<TypeInValue>::instances.find(std::string(model_path));
+    if (model != instances.end()) {
+      // Model Found
+      auto torch_model = model->second;
+      if (is_cpu != torch_model->is_cpu())
+        throw std::runtime_error(
+            "Currently we are not supporting loading the same model file on "
+            "different devices.");
+
+      if (!same_type<TypeInValue>(torch_model->is_double()))
+        throw std::runtime_error(
+            "Requesting model loading of different data types.");
+
+      DBG(Surrogate,
+          "Returning existing model represented under (%s)",
+          model_path);
+      return torch_model;
+    }
+
+    // Model does not exist. We need to create one
+    DBG(Surrogate, "Generating new model under (%s)", model_path);
+    std::shared_ptr<SurrogateModel<TypeInValue>> torch_model =
+        std::shared_ptr<SurrogateModel<TypeInValue>>(
+            new SurrogateModel<TypeInValue>(model_path, is_cpu));
+    instances.insert(std::make_pair(std::string(model_path), torch_model));
+    return torch_model;
+  };
+
+  ~SurrogateModel()
+  {
+    DBG(Surrogate, "Destroying surrogate model at %s", model_path.c_str());
+  }
+
+
+  PERFFASPECT()
   inline void evaluate(long num_elements,
                        size_t num_in,
                        size_t num_out,
@@ -204,7 +269,7 @@ PERFFASPECT()
     _evaluate(num_elements, num_in, num_out, inputs, outputs);
   }
 
-PERFFASPECT()
+  PERFFASPECT()
   inline void evaluate(long num_elements,
                        std::vector<const TypeInValue*> inputs,
                        std::vector<TypeInValue*> outputs)
@@ -212,9 +277,17 @@ PERFFASPECT()
     _evaluate(num_elements,
               inputs.size(),
               outputs.size(),
-              const_cast<TypeInValue**>(inputs.data()),
+              static_cast< const TypeInValue**>(inputs.data()),
               static_cast<TypeInValue**>(outputs.data()));
   }
+
+  bool is_double() { return (tensorOptions.dtype() == torch::kFloat64); }
+
+  bool is_cpu() { return _is_cpu; }
 };
+
+template <typename T>
+std::unordered_map<std::string, std::shared_ptr<SurrogateModel<T>>>
+    SurrogateModel<T>::instances;
 
 #endif

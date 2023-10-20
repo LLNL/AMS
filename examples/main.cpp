@@ -176,7 +176,8 @@ int main(int argc, char **argv)
   args.AddOption(&db_config,
                  "-db",
                  "--dbconfig",
-                 "Path to directory where applications will store their data (or Path to JSON configuration if RabbitMQ is chosen)",
+                 "Path to directory where applications will store their data "
+                 "(or Path to JSON configuration if RabbitMQ is chosen)",
                  reqDB);
 
   args.AddOption(&db_type,
@@ -187,14 +188,19 @@ int main(int argc, char **argv)
                  "\t 'hdf5': use hdf5 as a back end\n"
                  "\t 'rmq': use RabbitMQ as a back end\n");
 
-  args.AddOption(&k_nearest, "-knn", "--k-nearest-neighbors", "Number of closest neightbors we should look at");
+  args.AddOption(&k_nearest,
+                 "-knn",
+                 "--k-nearest-neighbors",
+                 "Number of closest neightbors we should look at");
 
   args.AddOption(&uq_policy_opt,
                  "-uq",
                  "--uqtype",
                  "Types of UQ to select from: \n"
-                 "\t 'mean' Uncertainty is computed in comparison against the mean distance of k-nearest neighbors\n"
-                 "\t 'max': Uncertainty is computed in comparison with the k'st cluster \n"
+                 "\t 'mean' Uncertainty is computed in comparison against the "
+                 "mean distance of k-nearest neighbors\n"
+                 "\t 'max': Uncertainty is computed in comparison with the "
+                 "k'st cluster \n"
                  "\t 'deltauq': Uncertainty through DUQ (not supported)\n");
 
   args.AddOption(
@@ -266,12 +272,14 @@ int main(int argc, char **argv)
     dbType = AMSDBType::RMQ;
   }
 
-  AMSUQPolicy uq_policy =
-      (std::strcmp(uq_policy_opt, "max") == 0) ? AMSUQPolicy::FAISSMax: AMSUQPolicy::FAISSMean;
+  AMSUQPolicy uq_policy = (std::strcmp(uq_policy_opt, "max") == 0)
+                              ? AMSUQPolicy::FAISSMax
+                              : AMSUQPolicy::FAISSMean;
 
-  if ( uq_policy != AMSUQPolicy::FAISSMax )
+  if (uq_policy != AMSUQPolicy::FAISSMax)
     uq_policy = ((std::strcmp(uq_policy_opt, "deltauq") == 0))
-      ? AMSUQPolicy::DeltaUQ : AMSUQPolicy::FAISSMean;
+                    ? AMSUQPolicy::DeltaUQ
+                    : AMSUQPolicy::FAISSMean;
 
   // set up a randomization seed
   srand(seed + rId);
@@ -423,7 +431,7 @@ int main(int argc, char **argv)
   AMSResourceType ams_device = AMSResourceType::HOST;
   if (use_device) ams_device = AMSResourceType::DEVICE;
   AMSExecPolicy ams_loadBalance = AMSExecPolicy::UBALANCED;
-  if ( lbalance ) ams_loadBalance = AMSExecPolicy::BALANCED;
+  if (lbalance) ams_loadBalance = AMSExecPolicy::BALANCED;
 
   AMSConfig amsConf = {ams_loadBalance,
                        AMSDType::Double,
@@ -437,10 +445,10 @@ int main(int argc, char **argv)
                        uq_policy,
                        k_nearest,
                        rId,
-                       wS };
-  AMSExecutor wf = AMSCreateExecutor(amsConf);
+                       wS};
 
   for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
+    AMSExecutor wf = AMSCreateExecutor(amsConf);
     workflow[mat_idx] = wf;
   }
 #endif

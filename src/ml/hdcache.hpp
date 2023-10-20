@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <numeric>
 #include <stdexcept>
 #include <string>
@@ -34,6 +35,7 @@
 #include "AMS.h"
 #include "wf/data_handler.hpp"
 #include "wf/resource_manager.hpp"
+#include "wf/utils.hpp"
 
 //! ----------------------------------------------------------------------------
 //! An implementation of FAISS-based HDCache
@@ -87,12 +89,15 @@ class HDCache
   // faiss::gpu::GpuIndexIVFPQ *index_gpu;
 #endif
 
-public:
+protected:
+  // A mechanism to keep track of all unique HDCaches
+  static std::unordered_map<std::string, std::shared_ptr<HDCache<TypeInValue>>>
+      instances;
+
   //! ------------------------------------------------------------------------
   //! constructors
   //! ------------------------------------------------------------------------
-  HDCache(bool use_device,
-          TypeInValue threshold = 0.5)
+  HDCache(bool use_device, TypeInValue threshold = 0.5)
       : m_index(nullptr),
         m_dim(0),
         m_use_random(true),
@@ -135,6 +140,7 @@ public:
   HDCache(const std::string &cache_path,
           int knbrs,
           bool use_device,
+          const AMSUQPolicy uqPolicy,
           TypeInValue threshold = 0.5)
       : m_index(nullptr),
         m_dim(0),
@@ -150,17 +156,114 @@ public:
   }
 #endif
 
+public:
+  static std::shared_ptr<HDCache<TypeInValue>> find_cache(
+      const std::string &cache_path,
+      bool use_device,
+      const AMSUQPolicy uqPolicy,
+      int knbrs,
+      TypeInValue threshold = 0.5)
+  {
+    auto model = HDCache<TypeInValue>::instances.find(cache_path);
+
+    if (model != instances.end()) {
+      // Model Found
+      auto cache = model->second;
+      if (use_device != cache->m_use_device)
+        throw std::runtime_error(
+            "Currently we do not support loading the same index on different "
+            "devices.");
+
+      if (uqPolicy != cache->m_policy)
+        throw std::runtime_error(
+            "We do not support caches of different policies.");
+
+      if (knbrs != cache->m_knbrs)
+        throw std::runtime_error(
+            "We do not support caches of different number of neighbors.");
+
+      // FIXME: Here we need to cast both to float. FAISS index only works for
+      // single precision and we shoehorn FAISS inability to support arbitary real
+      // types by forcing TypeValue to be 'float'. In our case this results in having
+      // cases where input data are of type(TypeInValue) double. Thus here, threshold can
+      // be of different type than 'acceptable_error' and at compile time we cannot decide
+      // which overloaded function to pick.
+      if (!is_real_equal(static_cast<float>(threshold),
+                         static_cast<float>(cache->acceptable_error)))
+        throw std::runtime_error(
+            "We do not support caches of different thresholds");
+
+      return cache;
+    }
+    return nullptr;
+  }
+
+  static std::shared_ptr<HDCache<TypeInValue>> getInstance(
+      const std::string &cache_path,
+      bool use_device,
+      const AMSUQPolicy uqPolicy,
+      int knbrs,
+      TypeInValue threshold = 0.5)
+  {
+
+    // Cache does not exist. We need to create one
+    //
+    std::shared_ptr<HDCache<TypeInValue>> cache =
+        find_cache(cache_path, use_device, uqPolicy, knbrs, threshold);
+    if (cache) {
+      DBG(UQModule, "Returning existing cache under (%s)", cache_path.c_str())
+      return cache;
+    }
+
+    DBG(UQModule, "Generating new cache under (%s)", cache_path.c_str())
+    std::shared_ptr<HDCache<TypeInValue>> new_cache =
+        std::shared_ptr<HDCache<TypeInValue>>(new HDCache<TypeInValue>(
+            cache_path, use_device, uqPolicy, knbrs, threshold));
+
+    instances.insert(std::make_pair(cache_path, new_cache));
+    return new_cache;
+  }
+
+  static std::shared_ptr<HDCache<TypeInValue>> getInstance(
+      bool use_device,
+      float threshold = 0.5)
+  {
+    static std::string random_path("random");
+    std::shared_ptr<HDCache<TypeInValue>> cache = find_cache(
+        random_path, use_device, AMSUQPolicy::FAISSMean, -1, threshold);
+    if (cache) {
+      DBG(UQModule, "Returning existing cache under (%s)", random_path.c_str())
+      return cache;
+    }
+
+    DBG(UQModule,
+        "Generating new cache under (%s, threshold:%f)",
+        random_path.c_str(),
+        threshold)
+    std::shared_ptr<HDCache<TypeInValue>> new_cache =
+        std::shared_ptr<HDCache<TypeInValue>>(
+            new HDCache<TypeInValue>(use_device, threshold));
+
+    instances.insert(std::make_pair(random_path, new_cache));
+    return new_cache;
+  }
+
+  ~HDCache() { DBG(Surrogate, "Destroying UQ-cache") }
+
   //! ------------------------------------------------------------------------
   //! simple queries
   //! ------------------------------------------------------------------------
   inline void print() const
   {
     std::string info("index = null");
-    if ( has_index() ) {
-      info =  "npoints = " + std::to_string(count());
+    if (has_index()) {
+      info = "npoints = " + std::to_string(count());
     }
-    DBG(UQModule, "HDCache (on_device = %d random = %d %s)",
-        m_use_device, m_use_random, info.c_str());
+    DBG(UQModule,
+        "HDCache (on_device = %d random = %d %s)",
+        m_use_device,
+        m_use_random,
+        info.c_str());
   }
 
   inline bool has_index() const
@@ -207,27 +310,33 @@ public:
   //! add points to the faiss cache
   //! -----------------------------------------------------------------------
   //! add the data that comes as linearized features
-PERFFASPECT()
+  PERFFASPECT()
   void add(const size_t ndata, const size_t d, TypeInValue *data)
   {
     if (m_use_random) return;
 
     DBG(UQModule, "Add %ld %ld points to HDCache", ndata, d);
     CFATAL(UQModule, d != m_dim, "Mismatch in data dimensionality!")
-    CFATAL(UQModule, !has_index(), "HDCache does not have a valid and trained index!")
+    CFATAL(UQModule,
+           !has_index(),
+           "HDCache does not have a valid and trained index!")
 
     _add(ndata, data);
   }
 
   //! add the data that comes as separate features (a vector of pointers)
-PERFFASPECT()
+  PERFFASPECT()
   void add(const size_t ndata, const std::vector<TypeInValue *> &inputs)
   {
     if (m_use_random) return;
 
     if (inputs.size() != m_dim)
-    CFATAL(UQModule, inputs.size() != m_dim, "Mismatch in data dimensionality")
-    CFATAL(UQModule, !has_index(), "HDCache does not have a valid and trained index!")
+      CFATAL(UQModule,
+             inputs.size() != m_dim,
+             "Mismatch in data dimensionality")
+    CFATAL(UQModule,
+           !has_index(),
+           "HDCache does not have a valid and trained index!")
 
     TypeValue *lin_data = data_handler::linearize_features(ndata, inputs);
     _add(ndata, lin_data);
@@ -238,20 +347,22 @@ PERFFASPECT()
   //! train a faiss cache
   //! -----------------------------------------------------------------------
   //! train on data that comes as linearized features
-PERFFASPECT()
+  PERFFASPECT()
   void train(const size_t ndata, const size_t d, TypeInValue *data)
   {
     if (m_use_random) return;
     DBG(UQModule, "Add %ld %ld points to HDCache", ndata, d);
     CFATAL(UQModule, d != m_dim, "Mismatch in data dimensionality!")
-    CFATAL(UQModule, !has_index(), "HDCache does not have a valid and trained index!")
+    CFATAL(UQModule,
+           !has_index(),
+           "HDCache does not have a valid and trained index!")
 
     _train(ndata, data);
     DBG(UQModule, "Successfully Trained HDCache");
   }
 
   //! train on data that comes separate features (a vector of pointers)
-PERFFASPECT()
+  PERFFASPECT()
   void train(const size_t ndata, const std::vector<TypeInValue *> &inputs)
   {
     if (m_use_random) return;
@@ -268,37 +379,50 @@ PERFFASPECT()
   //! https://github.com/facebookresearch/faiss/wiki/Faiss-on-the-GPU#passing-in-pytorch-tensors
   //! so, we should use Dino's code to linearize data into torch tensor and then
   //! pass it here
-PERFFASPECT()
+  PERFFASPECT()
   void evaluate(const size_t ndata,
                 const size_t d,
                 TypeInValue *data,
                 bool *is_acceptable) const
   {
 
-    CFATAL(UQModule, !has_index(), "HDCache does not have a valid and trained index!")
+    CFATAL(UQModule,
+           !has_index(),
+           "HDCache does not have a valid and trained index!")
     DBG(UQModule, "Evaluating %ld %ld points using HDCache", ndata, d);
 
-    CFATAL(UQModule, (!m_use_random) && (d != m_dim), "Mismatch in data dimensionality!")
+    CFATAL(UQModule,
+           (!m_use_random) && (d != m_dim),
+           "Mismatch in data dimensionality!")
 
     if (m_use_random) {
       _evaluate(ndata, is_acceptable);
     } else {
       _evaluate(ndata, data, is_acceptable);
     }
-
   }
 
   //! train on data that comes separate features (a vector of pointers)
-PERFFASPECT()
+  PERFFASPECT()
   void evaluate(const size_t ndata,
                 const std::vector<const TypeInValue *> &inputs,
                 bool *is_acceptable) const
   {
 
-    CFATAL(UQModule, !has_index(), "HDCache does not have a valid and trained index!")
-    DBG(UQModule, "Evaluating %ld %ld points using HDCache configured with %d neighbors, %f threshold, %d policy",
-        ndata, inputs.size(), m_knbrs, acceptable_error, m_policy);
-    CFATAL(UQModule, ((!m_use_random) && inputs.size() != m_dim), "Mismatch in data dimensionality!")
+    CFATAL(UQModule,
+           !has_index(),
+           "HDCache does not have a valid and trained index!")
+    DBG(UQModule,
+        "Evaluating %ld %ld points using HDCache configured with %d neighbors, "
+        "%f threshold, %d policy",
+        ndata,
+        inputs.size(),
+        m_knbrs,
+        acceptable_error,
+        m_policy);
+    CFATAL(UQModule,
+           ((!m_use_random) && inputs.size() != m_dim),
+           "Mismatch in data dimensionality!")
 
     if (m_use_random) {
       _evaluate(ndata, is_acceptable);
@@ -320,7 +444,7 @@ private:
   //! add points to index when  (data type = TypeValue)
   template <typename T,
             std::enable_if_t<std::is_same<TypeValue, T>::value> * = nullptr>
-PERFFASPECT()
+  PERFFASPECT()
   inline void _add(const size_t ndata, const T *data)
   {
     m_index->add(ndata, data);
@@ -329,7 +453,7 @@ PERFFASPECT()
   //! add points to index when (data type != TypeValue)
   template <typename T,
             std::enable_if_t<!std::is_same<TypeValue, T>::value> * = nullptr>
-PERFFASPECT()
+  PERFFASPECT()
   inline void _add(const size_t ndata, const T *data)
   {
     TypeValue *vdata = data_handler::cast_to_typevalue(ndata, data);
@@ -341,30 +465,27 @@ PERFFASPECT()
   //! train an index when (data type = TypeValue)
   template <typename T,
             std::enable_if_t<std::is_same<TypeValue, T>::value> * = nullptr>
-PERFFASPECT()
+  PERFFASPECT()
   inline void _train(const size_t ndata, const T *data)
   {
 
     if (m_index != nullptr && m_index->is_trained)
-      throw std::invalid_argument(
-          "!");
+      throw std::invalid_argument("!");
 
     CFATAL(UQModule,
-        (m_index != nullptr && m_index->is_trained),
-        "Trying to re-train an already trained index")
+           (m_index != nullptr && m_index->is_trained),
+           "Trying to re-train an already trained index")
 
     m_index = faiss::index_factory(m_dim, index_key);
     m_index->train(ndata, data);
 
-    CFATAL(UQModule,
-        ((!m_index->is_trained)),
-        "Failed to train index")
+    CFATAL(UQModule, ((!m_index->is_trained)), "Failed to train index")
   }
 
   //! train an index when (data type != TypeValue)
   template <typename T,
             std::enable_if_t<!std::is_same<TypeValue, T>::value> * = nullptr>
-PERFFASPECT()
+  PERFFASPECT()
   inline void _train(const size_t ndata, const T *data)
   {
     TypeValue *vdata = data_handler::cast_to_typevalue(ndata, data);
@@ -376,7 +497,7 @@ PERFFASPECT()
   //! evaluate cache uncertainty when  (data type = TypeValue)
   template <typename T,
             std::enable_if_t<std::is_same<TypeValue, T>::value> * = nullptr>
-PERFFASPECT()
+  PERFFASPECT()
   void _evaluate(const size_t ndata, T *data, bool *is_acceptable) const
   {
 
@@ -388,10 +509,12 @@ PERFFASPECT()
         ams::ResourceManager::is_on_device(is_acceptable);
 
     if (input_on_device != output_on_device) {
-      WARNING(UQModule, "Input is ( on_device: %d)"
-                        " Output is ( on_device: %d)"
-                        " on different devices",
-                        input_on_device, output_on_device)
+      WARNING(UQModule,
+              "Input is ( on_device: %d)"
+              " Output is ( on_device: %d)"
+              " on different devices",
+              input_on_device,
+              output_on_device)
     }
 
     TypeValue *kdists =
@@ -406,29 +529,35 @@ PERFFASPECT()
     for (int start = 0; start < ndata; start += MAGIC_NUMBER) {
       unsigned int nElems =
           ((ndata - start) < MAGIC_NUMBER) ? ndata - start : MAGIC_NUMBER;
-      m_index->search(
-          nElems, &data[start], knbrs, &kdists[start*knbrs], &kidxs[start*knbrs]);
+      m_index->search(nElems,
+                      &data[start],
+                      knbrs,
+                      &kdists[start * knbrs],
+                      &kidxs[start * knbrs]);
     }
 
     // compute means
     if (defaultRes == AMSResourceType::HOST) {
       TypeValue total_dist = 0;
       for (size_t i = 0; i < ndata; ++i) {
-        CFATAL(UQModule, m_policy==AMSUQPolicy::DeltaUQ, "DeltaUQ is not supported yet");
-        if ( m_policy == AMSUQPolicy::FAISSMean ) {
+        CFATAL(UQModule,
+               m_policy == AMSUQPolicy::DeltaUQ,
+               "DeltaUQ is not supported yet");
+        if (m_policy == AMSUQPolicy::FAISSMean) {
           total_dist =
               std::accumulate(kdists + i * knbrs, kdists + (i + 1) * knbrs, 0.);
           is_acceptable[i] = (ook * total_dist) < acceptable_error;
-        }
-        else if ( m_policy == AMSUQPolicy::FAISSMax ) {
+        } else if (m_policy == AMSUQPolicy::FAISSMax) {
           // Take the furtherst cluster as the distance metric
-          total_dist = kdists[i*knbrs + knbrs -1];
+          total_dist = kdists[i * knbrs + knbrs - 1];
           is_acceptable[i] = (total_dist) < acceptable_error;
         }
       }
     } else {
-      CFATAL(UQModule, (m_policy==AMSUQPolicy::DeltaUQ) || (m_policy==AMSUQPolicy::FAISSMax),
-          "DeltaUQ is not supported yet");
+      CFATAL(UQModule,
+             (m_policy == AMSUQPolicy::DeltaUQ) ||
+                 (m_policy == AMSUQPolicy::FAISSMax),
+             "DeltaUQ is not supported yet");
 
       ams::Device::computePredicate(
           kdists, is_acceptable, ndata, knbrs, acceptable_error);
@@ -455,24 +584,24 @@ PERFFASPECT()
   inline uint8_t _dim() const { return 0; }
 
   template <typename T>
-PERFFASPECT()
+  PERFFASPECT()
   inline void _add(const size_t, const T *)
   {
   }
 
   template <typename T>
-PERFFASPECT()
+  PERFFASPECT()
   inline void _train(const size_t, const T *)
   {
   }
 
   template <typename T>
-PERFFASPECT()
+  PERFFASPECT()
   inline void _evaluate(const size_t, T *, bool *) const
   {
   }
 #endif
-PERFFASPECT()
+  PERFFASPECT()
   inline void _evaluate(const size_t ndata, bool *is_acceptable) const
   {
     const bool data_on_device =
@@ -488,4 +617,9 @@ PERFFASPECT()
   }
   // -------------------------------------------------------------------------
 };
+
+template <typename T>
+std::unordered_map<std::string, std::shared_ptr<HDCache<T>>>
+    HDCache<T>::instances;
+
 #endif
