@@ -8,6 +8,8 @@
 #ifndef __AMS_HDCACHE_HPP__
 #define __AMS_HDCACHE_HPP__
 
+#include <bits/stdc++.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
@@ -248,7 +250,11 @@ public:
     return new_cache;
   }
 
-  ~HDCache() { DBG(Surrogate, "Destroying UQ-cache") }
+  ~HDCache() {
+    DBG(Surrogate, "Destroying UQ-cache");
+    m_index->reset();
+    delete m_index;
+  }
 
   //! ------------------------------------------------------------------------
   //! simple queries
@@ -400,6 +406,7 @@ public:
     } else {
       _evaluate(ndata, data, is_acceptable);
     }
+    DBG(UQModule, "Done with evalution of uq")
   }
 
   //! train on data that comes separate features (a vector of pointers)
@@ -431,6 +438,7 @@ public:
       _evaluate(ndata, lin_data, is_acceptable);
       ams::ResourceManager::deallocate(lin_data, defaultRes);
     }
+    DBG(UQModule, "Done with evalution of uq");
   }
 
 private:
@@ -529,12 +537,16 @@ private:
     for (int start = 0; start < ndata; start += MAGIC_NUMBER) {
       unsigned int nElems =
           ((ndata - start) < MAGIC_NUMBER) ? ndata - start : MAGIC_NUMBER;
+      DBG(UQModule, "Running for %d elements %d %d", nElems, start, m_dim);
       m_index->search(nElems,
-                      &data[start],
+                      &data[start * m_dim],
                       knbrs,
                       &kdists[start * knbrs],
                       &kidxs[start * knbrs]);
     }
+#ifdef __ENABLE_CUDA__
+    faiss::gpu::synchronizeAllDevices();
+#endif
 
     // compute means
     if (defaultRes == AMSResourceType::HOST) {
@@ -546,12 +558,15 @@ private:
         if (m_policy == AMSUQPolicy::FAISSMean) {
           total_dist =
               std::accumulate(kdists + i * knbrs, kdists + (i + 1) * knbrs, 0.);
-          is_acceptable[i] = (ook * total_dist) < acceptable_error;
+          total_dist = ook * total_dist;
+          is_acceptable[i] = total_dist < acceptable_error;
         } else if (m_policy == AMSUQPolicy::FAISSMax) {
           // Take the furtherst cluster as the distance metric
-          total_dist = kdists[i * knbrs + knbrs - 1];
+          total_dist = *std::max_element(&kdists[i * knbrs],
+                                         &kdists[i * knbrs + knbrs - 1]);
           is_acceptable[i] = (total_dist) < acceptable_error;
         }
+        //DBG(UQModule, "Index %lu has value %g using %d neighbors", i, total_dist, knbrs);
       }
     } else {
       CFATAL(UQModule,

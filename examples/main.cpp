@@ -700,6 +700,14 @@ int main(int argc, char **argv)
     CALIPER(CALI_MARK_END("Cycle");)
     MPI_CALL(MPI_Barrier(MPI_COMM_WORLD));
   }
+
+  delete [] workflow;
+
+  for ( int mat_idx = 0; mat_idx < num_mats; ++mat_idx){
+    delete eoses[mat_idx];
+    eoses[mat_idx] = nullptr;
+  }
+
   CALIPER(CALI_MARK_END("TimeStepLoop"););
   MPI_CALL(MPI_Finalize());
   return 0;
