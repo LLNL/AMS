@@ -55,16 +55,11 @@ void random_uq_host(bool *uq_flags, int ndata, double acceptable_error)
   }
 }
 
-inline bool is_real_equal(double l, double r)
+template<typename T>
+inline bool is_real_equal(T l, T r)
 {
   return r == std::nextafter(l, r);
 }
-
-inline bool is_real_equal(float l, float r)
-{
-  return r == std::nextafter(l, r);
-}
-
 
 // -----------------------------------------------------------------------------
 #endif

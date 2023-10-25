@@ -107,7 +107,7 @@ class AMSWorkflow
     const int numOut = outputs.size();
 
     // No database, so just de-allocate and return
-    if (DB == nullptr) return;
+    if (DB) return;
 
     std::vector<FPTypeValue *> hInputs, hOutputs;
 
@@ -200,13 +200,13 @@ public:
     }
 
     surrogate = nullptr;
-    if (surrogate_path != nullptr)
+    if (surrogate_path)
       surrogate =
           SurrogateModel<FPTypeValue>::getInstance(surrogate_path, is_cpu);
 
     // TODO: Fix magic number. 10 represents the number of neighbours I am
     // looking at.
-    if (uq_path != nullptr)
+    if (uq_path)
       hdcache = HDCache<FPTypeValue>::getInstance(
           uq_path, !is_cpu, uqPolicy, nClusters, threshold);
     else
@@ -214,7 +214,7 @@ public:
       hdcache = HDCache<FPTypeValue>::getInstance(!is_cpu, threshold);
 
     DB = nullptr;
-    if (db_path != nullptr) {
+    if (db_path) {
       DBG(Workflow, "Creating Database");
       DB = getDB<FPTypeValue>(db_path, dbType, rId);
     }
@@ -232,11 +232,6 @@ public:
   ~AMSWorkflow()
   {
     DBG(Workflow, "Destroying Workflow Handler");
-    //    if (hdcache) delete hdcache;
-
-    //    if (surrogate) delete surrogate;
-
-    //    if (DB) delete DB;
   }
 
 
@@ -308,7 +303,7 @@ public:
 
     REPORT_MEM_USAGE(Workflow, "Start")
 
-    if (surrogate == nullptr) {
+    if (!surrogate) {
       FPTypeValue **tmpInputs = const_cast<FPTypeValue **>(inputs);
 
       std::vector<FPTypeValue *> tmpIn(tmpInputs, tmpInputs + inputDim);
@@ -317,7 +312,7 @@ public:
               totalElements,
               reinterpret_cast<const void **>(origInputs.data()),
               reinterpret_cast<void **>(origOutputs.data()));
-      if (DB != nullptr) {
+      if (DB) {
         CALIPER(CALI_MARK_BEGIN("DBSTORE");)
         Store(totalElements, tmpIn, origOutputs);
         CALIPER(CALI_MARK_END("DBSTORE");)
@@ -331,7 +326,7 @@ public:
     // STEP 1: call the hdcache to look at input uncertainties
     //         to decide if making a ML inference makes sense
     // -------------------------------------------------------------
-    if (hdcache != nullptr) {
+    if (hdcache) {
       CALIPER(CALI_MARK_BEGIN("UQ_MODULE");)
       hdcache->evaluate(totalElements, origInputs, p_ml_acceptable);
       CALIPER(CALI_MARK_END("UQ_MODULE");)
@@ -414,7 +409,7 @@ public:
 
     DBG(Workflow, "Finished physics evaluation")
 
-    if (DB != nullptr) {
+    if (DB) {
       CALIPER(CALI_MARK_BEGIN("DBSTORE");)
       DBG(Workflow,
           "Storing data (#elements = %d) to database",

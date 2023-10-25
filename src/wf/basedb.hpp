@@ -206,7 +206,7 @@ public:
     if (!fd.is_open()) {
       std::cerr << "Cannot open db file: " << this->fn << std::endl;
     }
-    DBG(DB, "DB Type: %s", type())
+    DBG(DB, "DB Type: %s", type().c_str())
   }
 
   /**
@@ -214,7 +214,7 @@ public:
    */
   ~csvDB()
   {
-    DBG(DB, "Closing File: %s %s", type(), this->fn.c_str())
+    DBG(DB, "Closing File: %s %s", type().c_str(), this->fn.c_str())
     fd.close();
   }
 
@@ -462,7 +462,7 @@ public:
    * @brief deconstructs the class and closes the file
    */
   ~hdf5DB(){
-      DBG(DB, "Closing File: %s %s", type(), this->fn.c_str())
+      DBG(DB, "Closing File: %s %s", type().c_str(), this->fn.c_str())
       // HDF5 Automatically closes all opened fds at exit of application.
       //    herr_t err = H5Fclose(HFile);
       //    HDF5_ERROR(err);
