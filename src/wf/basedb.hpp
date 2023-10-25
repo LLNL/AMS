@@ -12,7 +12,9 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "AMS.h"
@@ -97,6 +99,8 @@ public:
    */
   virtual std::string type() = 0;
 
+  virtual AMSDBType dbType() = 0;
+
   /**
    * @brief Takes an input and an output vector each holding 1-D vectors data, and
    * store. them in persistent data storage.
@@ -110,6 +114,8 @@ public:
   virtual void store(size_t num_elements,
                      std::vector<TypeValue*>& inputs,
                      std::vector<TypeValue*>& outputs) = 0;
+
+  uint64_t getId() const { return id; }
 };
 
 /**
@@ -200,18 +206,27 @@ public:
     if (!fd.is_open()) {
       std::cerr << "Cannot open db file: " << this->fn << std::endl;
     }
-    DBG(DB, "DB Type: %s", type())
+    DBG(DB, "DB Type: %s", type().c_str())
   }
 
   /**
    * @brief deconstructs the class and closes the file
    */
-  ~csvDB() { fd.close(); }
+  ~csvDB()
+  {
+    DBG(DB, "Closing File: %s %s", type().c_str(), this->fn.c_str())
+    fd.close();
+  }
 
   /**
    * @brief Define the type of the DB (File, Redis etc)
    */
   std::string type() override { return "csv"; }
+
+  /**
+   * @brief Return the DB enumerationt type (File, Redis etc)
+   */
+  AMSDBType dbType() { return AMSDBType::CSV; };
 
   /**
    * @brief Takes an input and an output vector each holding 1-D vectors data, and
@@ -446,17 +461,26 @@ public:
   /**
    * @brief deconstructs the class and closes the file
    */
-  ~hdf5DB()
-  {
-    // HDF5 Automatically closes all opened fds at exit of application.
-    //    herr_t err = H5Fclose(HFile);
-    //    HDF5_ERROR(err);
+  ~hdf5DB(){
+      DBG(DB, "Closing File: %s %s", type().c_str(), this->fn.c_str())
+      // HDF5 Automatically closes all opened fds at exit of application.
+      //    herr_t err = H5Fclose(HFile);
+      //    HDF5_ERROR(err);
   }
 
   /**
    * @brief Define the type of the DB
    */
-  std::string type() override { return "hdf5"; }
+  std::string type() override
+  {
+    return "hdf5";
+  }
+
+  /**
+   * @brief Return the DB enumerationt type (File, Redis etc)
+   */
+  AMSDBType dbType() { return AMSDBType::HDF5; };
+
 
   /**
    * @brief Takes an input and an output vector each holding 1-D vectors data,
@@ -549,6 +573,12 @@ public:
   }
 
   inline std::string type() override { return "RedisDB"; }
+
+  /**
+   * @brief Return the DB enumerationt type (File, Redis etc)
+   */
+  AMSDBType dbType() { return AMSDBType::REDIS; };
+
 
   inline std::string info() { return _redis->info(); }
 
@@ -939,18 +969,18 @@ private:
       }
       evbuffer_unlock(buffer);
 
-      std::string result =
-          std::to_string(self->_rank) + ":";
+      std::string result = std::to_string(self->_rank) + ":";
       for (int i = 0; i < k - 1; i++) {
         result.append(std::to_string(data[i]) + ":");
       }
       result.append(std::to_string(data[k - 1]) + "\n");
-      
+
       // For resiliency reasons we encode the result in base64
       // Not that it increases the size (n) of messages by approx 4*(n/3)
       std::string result_b64 = self->encode64(result);
       DBG(RabbitMQDB,
-          "[rank=%d] #elements (float/double) = %d, stringify size = %d, size in base64 "
+          "[rank=%d] #elements (float/double) = %d, stringify size = %d, size "
+          "in base64 "
           "= %d",
           self->_rank,
           k,
@@ -1023,7 +1053,8 @@ public:
       : _rank(rank),
         _loop(loop),
         _buffer(nullptr),
-        _rchannel(std::make_shared<AMQP::Reliable<AMQP::Tagger>>(*channel.get())),
+        _rchannel(
+            std::make_shared<AMQP::Reliable<AMQP::Tagger>>(*channel.get())),
         _queue(std::move(queue)),
         _byte_to_send(0),
         _counter_ack(0),
@@ -1236,19 +1267,20 @@ private:
 
     size_t offset = 0;
     // Offset to have space to write off the dimensions at the begiginning of the array
-    if (add_dims)
-      offset = 2;
+    if (add_dims) offset = 2;
 
-    TypeValue* data = (TypeValue*) malloc((nvalues + offset) * sizeof(TypeValue));
+    TypeValue* data =
+        (TypeValue*)malloc((nvalues + offset) * sizeof(TypeValue));
 
     if (add_dims) {
-      data[0] = (TypeValue) n;
-      data[1] = (TypeValue) features.size();
+      data[0] = (TypeValue)n;
+      data[1] = (TypeValue)features.size();
     }
 
     for (size_t d = 0; d < nfeatures; d++) {
       for (size_t i = 0; i < n; i++) {
-        data[offset + (i * nfeatures) + d] = static_cast<TypeValue>(features[d][i]);
+        data[offset + (i * nfeatures) + d] =
+            static_cast<TypeValue>(features[d][i]);
       }
     }
     return data;
@@ -1262,8 +1294,7 @@ private:
    */
   void start_sender(const std::string& queue)
   {
-    _channel_send =
-        std::make_shared<AMQP::TcpChannel>(_connection);
+    _channel_send = std::make_shared<AMQP::TcpChannel>(_connection);
     _channel_send->onError([&_rank = _rank](const char* message) {
       CFATAL(RabbitMQDB,
              false,
@@ -1303,13 +1334,14 @@ private:
           throw std::runtime_error(message);
         });
 
-    _sender = std::make_shared<struct rmq_sender>(); 
+    _sender = std::make_shared<struct rmq_sender>();
     _sender->loop = _loop_sender;
     _evbuffer = new EventBuffer<TypeValue>(_rank,
                                            _loop_sender,
                                            _channel_send,
                                            _queue_sender);
-    if (pthread_create(&_sender->id, NULL, start_worker_sender, _sender.get())) {
+    if (pthread_create(
+            &_sender->id, NULL, start_worker_sender, _sender.get())) {
       FATAL(RabbitMQDB, "error pthread_create for sender worker");
     }
   }
@@ -1322,8 +1354,7 @@ private:
    */
   void start_receiver(const std::string& queue)
   {
-    _channel_receive =
-        std::make_shared<AMQP::TcpChannel>(_connection);
+    _channel_receive = std::make_shared<AMQP::TcpChannel>(_connection);
     _channel_receive->onError([&_rank = _rank](const char* message) {
       CFATAL(RabbitMQDB,
              false,
@@ -1363,7 +1394,7 @@ private:
           throw std::runtime_error(message);
         });
 
-    _receiver = std::make_shared<struct rmq_consumer>(); 
+    _receiver = std::make_shared<struct rmq_consumer>();
     _receiver->loop = _loop_receiver;
     _receiver->channel = _channel_receive;
     // Structure that will contain all messages received
@@ -1433,10 +1464,14 @@ public:
 #else
     OPENSSL_init_ssl(0, NULL);
 #endif
-    _handler_sender =
-        std::make_shared<RabbitMQHandler>(_rank, _loop_sender, rmq_config["rabbitmq-cert"]);
-    _handler_receiver =
-        std::make_shared<RabbitMQHandler>(_rank, _loop_receiver, rmq_config["rabbitmq-cert"]);
+    _handler_sender = std::make_shared<RabbitMQHandler>(_rank,
+                                                        _loop_sender,
+                                                        rmq_config["rabbitmq-"
+                                                                   "cert"]);
+    _handler_receiver = std::make_shared<RabbitMQHandler>(_rank,
+                                                          _loop_receiver,
+                                                          rmq_config["rabbitmq-"
+                                                                     "cert"]);
 
     AMQP::Login login(rmq_config["rabbitmq-user"],
                       rmq_config["rabbitmq-password"]);
@@ -1588,6 +1623,8 @@ public:
    */
   std::string type() override { return "rabbitmq"; }
 
+  AMSDBType dbType() { return AMSDBType::RMQ; };
+
   /**
    * @brief Return the number of messages that 
    * has been push to the buffer
@@ -1626,15 +1663,6 @@ public:
 template <typename TypeValue>
 BaseDB<TypeValue>* createDB(char* dbPath, AMSDBType dbType, uint64_t rId = 0)
 {
-  DBG(DB, "Instantiating data base");
-#ifdef __ENABLE_DB__
-  if (dbPath == nullptr) {
-    std::cerr << " [WARNING] Path of DB is NULL, Please provide a valid path "
-                 "to enable db\n";
-    std::cerr << " [WARNING] Continueing\n";
-    return nullptr;
-  }
-
   switch (dbType) {
     case AMSDBType::CSV:
       return new csvDB<TypeValue>(dbPath, rId);
@@ -1654,8 +1682,61 @@ BaseDB<TypeValue>* createDB(char* dbPath, AMSDBType dbType, uint64_t rId = 0)
       return nullptr;
   }
 #else
-  return nullptr;
+return nullptr;
 #endif
+}
+
+
+/**
+ * @brief get a data base object referred by this string.
+ * This should never be used for large scale simulations as txt/csv format will
+ * be extremely slow.
+ * @param[in] dbPath path to the directory storing the data
+ * @param[in] dbType Type of the database to create
+ * @param[in] rId a unique Id for each process taking part in a distributed
+ * execution (rank-id)
+ */
+template <typename TypeValue>
+std::shared_ptr<BaseDB<TypeValue>> getDB(char* dbPath,
+                                         AMSDBType dbType,
+                                         uint64_t rId = 0)
+{
+  static std::unordered_map<std::string, std::shared_ptr<BaseDB<TypeValue>>>
+      instances;
+#ifdef __ENABLE_DB__
+  if (dbPath == nullptr) {
+    std::cerr << " [WARNING] Path of DB is NULL, Please provide a valid path "
+                 "to enable db\n";
+    std::cerr << " [WARNING] Continueing\n";
+    return nullptr;
+  }
+
+  auto db_iter = instances.find(std::string(dbPath));
+  if (db_iter == instances.end()) {
+    DBG(DB, "Creating new Database writting to file: %s", dbPath);
+    std::shared_ptr<BaseDB<TypeValue>> db = std::shared_ptr<BaseDB<TypeValue>>(
+        createDB<TypeValue>(dbPath, dbType, rId));
+    instances.insert(std::make_pair(std::string(dbPath), db));
+    return db;
+  }
+
+  auto db = db_iter->second;
+  // Corner case where creation of the db failed and someone is requesting
+  // the same entry point
+  if (db == nullptr) {
+    return db;
+  }
+
+  if (db->dbType() != dbType) {
+    throw std::runtime_error("Requesting databases of different types");
+  }
+
+  if (db->getId() != rId) {
+    throw std::runtime_error("Requesting databases from different ranks");
+  }
+  DBG(DB, "Using existing Database writting to file: %s", dbPath);
+
+  return db;
 }
 
 #endif  // __AMS_BASE_DB__

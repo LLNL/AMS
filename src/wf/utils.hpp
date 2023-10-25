@@ -14,7 +14,6 @@
 #include <random>
 #include <vector>
 
-
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
 
@@ -56,6 +55,11 @@ void random_uq_host(bool *uq_flags, int ndata, double acceptable_error)
   }
 }
 
+template<typename T>
+inline bool is_real_equal(T l, T r)
+{
+  return r == std::nextafter(l, r);
+}
 
 // -----------------------------------------------------------------------------
 #endif

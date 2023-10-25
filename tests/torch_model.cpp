@@ -7,21 +7,20 @@
 
 #include <AMS.h>
 
+#include <cstring>
 #include <iostream>
 #include <ml/surrogate.hpp>
 #include <umpire/ResourceManager.hpp>
 #include <umpire/Umpire.hpp>
 #include <vector>
-#include <wf/data_handler.hpp>
 #include <wf/resource_manager.hpp>
 
 #define SIZE (32L * 1024L + 3L)
 
 template <typename T>
-void inference(char *path, int device, AMSResourceType resource)
+void inference(SurrogateModel<T> &model, AMSResourceType resource)
 {
   using namespace ams;
-  SurrogateModel<T> model(path, !device);
 
   std::vector<const T *> inputs;
   std::vector<T *> outputs;
@@ -46,7 +45,6 @@ void inference(char *path, int device, AMSResourceType resource)
 int main(int argc, char *argv[])
 {
   using namespace ams;
-  using data_handler = DataHandler<double>;
   auto &rm = umpire::ResourceManager::getInstance();
   int use_device = std::atoi(argv[1]);
   char *model_path = argv[2];
@@ -60,7 +58,17 @@ int main(int argc, char *argv[])
     resource = AMSResourceType::DEVICE;
   }
 
-  inference<double>(model_path, use_device, resource);
+  if (std::strcmp("double", data_type) == 0) {
+    std::shared_ptr<SurrogateModel<double>> model =
+        SurrogateModel<double>::getInstance(model_path, !use_device);
+    assert(model->is_double());
+    inference<double>(*model, resource);
+  } else if (std::strcmp("single", data_type) == 0) {
+    std::shared_ptr<SurrogateModel<float>> model =
+        SurrogateModel<float>::getInstance(model_path, !use_device);
+    assert(!model->is_double());
+    inference<float>(*model, resource);
+  }
 
   return 0;
 }
