@@ -79,19 +79,35 @@ typedef struct ams_conf {
   int wSize;
 } AMSConfig;
 
+typedef ams_stats{
+  long physics_evaluations;
+  long ml_evaluations;
+  double mean_avoided_error;
+  double mean_estimated_error;
+}AMSStats;
+
+typedef ams_md{
+  char *descr; // NULL Terminated
+  double value;
+}AMSMetaData;
+
 AMSExecutor AMSCreateExecutor(const AMSConfig config);
 
 #ifdef __AMS_ENABLE_MPI__
-void AMSDistributedExecute(AMSExecutor executor,
+AMSStats AMSDistributedExecute(AMSExecutor executor,
                            MPI_Comm Comm,
                            void *probDescr,
                            const int numElements,
                            const void **input_data,
                            void **output_data,
                            int inputDim,
-                           int outputDim);
+                           int outputDim
+                           bool snap_shot,
+                           AMSMetaData *meta_data,
+                           int num_md_data
+                           );
 #endif
-void AMSExecute(AMSExecutor executor,
+AMS_stats AMSExecute(AMSExecutor executor,
                 void *probDescr,
                 const int numElements,
                 const void **input_data,
@@ -110,6 +126,9 @@ void AMSSetupAllocator(const AMSResourceType device);
 void AMSSetDefaultAllocator(const AMSResourceType device);
 void AMSResourceInfo();
 int AMSGetLocationId(void *ptr);
+
+void AMSSetAllocatorId(const AMSResourceType, int id);
+void AMSSetAllocatorName(const AMSResourceType, const char *alloc_name);
 
 #ifdef __cplusplus
 }
