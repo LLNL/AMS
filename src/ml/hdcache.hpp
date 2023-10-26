@@ -252,8 +252,10 @@ public:
 
   ~HDCache() {
     DBG(Surrogate, "Destroying UQ-cache");
-    m_index->reset();
-    delete m_index;
+    if (m_index){
+      m_index->reset();
+      delete m_index;
+    }
   }
 
   //! ------------------------------------------------------------------------
