@@ -250,8 +250,9 @@ public:
 
   ~HDCache()
   {
-    DBG(Surrogate, "Destroying UQ-cache");
+    DBG(UQModule, "Deleting UQ-Module");
     if (m_index) {
+      DBG(UQModule, "Deleting HD-Cache");
       m_index->reset();
       delete m_index;
     }
