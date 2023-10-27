@@ -7,6 +7,7 @@
 
 #include <AMS.h>
 
+#include <climits>
 #include <cstring>
 #include <iostream>
 #include <ml/hdcache.hpp>
@@ -34,7 +35,7 @@ std::vector<const T *> generate_vectors(const int num_clusters,
       for (int k = 0; k < num_clusters; k++) {
         T tmp = ((T)rand()) / INT_MAX;
         tmp += (k + 1) * num_clusters;
-        if (j % 2 == 0) {
+        if ((j % 2) == 0) {
           tmp += offset;
         }
         data[j * num_clusters + k] = tmp;
@@ -53,7 +54,7 @@ void print_vectors(std::vector<T *> &vec, int num_elements, int num_clusters)
       for (auto v : vec) {
         std::cout << v[i * num_clusters + c] << ":";
       }
-      std::cout << std::endl;
+      std::cout << "\n";
     }
   }
 }
@@ -133,6 +134,15 @@ bool do_faiss(std::shared_ptr<HDCache<T>> &index,
 int main(int argc, char *argv[])
 {
   using namespace ams;
+
+  if (argc < 8) {
+    std::cerr << "Wrong CLI\n";
+    std::cerr << argv[0]
+              << " 'use device' 'path to faiss' 'data type (double|float)' "
+                 "'UQPolicy (0:Mean, 1:Max)' 'Num Clusters' 'Threshold' "
+                 "'number of dimensions' 'num elements'";
+    abort();
+  }
   auto &rm = umpire::ResourceManager::getInstance();
   int use_device = std::atoi(argv[1]);
   char *faiss_path = argv[2];

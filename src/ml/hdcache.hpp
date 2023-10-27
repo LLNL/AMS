@@ -8,8 +8,6 @@
 #ifndef __AMS_HDCACHE_HPP__
 #define __AMS_HDCACHE_HPP__
 
-#include <bits/stdc++.h>
-
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
@@ -250,9 +248,10 @@ public:
     return new_cache;
   }
 
-  ~HDCache() {
+  ~HDCache()
+  {
     DBG(Surrogate, "Destroying UQ-cache");
-    if (m_index){
+    if (m_index) {
       m_index->reset();
       delete m_index;
     }
@@ -552,23 +551,23 @@ private:
 
     // compute means
     if (defaultRes == AMSResourceType::HOST) {
-      TypeValue total_dist = 0;
       for (size_t i = 0; i < ndata; ++i) {
         CFATAL(UQModule,
                m_policy == AMSUQPolicy::DeltaUQ,
                "DeltaUQ is not supported yet");
         if (m_policy == AMSUQPolicy::FAISSMean) {
-          total_dist =
-              std::accumulate(kdists + i * knbrs, kdists + (i + 1) * knbrs, 0.);
-          total_dist = ook * total_dist;
-          is_acceptable[i] = total_dist < acceptable_error;
+          TypeValue mean_dist = std::accumulate(kdists + i * knbrs,
+                                                kdists + (i + 1) * knbrs,
+                                                0.) *
+                                ook;
+          is_acceptable[i] = mean_dist < acceptable_error;
         } else if (m_policy == AMSUQPolicy::FAISSMax) {
           // Take the furtherst cluster as the distance metric
-          total_dist = *std::max_element(&kdists[i * knbrs],
-                                         &kdists[i * knbrs + knbrs - 1]);
-          is_acceptable[i] = (total_dist) < acceptable_error;
+          TypeValue max_dist =
+              *std::max_element(&kdists[i * knbrs],
+                                &kdists[i * knbrs + knbrs - 1]);
+          is_acceptable[i] = (max_dist) < acceptable_error;
         }
-        //DBG(UQModule, "Index %lu has value %g using %d neighbors", i, total_dist, knbrs);
       }
     } else {
       CFATAL(UQModule,

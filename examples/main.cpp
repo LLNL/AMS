@@ -701,9 +701,10 @@ int main(int argc, char **argv)
     MPI_CALL(MPI_Barrier(MPI_COMM_WORLD));
   }
 
-  delete [] workflow;
+  delete[] workflow;
 
-  for ( int mat_idx = 0; mat_idx < num_mats; ++mat_idx){
+  // TODO: Add smart-pointers
+  for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
     delete eoses[mat_idx];
     eoses[mat_idx] = nullptr;
   }
