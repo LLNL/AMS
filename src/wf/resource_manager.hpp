@@ -141,7 +141,7 @@ PERFFASPECT()
   static TypeInValue* allocate(size_t nvalues, AMSResourceType dev = default_resource)
   {
     static auto& rm = umpire::ResourceManager::getInstance();
-    DBG(ResourceManager, "Requesting to allocate %ld values using allocator :%s %d", nvalues, getAllocatorName(dev));
+    DBG(ResourceManager, "Requesting to allocate %ld values using allocator :%s", nvalues, getAllocatorName(dev));
     auto alloc = rm.getAllocator(allocator_ids[dev]);
     TypeInValue *ret = static_cast<TypeInValue*>(alloc.allocate(nvalues * sizeof(TypeInValue)));
     CFATAL(ResourceManager, ret == nullptr,

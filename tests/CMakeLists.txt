@@ -24,5 +24,18 @@ endfunction()
 
 ADDTEST(ams_allocator ams_allocate.cpp AMSAllocate)
 ADDTEST(ams_packing cpu_packing_test.cpp AMSPack)
+if (WITH_TORCH)
 ADDTEST(ams_inference_double torch_model.cpp AMSInferDouble ${CMAKE_CURRENT_SOURCE_DIR}/debug_model.pt "double")
 ADDTEST(ams_inference_single torch_model.cpp AMSInferSingle ${CMAKE_CURRENT_SOURCE_DIR}/debug_model.pt "single")
+endif()
+
+if(WITH_FAISS)
+ADDTEST(ams_hdcache_mean_double test_hdcache.cpp AMSHDCacheMeanPolicyDouble ${CMAKE_CURRENT_SOURCE_DIR}/faiss_debug.pt "double" 0 10 4.0 4 5)
+# The max case fails on DEVICE. We should be aware abou this when adding support for CI for GPUs
+ADDTEST(ams_hdcache_max_double  test_hdcache.cpp AMSHDCacheMaxPolicyDouble ${CMAKE_CURRENT_SOURCE_DIR}/faiss_debug.pt "double" 1 10 4.0 4 5)
+
+ADDTEST(ams_hdcache_mean_single test_hdcache.cpp AMSHDCacheMeanPolicySingle ${CMAKE_CURRENT_SOURCE_DIR}/faiss_debug.pt "single" 0 10 4.0 4 5)
+# The max case fails on DEVICE. We should be aware abou this when adding support for CI for GPUs
+ADDTEST(ams_hdcache_max_single  test_hdcache.cpp AMSHDCacheMaxPolicySingle ${CMAKE_CURRENT_SOURCE_DIR}/faiss_debug.pt "single" 1 10 4.0 4 5)
+endif()
+

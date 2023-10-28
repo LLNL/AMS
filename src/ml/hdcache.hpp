@@ -248,7 +248,15 @@ public:
     return new_cache;
   }
 
-  ~HDCache() { DBG(Surrogate, "Destroying UQ-cache") }
+  ~HDCache()
+  {
+    DBG(UQModule, "Deleting UQ-Module");
+    if (m_index) {
+      DBG(UQModule, "Deleting HD-Cache");
+      m_index->reset();
+      delete m_index;
+    }
+  }
 
   //! ------------------------------------------------------------------------
   //! simple queries
@@ -400,6 +408,7 @@ public:
     } else {
       _evaluate(ndata, data, is_acceptable);
     }
+    DBG(UQModule, "Done with evalution of uq")
   }
 
   //! train on data that comes separate features (a vector of pointers)
@@ -431,6 +440,7 @@ public:
       _evaluate(ndata, lin_data, is_acceptable);
       ams::ResourceManager::deallocate(lin_data, defaultRes);
     }
+    DBG(UQModule, "Done with evalution of uq");
   }
 
 private:
@@ -529,28 +539,35 @@ private:
     for (int start = 0; start < ndata; start += MAGIC_NUMBER) {
       unsigned int nElems =
           ((ndata - start) < MAGIC_NUMBER) ? ndata - start : MAGIC_NUMBER;
+      DBG(UQModule, "Running for %d elements %d %d", nElems, start, m_dim);
       m_index->search(nElems,
-                      &data[start],
+                      &data[start * m_dim],
                       knbrs,
                       &kdists[start * knbrs],
                       &kidxs[start * knbrs]);
     }
+#ifdef __ENABLE_CUDA__
+    faiss::gpu::synchronizeAllDevices();
+#endif
 
     // compute means
     if (defaultRes == AMSResourceType::HOST) {
-      TypeValue total_dist = 0;
       for (size_t i = 0; i < ndata; ++i) {
         CFATAL(UQModule,
                m_policy == AMSUQPolicy::DeltaUQ,
                "DeltaUQ is not supported yet");
         if (m_policy == AMSUQPolicy::FAISSMean) {
-          total_dist =
-              std::accumulate(kdists + i * knbrs, kdists + (i + 1) * knbrs, 0.);
-          is_acceptable[i] = (ook * total_dist) < acceptable_error;
+          TypeValue mean_dist = std::accumulate(kdists + i * knbrs,
+                                                kdists + (i + 1) * knbrs,
+                                                0.) *
+                                ook;
+          is_acceptable[i] = mean_dist < acceptable_error;
         } else if (m_policy == AMSUQPolicy::FAISSMax) {
           // Take the furtherst cluster as the distance metric
-          total_dist = kdists[i * knbrs + knbrs - 1];
-          is_acceptable[i] = (total_dist) < acceptable_error;
+          TypeValue max_dist =
+              *std::max_element(&kdists[i * knbrs],
+                                &kdists[i * knbrs + knbrs - 1]);
+          is_acceptable[i] = (max_dist) < acceptable_error;
         }
       }
     } else {
