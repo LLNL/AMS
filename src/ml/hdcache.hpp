@@ -69,7 +69,7 @@ class HDCache
 
   const bool m_use_random;
   const int m_knbrs = 0;
-  const AMSUQPolicy m_policy = AMSUQPolicy::FAISSMean;
+  const AMSUQPolicy m_policy = AMSUQPolicy::FAISS_Mean;
 
   AMSResourceType cache_location;
 
@@ -209,6 +209,11 @@ public:
       return cache;
     }
 
+    if (uqPolicy != AMSUQPolicy::FAISS_Mean &&
+        uqPolicy != AMSUQPolicy::FAISS_Max)
+      THROW(std::invalid_argument,
+            "Invalid UQ policy for hdcache" + std::to_string(uqPolicy));
+
     DBG(UQModule, "Generating new cache under (%s)", cache_path.c_str())
     std::shared_ptr<HDCache<TypeInValue>> new_cache =
         std::shared_ptr<HDCache<TypeInValue>>(new HDCache<TypeInValue>(
@@ -224,7 +229,7 @@ public:
   {
     static std::string random_path("random");
     std::shared_ptr<HDCache<TypeInValue>> cache = find_cache(
-        random_path, resource, AMSUQPolicy::FAISSMean, -1, threshold);
+        random_path, resource, AMSUQPolicy::FAISS_Mean, -1, threshold);
     if (cache) {
       DBG(UQModule, "Returning existing cache under (%s)", random_path.c_str())
       return cache;
@@ -547,16 +552,13 @@ private:
     // compute means
     if (cache_location == AMSResourceType::HOST) {
       for (size_t i = 0; i < ndata; ++i) {
-        CFATAL(UQModule,
-               m_policy == AMSUQPolicy::DeltaUQ,
-               "DeltaUQ is not supported yet");
-        if (m_policy == AMSUQPolicy::FAISSMean) {
+        if (m_policy == AMSUQPolicy::FAISS_Mean) {
           TypeValue mean_dist = std::accumulate(kdists + i * knbrs,
                                                 kdists + (i + 1) * knbrs,
                                                 0.) *
                                 ook;
           is_acceptable[i] = mean_dist < acceptable_error;
-        } else if (m_policy == AMSUQPolicy::FAISSMax) {
+        } else if (m_policy == AMSUQPolicy::FAISS_Max) {
           // Take the furtherst cluster as the distance metric
           TypeValue max_dist =
               *std::max_element(&kdists[i * knbrs],
@@ -566,9 +568,8 @@ private:
       }
     } else {
       CFATAL(UQModule,
-             (m_policy == AMSUQPolicy::DeltaUQ) ||
-                 (m_policy == AMSUQPolicy::FAISSMax),
-             "DeltaUQ is not supported yet");
+             m_policy == AMSUQPolicy::FAISS_Max,
+             "FAISS Max on device is not supported yet");
 
       ams::Device::computePredicate(
           kdists, is_acceptable, ndata, knbrs, acceptable_error);

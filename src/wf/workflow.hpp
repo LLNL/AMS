@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "AMS.h"
+#include "ml/uq.hpp"
 #include "ml/hdcache.hpp"
 #include "ml/surrogate.hpp"
 #include "resource_manager.hpp"
@@ -53,7 +54,7 @@ class AMSWorkflow
   std::shared_ptr<HDCache<FPTypeValue>> hdcache;
 
   /** The metric/type of UQ we will use to select between physics and ml computations **/
-  const AMSUQPolicy uqPolicy = AMSUQPolicy::FAISSMean;
+  const AMSUQPolicy uqPolicy = AMSUQPolicy::FAISS_Mean;
 
   /** The Number of clusters we will use to compute FAISS UQ  **/
   const int nClusters = 10;
@@ -186,14 +187,23 @@ public:
         rId(_pId),
         wSize(_wSize),
         appDataLoc(appDataLoc),
+        uqPolicy(uqPolicy),
         ePolicy(policy)
   {
 
     surrogate = nullptr;
-    if (surrogate_path)
-      surrogate =
-          SurrogateModel<FPTypeValue>::getInstance(surrogate_path, appDataLoc);
+    if (surrogate_path) {
+      bool is_DeltaUQ = ((uqPolicy == AMSUQPolicy::DeltaUQ_Max ||
+                          uqPolicy == AMSUQPolicy::DeltaUQ_Mean)
+                             ? true
+                             : false);
+      surrogate = SurrogateModel<FPTypeValue>::getInstance(
+          surrogate_path,
+          appDataLoc,
+          is_DeltaUQ);
+    }
 
+    UQ<FPTypeValue>::setThreshold(threshold);
     // TODO: Fix magic number. 10 represents the number of neighbours I am
     // looking at.
     if (uq_path)
@@ -313,11 +323,15 @@ public:
     // STEP 1: call the hdcache to look at input uncertainties
     //         to decide if making a ML inference makes sense
     // -------------------------------------------------------------
-    if (hdcache) {
-      CALIPER(CALI_MARK_BEGIN("UQ_MODULE");)
-      hdcache->evaluate(totalElements, origInputs, p_ml_acceptable);
-      CALIPER(CALI_MARK_END("UQ_MODULE");)
-    }
+    CALIPER(CALI_MARK_BEGIN("UQ_MODULE");)
+    UQ<FPTypeValue>::evaluate(uqPolicy,
+                 totalElements,
+                 origInputs,
+                 origOutputs,
+                 hdcache,
+                 surrogate,
+                 p_ml_acceptable);
+    CALIPER(CALI_MARK_END("UQ_MODULE");)
 
     DBG(Workflow, "Computed Predicates")
 
@@ -333,14 +347,6 @@ public:
     DBG(Workflow, "Allocated input resources")
 
     bool *predicate = p_ml_acceptable;
-
-    CALIPER(CALI_MARK_BEGIN("SURROGATE");)
-    // We need to call the model on all data values.
-    // Because we expect it to be faster.
-    // I guess we may need to add some policy to do this
-    DBG(Workflow, "Model exists, I am calling surrogate (for all data)");
-    surrogate->evaluate(totalElements, origInputs, origOutputs);
-    CALIPER(CALI_MARK_END("SURROGATE");)
 
     // -----------------------------------------------------------------
     // STEP 3: call physics module only where d_dense_need_phys = true

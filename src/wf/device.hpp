@@ -11,6 +11,9 @@
 #include <cstddef>
 #include <cstring>
 #include <iostream>
+#include <stdexcept>
+
+#include "wf/debug.h"
 
 #ifdef __ENABLE_CUDA__
 #include "cuda/utilities.cuh"
@@ -32,6 +35,13 @@ void computePredicate(float *data,
 #else
   return;
 #endif
+}
+
+PERFFASPECT()
+void computePredicateDeltaUQ()
+{
+  THROW(std::runtime_error,
+        "Computing DeltaUQ predications on device is not supported yet");
 }
 
 template <typename TypeInValue, typename TypeOutValue>

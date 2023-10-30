@@ -7,9 +7,11 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <mfem.hpp>
 #include <random>
+#include <stdexcept>
 #include <string>
 #include <umpire/strategy/QuickPool.hpp>
 #include <unordered_set>
@@ -182,14 +184,18 @@ int run(const char *device_name,
     dbType = AMSDBType::RMQ;
   }
 
-  AMSUQPolicy uq_policy = (std::strcmp(uq_policy_opt, "max") == 0)
-                              ? AMSUQPolicy::FAISSMax
-                              : AMSUQPolicy::FAISSMean;
+  AMSUQPolicy uq_policy;
 
-  if (uq_policy != AMSUQPolicy::FAISSMax)
-    uq_policy = ((std::strcmp(uq_policy_opt, "deltauq") == 0))
-                    ? AMSUQPolicy::DeltaUQ
-                    : AMSUQPolicy::FAISSMean;
+  if (strcmp(uq_policy_opt, "faiss-max") == 0)
+    uq_policy = AMSUQPolicy::FAISS_Max;
+  else if (strcmp(uq_policy_opt, "faiss-mean") == 0)
+    uq_policy = AMSUQPolicy::FAISS_Mean;
+  else if (strcmp(uq_policy_opt, "deltauq-max") == 0)
+    uq_policy = AMSUQPolicy::DeltaUQ_Max;
+  else if (strcmp(uq_policy_opt, "deltauq-mean") == 0)
+    uq_policy = AMSUQPolicy::DeltaUQ_Mean;
+  else
+    throw std::runtime_error("Invalid UQ policy");
 
   // set up a randomization seed
   srand(seed + rId);
@@ -671,7 +677,7 @@ int main(int argc, char **argv)
   const char *precision_opt = "double";
   AMSDType precision = AMSDType::Double;
 
-  const char *uq_policy_opt = "mean";
+  const char *uq_policy_opt = "faiss-mean";
   int k_nearest = 5;
 
   int seed = 0;
@@ -795,11 +801,14 @@ int main(int argc, char **argv)
                  "-uq",
                  "--uqtype",
                  "Types of UQ to select from: \n"
-                 "\t 'mean' Uncertainty is computed in comparison against the "
+                 "\t 'faiss-mean' Uncertainty is computed in comparison "
+                 "against the "
                  "mean distance of k-nearest neighbors\n"
-                 "\t 'max': Uncertainty is computed in comparison with the "
+                 "\t 'faiss-max': Uncertainty is computed in comparison with "
+                 "the "
                  "k'st cluster \n"
-                 "\t 'deltauq': Uncertainty through DUQ (not supported)\n");
+                 "\t 'deltauq-mean': Uncertainty through DUQ using mean\n"
+                 "\t 'deltauq-max': Uncertainty through DUQ using max\n");
 
   args.AddOption(
       &verbose, "-v", "--verbose", "-qu", "--quiet", "Print extra stuff");
