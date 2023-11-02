@@ -50,22 +50,19 @@ int main(int argc, char *argv[])
   char *model_path = argv[2];
   char *data_type = argv[3];
 
-  AMSSetupAllocator(AMSResourceType::HOST);
   AMSResourceType resource = AMSResourceType::HOST;
   if (use_device == 1) {
-    AMSSetupAllocator(AMSResourceType::DEVICE);
-    AMSSetDefaultAllocator(AMSResourceType::DEVICE);
     resource = AMSResourceType::DEVICE;
   }
 
   if (std::strcmp("double", data_type) == 0) {
     std::shared_ptr<SurrogateModel<double>> model =
-        SurrogateModel<double>::getInstance(model_path, !use_device);
+        SurrogateModel<double>::getInstance(model_path, resource);
     assert(model->is_double());
     inference<double>(*model, resource);
   } else if (std::strcmp("single", data_type) == 0) {
     std::shared_ptr<SurrogateModel<float>> model =
-        SurrogateModel<float>::getInstance(model_path, !use_device);
+        SurrogateModel<float>::getInstance(model_path, resource);
     assert(!model->is_double());
     inference<float>(*model, resource);
   }

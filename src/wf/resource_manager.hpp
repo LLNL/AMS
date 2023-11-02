@@ -28,9 +28,6 @@ class ResourceManager
 {
 public:
 private:
-  /** @brief  Used internally to allocate from the user define default resource (Device, Host Memory) */
-  static AMSResourceType default_resource;
-
   /** @brief  Used internally to map resource types (Device, host, pinned memory) to
    * umpire allocator ids. */
   static int allocator_ids[AMSResourceType::RSEND];
@@ -59,21 +56,6 @@ public:
 
   /** @brief setup allocators in the resource manager */
   static void setup(const AMSResourceType resource);
-
-  /** @brief Print out all available allocators */
-  static void list_allocators();
-
-  /** @brief Get the default memory allocator */
-  static AMSResourceType getDefaultDataAllocator();
-
-  /** @brief Set the default memory allocator */
-  static void setDefaultDataAllocator(AMSResourceType resource);
-
-  /** @brief Check if default allocator is set to Device
-   *  @pre The library currently assumes the default memory allocator
-   *  also describes the executing device.
-   */
-  static bool isDeviceExecution();
 
   /** @brief Check if pointer is allocatd through
    *  @tparam TypeInValue The type of pointer being tested.
@@ -116,19 +98,6 @@ public:
                                   : "unknown";
   }
 
-  /** @brief checks whether the data are resident on the device.
-   *  @tparam TypeInValue The type of pointer being tested.
-   *  @param[in] data pointer to memory.
-   *  @return True when data are on Device.
-   */
-  template <typename TypeInValue>
-  static bool is_on_device(const TypeInValue* data)
-  {
-    auto alloc_id = getDataAllocationId(data);
-    return ResourceManager::isDeviceExecution() && alloc_id != -1 &&
-           alloc_id == allocator_ids[AMSResourceType::DEVICE];
-  }
-
   /** @brief Allocates nvalues on the specified device.
    *  @tparam TypeInValue The type of pointer to allocate.
    *  @param[in] nvalues Number of elements to allocate.
@@ -137,8 +106,7 @@ public:
    */
   template <typename TypeInValue>
   PERFFASPECT()
-  static TypeInValue* allocate(size_t nvalues,
-                               AMSResourceType dev = default_resource)
+  static TypeInValue* allocate(size_t nvalues, AMSResourceType dev)
   {
     static auto& rm = umpire::ResourceManager::getInstance();
     DBG(ResourceManager,
@@ -179,9 +147,7 @@ public:
    *  @return void.
    */
   PERFFASPECT()
-  static void registerExternal(void* ptr,
-                               size_t nBytes,
-                               AMSResourceType dev = default_resource)
+  static void registerExternal(void* ptr, size_t nBytes, AMSResourceType dev)
   {
     auto& rm = umpire::ResourceManager::getInstance();
     auto alloc = rm.getAllocator(allocator_ids[dev]);

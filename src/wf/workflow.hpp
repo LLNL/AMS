@@ -18,6 +18,7 @@
 #include "AMS.h"
 #include "ml/hdcache.hpp"
 #include "ml/surrogate.hpp"
+#include "resource_manager.hpp"
 #include "wf/basedb.hpp"
 
 #ifdef __ENABLE_MPI__
@@ -75,11 +76,8 @@ class AMSWorkflow
    * (world_size for MPI) */
   int wSize;
 
-  /** @brief  Whether data and simulation takes place on CPU or GPU*/
-  bool isCPU;
-
-  /** @brief  Location of data during simulation (CPU or GPU) */
-  AMSResourceType mLoc;
+  /** @brief  Location of the original application data  (CPU or GPU) */
+  AMSResourceType appDataLoc;
 
   /** @brief execution policy of the distributed system. Load balance or not. */
   const AMSExecPolicy ePolicy;
@@ -111,7 +109,7 @@ class AMSWorkflow
 
     std::vector<FPTypeValue *> hInputs, hOutputs;
 
-    if (isCPU) return DB->store(num_elements, inputs, outputs);
+    if (appDataLoc == AMSResourceType::HOST ) return DB->store(num_elements, inputs, outputs);
 
     // Compute number of elements that fit inside the buffer
     size_t bElements = bSize / sizeof(FPTypeValue);
@@ -161,13 +159,9 @@ public:
         surrogate(nullptr),
         DB(nullptr),
         dbType(AMSDBType::None),
-        isCPU(false),
-        mLoc(AMSResourceType::DEVICE),
+        appDataLoc(AMSResourceType::HOST),
         ePolicy(AMSExecPolicy::UBALANCED)
   {
-    if (isCPU) {
-      mLoc = AMSResourceType::HOST;
-    }
 
 #ifdef __ENABLE_DB__
     DB = createDB<FPTypeValue>("miniApp_data.txt", dbType, 0);
@@ -180,7 +174,7 @@ public:
               char *surrogate_path,
               char *db_path,
               const AMSDBType dbType,
-              bool is_cpu,
+              AMSResourceType appDataLoc,
               FPTypeValue threshold,
               const AMSUQPolicy uqPolicy,
               const int nClusters,
@@ -191,27 +185,23 @@ public:
         dbType(dbType),
         rId(_pId),
         wSize(_wSize),
-        isCPU(is_cpu),
-        mLoc(AMSResourceType::DEVICE),
+        appDataLoc(appDataLoc),
         ePolicy(policy)
   {
-    if (isCPU) {
-      mLoc = AMSResourceType::HOST;
-    }
 
     surrogate = nullptr;
     if (surrogate_path)
       surrogate =
-          SurrogateModel<FPTypeValue>::getInstance(surrogate_path, is_cpu);
+          SurrogateModel<FPTypeValue>::getInstance(surrogate_path, appDataLoc);
 
     // TODO: Fix magic number. 10 represents the number of neighbours I am
     // looking at.
     if (uq_path)
       hdcache = HDCache<FPTypeValue>::getInstance(
-          uq_path, !is_cpu, uqPolicy, nClusters, threshold);
+          uq_path, appDataLoc, uqPolicy, nClusters, threshold);
     else
       // This is a random hdcache returning true %threshold queries
-      hdcache = HDCache<FPTypeValue>::getInstance(!is_cpu, threshold);
+      hdcache = HDCache<FPTypeValue>::getInstance(appDataLoc, threshold);
 
     DB = nullptr;
     if (db_path) {
@@ -317,7 +307,7 @@ public:
       return;
     }
     // The predicate with which we will split the data on a later step
-    bool *p_ml_acceptable = ams::ResourceManager::allocate<bool>(totalElements);
+    bool *p_ml_acceptable = ams::ResourceManager::allocate<bool>(totalElements, appDataLoc);
 
     // -------------------------------------------------------------
     // STEP 1: call the hdcache to look at input uncertainties
@@ -337,7 +327,7 @@ public:
 
     for (int i = 0; i < inputDim; i++) {
       packedInputs.emplace_back(
-          ams::ResourceManager::allocate<FPTypeValue>(totalElements));
+          ams::ResourceManager::allocate<FPTypeValue>(totalElements, appDataLoc));
     }
 
     DBG(Workflow, "Allocated input resources")
@@ -357,14 +347,14 @@ public:
     // -----------------------------------------------------------------
     // ---- 3a: we need to pack the sparse data based on the uq flag
     const long packedElements =
-        data_handler::pack(predicate, totalElements, origInputs, packedInputs);
+        data_handler::pack(appDataLoc, predicate, totalElements, origInputs, packedInputs);
 
     // Pointer values which store output data values
     // to be computed using the eos function.
     std::vector<FPTypeValue *> packedOutputs;
     for (int i = 0; i < outputDim; i++) {
       packedOutputs.emplace_back(
-          ams::ResourceManager::allocate<FPTypeValue>(packedElements));
+          ams::ResourceManager::allocate<FPTypeValue>(packedElements, appDataLoc));
     }
 
     {
@@ -375,9 +365,9 @@ public:
 #ifdef __ENABLE_MPI__
       CALIPER(CALI_MARK_BEGIN("LOAD BALANCE MODULE");)
       AMSLoadBalancer<FPTypeValue> lBalancer(
-          rId, wSize, packedElements, Comm, inputDim, outputDim, mLoc);
+          rId, wSize, packedElements, Comm, inputDim, outputDim, appDataLoc);
       if (ePolicy == AMSExecPolicy::BALANCED && Comm) {
-        lBalancer.scatterInputs(packedInputs, mLoc);
+        lBalancer.scatterInputs(packedInputs, appDataLoc);
         iPtr = reinterpret_cast<void **>(lBalancer.inputs());
         oPtr = reinterpret_cast<void **>(lBalancer.outputs());
         lbElements = lBalancer.getBalancedSize();
@@ -395,14 +385,14 @@ public:
 #ifdef __ENABLE_MPI__
       CALIPER(CALI_MARK_BEGIN("LOAD BALANCE MODULE");)
       if (ePolicy == AMSExecPolicy::BALANCED && Comm) {
-        lBalancer.gatherOutputs(packedOutputs, mLoc);
+        lBalancer.gatherOutputs(packedOutputs, appDataLoc);
       }
       CALIPER(CALI_MARK_END("LOAD BALANCE MODULE");)
 #endif
     }
 
     // ---- 3c: unpack the data
-    data_handler::unpack(predicate, totalElements, packedOutputs, origOutputs);
+    data_handler::unpack(appDataLoc, predicate, totalElements, packedOutputs, origOutputs);
 
     DBG(Workflow, "Finished physics evaluation")
 
@@ -419,11 +409,11 @@ public:
     // Deallocate temporal data
     // -----------------------------------------------------------------
     for (int i = 0; i < inputDim; i++)
-      ams::ResourceManager::deallocate(packedInputs[i], mLoc);
+      ams::ResourceManager::deallocate(packedInputs[i], appDataLoc);
     for (int i = 0; i < outputDim; i++)
-      ams::ResourceManager::deallocate(packedOutputs[i], mLoc);
+      ams::ResourceManager::deallocate(packedOutputs[i], appDataLoc);
 
-    ams::ResourceManager::deallocate(p_ml_acceptable, mLoc);
+    ams::ResourceManager::deallocate(p_ml_acceptable, appDataLoc);
 
     DBG(Workflow, "Finished AMSExecution")
     CINFO(Workflow,
