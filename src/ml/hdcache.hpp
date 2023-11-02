@@ -123,7 +123,7 @@ protected:
   {
 #ifdef __ENABLE_CUDA__
     // Copy index to device side
-    if (cache_location == AMSRAMSResourceType::DEVICE) {
+    if (cache_location == AMSResourceType::DEVICE) {
       faiss::gpu::GpuClonerOptions copyOptions;
       faiss::gpu::ToGpuCloner cloner(&res, 0, copyOptions);
       m_index = cloner.clone_Index(m_index);

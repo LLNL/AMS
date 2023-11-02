@@ -428,7 +428,7 @@ void cuda_rand_init(bool* predicate, const size_t length, T threshold)
   const int BS = 128;
   int numBlocks = divup(TS, BS);
   if (!dev_random) {
-    dev_random = ams::ResourceManager::allocate<curandState>(4096);
+    dev_random = ams::ResourceManager::allocate<curandState>(4096, AMSResourceType::DEVICE);
     srand_dev<<<numBlocks, BS>>>(dev_random, TS);
   }
 

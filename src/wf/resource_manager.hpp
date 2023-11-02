@@ -153,7 +153,7 @@ public:
       setAllocator("HOST", AMSResourceType::HOST);
 #ifdef __ENABLE_CUDA__
     if (!RMAllocators[AMSResourceType::DEVICE])
-      setAllocator("DEVICE", AMSResourceType::HOST);
+      setAllocator("DEVICE", AMSResourceType::DEVICE);
 
     if (!RMAllocators[AMSResourceType::PINNED])
       setAllocator("PINNED", AMSResourceType::PINNED);
