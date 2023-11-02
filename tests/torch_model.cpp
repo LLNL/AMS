@@ -36,7 +36,7 @@ void inference(SurrogateModel<T> &model, AMSResourceType resource)
 
 
   for (int i = 0; i < 2; i++)
-    ResourceManager::deallocate(const_cast<T*>(inputs[i]), resource);
+    ResourceManager::deallocate(const_cast<T *>(inputs[i]), resource);
 
   for (int i = 0; i < 4; i++)
     ResourceManager::deallocate(outputs[i], resource);
@@ -54,6 +54,8 @@ int main(int argc, char *argv[])
   if (use_device == 1) {
     resource = AMSResourceType::DEVICE;
   }
+
+  ams::ResourceManager::init();
 
   if (std::strcmp("double", data_type) == 0) {
     std::shared_ptr<SurrogateModel<double>> model =

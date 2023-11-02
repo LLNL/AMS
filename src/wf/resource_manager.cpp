@@ -5,76 +5,44 @@
  * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
  */
 
+#include "resource_manager.hpp"
+
+#include <umpire/ResourceManager.hpp>
 #include <umpire/Umpire.hpp>
 #include <umpire/strategy/QuickPool.hpp>
 
-#include "resource_manager.hpp"
+#include "debug.h"
 
 namespace ams
 {
 
-//! --------------------------------------------------------------------------
-const char* ResourceManager::getDeviceAllocatorName()
+std::string AMSAllocator::getName() { return allocator.getName(); }
+
+void *AMSAllocator::allocate(size_t num_bytes)
 {
-  return "mmp-device-quickpool";
+  void *ptr = allocator.allocate(num_bytes);
+  CFATAL(ResourceManager,
+         ptr == nullptr,
+         "Failed to allocated %ld values using allocator %s",
+         num_bytes,
+         getName().c_str());
+  return ptr;
 }
 
-const char* ResourceManager::getHostAllocatorName()
+void AMSAllocator::deallocate(void *ptr) { allocator.deallocate(ptr); }
+
+void AMSAllocator::registerPtr(void *ptr, size_t nBytes)
 {
-  return "mmp-host-quickpool";
+  auto &rm = umpire::ResourceManager::getInstance();
+  rm.registerAllocation(ptr,
+                        umpire::util::AllocationRecord(
+                            ptr, nBytes, allocator.getAllocationStrategy()));
 }
 
-const char* ResourceManager::getPinnedAllocatorName()
-{
-  return "mmp-pinned-quickpool";
-}
-
-const char* ResourceManager::getAllocatorName(AMSResourceType Resource)
-{
-  if (Resource == AMSResourceType::HOST)
-    return ResourceManager::getHostAllocatorName();
-  else if (Resource == AMSResourceType::DEVICE)
-    return ResourceManager::getDeviceAllocatorName();
-  else if (Resource == AMSResourceType::PINNED)
-    return ResourceManager::getPinnedAllocatorName();
-  else {
-    FATAL(ResourceManager, "Request allocator for resource that does not exist (%d)", Resource)
-    return nullptr;
-  }
-}
-
-//! --------------------------------------------------------------------------
-// maintain a list of allocator ids
-int ResourceManager::allocator_ids[AMSResourceType::RSEND] = {-1, -1, -1};
-
-// maintain a list of allocator names
-std::string ResourceManager::allocator_names[AMSResourceType::RSEND] = {"HOST",
-                                                                        "DEVICE",
-                                                                        "PINNED"};
-
-
+std::vector<AMSAllocator *> ResourceManager::RMAllocators = {nullptr,
+                                                             nullptr,
+                                                             nullptr};
 // -----------------------------------------------------------------------------
 // set up the resource manager
 // -----------------------------------------------------------------------------
-PERFFASPECT()
-void ResourceManager::setup(const AMSResourceType Resource)
-{
-  if (Resource < AMSResourceType::HOST || Resource >= AMSResourceType::RSEND) {
-    throw std::runtime_error("Resource does not exist\n");
-  }
-
-  // use umpire resource manager
-  auto& rm = umpire::ResourceManager::getInstance();
-
-  auto alloc_name = ResourceManager::getAllocatorName(Resource);
-  auto alloc_resource = rm.makeAllocator<umpire::strategy::QuickPool, true>(
-      alloc_name, rm.getAllocator(allocator_names[Resource]));
-
-  DBG(ResourceManager,
-      "Setting up ams::ResourceManager::%s:%d",
-      allocator_names[Resource].c_str(),
-      Resource);
-
-  allocator_ids[Resource] = alloc_resource.getId();
-}
 }  // namespace ams

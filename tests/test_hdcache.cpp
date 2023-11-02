@@ -154,8 +154,9 @@ int main(int argc, char *argv[])
   int nElements = std::atoi(argv[8]);
 
   AMSResourceType resource = AMSResourceType::HOST;
-  if (use_device == 1)
-    resource = AMSResourceType::DEVICE;
+  if (use_device == 1) resource = AMSResourceType::DEVICE;
+
+  ams::ResourceManager::init();
 
   if (std::strcmp("double", data_type) == 0) {
     std::shared_ptr<HDCache<double>> cache = HDCache<double>::getInstance(

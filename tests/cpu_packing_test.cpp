@@ -51,7 +51,7 @@ int main(int argc, char* argv[])
   using data_handler = DataHandler<double>;
   const size_t size = SIZE;
   int device = std::atoi(argv[1]);
-  AMSSetupAllocator(AMSResourceType::HOST);
+  ams::ResourceManager::init();
   if (device == 0) {
     AMSResourceType resource = AMSResourceType::HOST;
     bool* predicate = ams::ResourceManager::allocate<bool>(SIZE, resource);
@@ -66,7 +66,8 @@ int main(int argc, char* argv[])
     int elements;
 
     for (int flag = 0; flag < 2; flag++) {
-      elements = data_handler::pack(resource, predicate, size, s_data, d_data, flag);
+      elements =
+          data_handler::pack(resource, predicate, size, s_data, d_data, flag);
 
       if (elements != (SIZE + flag) / 2) {
         std::cout << "Did not compute dense number correctly " << elements
@@ -119,7 +120,8 @@ int main(int argc, char* argv[])
 
     for (int flag = 0; flag < 2; flag++) {
       int elements;
-      elements = data_handler::pack(resource, predicate, size, s_data, d_data, flag);
+      elements =
+          data_handler::pack(resource, predicate, size, s_data, d_data, flag);
 
       if (elements != (SIZE + flag) / 2) {
         std::cout << "Did not compute dense number correctly(" << elements
