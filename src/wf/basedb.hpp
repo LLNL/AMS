@@ -679,7 +679,7 @@ public:
   }
 };
 
-#endif  // __ENABLE_HDF5__
+#endif  // __ENABLE_REDIS__
 
 #ifdef __ENABLE_RMQ__
 
@@ -1681,9 +1681,6 @@ BaseDB<TypeValue>* createDB(char* dbPath, AMSDBType dbType, uint64_t rId = 0)
     default:
       return nullptr;
   }
-#else
-return nullptr;
-#endif
 }
 
 
@@ -1703,7 +1700,6 @@ std::shared_ptr<BaseDB<TypeValue>> getDB(char* dbPath,
 {
   static std::unordered_map<std::string, std::shared_ptr<BaseDB<TypeValue>>>
       instances;
-#ifdef __ENABLE_DB__
   if (dbPath == nullptr) {
     std::cerr << " [WARNING] Path of DB is NULL, Please provide a valid path "
                  "to enable db\n";

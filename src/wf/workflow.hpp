@@ -107,7 +107,7 @@ class AMSWorkflow
     const int numOut = outputs.size();
 
     // No database, so just de-allocate and return
-    if (DB) return;
+    if (!DB) return;
 
     std::vector<FPTypeValue *> hInputs, hOutputs;
 
@@ -229,10 +229,7 @@ public:
 
   void set_hdcache(HDCache<FPTypeValue> *_hdcache) { hdcache = _hdcache; }
 
-  ~AMSWorkflow()
-  {
-    DBG(Workflow, "Destroying Workflow Handler");
-  }
+  ~AMSWorkflow() { DBG(Workflow, "Destroying Workflow Handler"); }
 
 
   /** @brief This is the main entry point of AMSLib and replaces the original

@@ -28,7 +28,6 @@ class ResourceManager
 {
 public:
 private:
-
   /** @brief  Used internally to allocate from the user define default resource (Device, Host Memory) */
   static AMSResourceType default_resource;
 
@@ -137,15 +136,23 @@ public:
    *  @return Pointer to allocated elements.
    */
   template <typename TypeInValue>
-PERFFASPECT()
-  static TypeInValue* allocate(size_t nvalues, AMSResourceType dev = default_resource)
+  PERFFASPECT()
+  static TypeInValue* allocate(size_t nvalues,
+                               AMSResourceType dev = default_resource)
   {
     static auto& rm = umpire::ResourceManager::getInstance();
-    DBG(ResourceManager, "Requesting to allocate %ld values using allocator :%s", nvalues, getAllocatorName(dev));
+    DBG(ResourceManager,
+        "Requesting to allocate %ld values using allocator :%s",
+        nvalues,
+        getAllocatorName(dev));
     auto alloc = rm.getAllocator(allocator_ids[dev]);
-    TypeInValue *ret = static_cast<TypeInValue*>(alloc.allocate(nvalues * sizeof(TypeInValue)));
-    CFATAL(ResourceManager, ret == nullptr,
-        "Failed to allocated %ld values on device %d", nvalues, dev);
+    TypeInValue* ret = static_cast<TypeInValue*>(
+        alloc.allocate(nvalues * sizeof(TypeInValue)));
+    CFATAL(ResourceManager,
+           ret == nullptr,
+           "Failed to allocated %ld values on device %d",
+           nvalues,
+           dev);
     return ret;
   }
 
@@ -156,7 +163,7 @@ PERFFASPECT()
    *  @return void.
    */
   template <typename TypeInValue>
-PERFFASPECT()
+  PERFFASPECT()
   static void deallocate(TypeInValue* data, AMSResourceType dev)
   {
     static auto& rm = umpire::ResourceManager::getInstance();
@@ -171,7 +178,7 @@ PERFFASPECT()
    *  @param[in] dev resource to register the memory to.
    *  @return void.
    */
-PERFFASPECT()
+  PERFFASPECT()
   static void registerExternal(void* ptr,
                                size_t nBytes,
                                AMSResourceType dev = default_resource)
@@ -201,7 +208,7 @@ PERFFASPECT()
    *  @return void.
    */
   template <typename TypeInValue>
-PERFFASPECT()
+  PERFFASPECT()
   static void copy(TypeInValue* src, TypeInValue* dest, size_t size = 0)
   {
     static auto& rm = umpire::ResourceManager::getInstance();
@@ -218,6 +225,26 @@ PERFFASPECT()
   {
     for (auto* I : dPtr)
       deallocate(I);
+  }
+
+  /** @brief Returns the memory consumption of the given resource as measured from Umpire.
+   *  @param[in] resource The memory pool to get the consumption from.
+   *  @param[out] wm the highest memory allocation that umpire has performed until now.
+   *  @param[out] cs The current size of the pool. This can be smaller than the actual size.
+   *  @param[out] as The actual size of the pool..
+   *  @return void.
+   */
+  static void getAllocatorStats(AMSResourceType resource,
+                                size_t& wm,
+                                size_t& cs,
+                                size_t& as)
+  {
+    auto& rm = umpire::ResourceManager::getInstance();
+    auto alloc = rm.getAllocator(allocator_ids[resource]);
+    wm = alloc.getHighWatermark();
+    cs = alloc.getCurrentSize();
+    as = alloc.getActualSize();
+    return;
   }
   //! ------------------------------------------------------------------------
 };

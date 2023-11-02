@@ -21,11 +21,8 @@
 
 // this macro completely bypasses all AMS functionality
 // this allows us to check how easy is it to test ams
-#define USE_AMS
 
-#ifdef USE_AMS
 #include "AMS.h"
-#endif
 
 using TypeValue = double;
 using mfem::ForallWrap;
@@ -700,8 +697,9 @@ int main(int argc, char **argv)
     CALIPER(CALI_MARK_END("Cycle");)
     MPI_CALL(MPI_Barrier(MPI_COMM_WORLD));
   }
-
+#ifdef USE_AMS
   delete[] workflow;
+#endif
 
   // TODO: Add smart-pointers
   for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {

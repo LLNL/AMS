@@ -8,12 +8,14 @@
 #ifndef __AMS_SURROGATE_HPP__
 #define __AMS_SURROGATE_HPP__
 
+
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
 
 #ifdef __ENABLE_TORCH__
+#include <ATen/core/interned_strings.h>
 #include <torch/script.h>  // One-stop header.
 #endif
 
@@ -116,7 +118,9 @@ private:
       module = torch::jit::load(model_path);
       module.to(device);
       module.to(dType);
-      tensorOptions = torch::TensorOptions().dtype(dType).device(device);
+      tensorOptions =
+          torch::TensorOptions().dtype(dType).device(device).requires_grad(
+              false);
     } catch (const c10::Error& e) {
       FATAL("Error loding torch model:%s", model_path.c_str())
     }
@@ -179,7 +183,7 @@ private:
   inline void _evaluate(long num_elements,
                         long num_in,
                         size_t num_out,
-                        TypeInValue** inputs,
+                        const TypeInValue** inputs,
                         TypeInValue** outputs)
   {
   }
@@ -277,11 +281,19 @@ public:
     _evaluate(num_elements,
               inputs.size(),
               outputs.size(),
-              static_cast< const TypeInValue**>(inputs.data()),
+              static_cast<const TypeInValue**>(inputs.data()),
               static_cast<TypeInValue**>(outputs.data()));
   }
 
+#ifdef __ENABLE_TORCH__
   bool is_double() { return (tensorOptions.dtype() == torch::kFloat64); }
+#else
+  bool is_double()
+  {
+    if (typeid(TypeInValue) == typeid(double)) return true;
+    return false;
+  }
+#endif
 
   bool is_cpu() { return _is_cpu; }
 };
