@@ -404,18 +404,6 @@ int main(int argc, char **argv)
   std::cerr << "Rank:" << rId << " Threshold " << threshold << "\n";
 
   // -------------------------------------------------------------------------
-  // setup data allocators
-  // -------------------------------------------------------------------------
-  //  AMSSetupAllocator(AMSResourceType::HOST);
-  //  if (use_device) {
-  //    AMSSetupAllocator(AMSResourceType::DEVICE);
-  //    AMSSetupAllocator(AMSResourceType::PINNED);
-  //    AMSSetDefaultAllocator(AMSResourceType::DEVICE);
-  //  } else {
-  //    AMSSetDefaultAllocator(AMSResourceType::HOST);
-  //  }
-
-  // -------------------------------------------------------------------------
   // setup mfem memory manager
   // -------------------------------------------------------------------------
   // hardcoded names!
