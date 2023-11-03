@@ -249,8 +249,12 @@ public:
 #ifdef __ENABLE_FAISS__
     if (m_index) {
       DBG(UQModule, "Deleting HD-Cache");
-      m_index->reset();
-      delete m_index;
+      /// TODO: Deleting the cache on device can, and does
+      /// result in C++ destructor.
+      if ( cache_location != AMSResourceType::DEVICE){
+        m_index->reset();
+        delete m_index;
+      }
     }
 #endif
   }
