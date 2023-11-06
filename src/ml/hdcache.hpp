@@ -133,8 +133,7 @@ protected:
   }
 #else  // Disabled FAISS
   HDCache(const std::string &cache_path,
-          int knbrs,
-          AMSRAMSResourceType resource,
+          AMSResourceType resource,
           const AMSUQPolicy uqPolicy,
           int knbrs,
           TypeInValue threshold = 0.5)
@@ -251,7 +250,7 @@ public:
       DBG(UQModule, "Deleting HD-Cache");
       /// TODO: Deleting the cache on device can, and does
       /// result in C++ destructor.
-      if ( cache_location != AMSResourceType::DEVICE){
+      if (cache_location != AMSResourceType::DEVICE) {
         m_index->reset();
         delete m_index;
       }
@@ -347,7 +346,8 @@ public:
            !has_index(),
            "HDCache does not have a valid and trained index!")
 
-    TypeValue *lin_data = data_handler::linearize_features(cache_location, ndata, inputs);
+    TypeValue *lin_data =
+        data_handler::linearize_features(cache_location, ndata, inputs);
     _add(ndata, lin_data);
     ams::ResourceManager::deallocate(lin_data, cache_location);
   }
@@ -375,7 +375,8 @@ public:
   void train(const size_t ndata, const std::vector<TypeInValue *> &inputs)
   {
     if (m_use_random) return;
-    TypeValue *lin_data = data_handler::linearize_features(cache_location, ndata, inputs);
+    TypeValue *lin_data =
+        data_handler::linearize_features(cache_location, ndata, inputs);
     _train(ndata, lin_data);
     ams::ResourceManager::deallocate(lin_data, cache_location);
   }
@@ -437,7 +438,8 @@ public:
     if (m_use_random) {
       _evaluate(ndata, is_acceptable);
     } else {
-      TypeValue *lin_data = data_handler::linearize_features(cache_location, ndata, inputs);
+      TypeValue *lin_data =
+          data_handler::linearize_features(cache_location, ndata, inputs);
       _evaluate(ndata, lin_data, is_acceptable);
       ams::ResourceManager::deallocate(lin_data, cache_location);
     }
@@ -467,7 +469,8 @@ private:
   PERFFASPECT()
   inline void _add(const size_t ndata, const T *data)
   {
-    TypeValue *vdata = data_handler::cast_to_typevalue(cache_location, ndata, data);
+    TypeValue *vdata =
+        data_handler::cast_to_typevalue(cache_location, ndata, data);
     _add(ndata, vdata);
     delete[] vdata;
   }
@@ -499,7 +502,8 @@ private:
   PERFFASPECT()
   inline void _train(const size_t ndata, const T *data)
   {
-    TypeValue *vdata = data_handler::cast_to_typevalue(cache_location, ndata, data);
+    TypeValue *vdata =
+        data_handler::cast_to_typevalue(cache_location, ndata, data);
     _train(ndata, vdata);
     delete[] vdata;
   }
@@ -516,9 +520,11 @@ private:
     static const TypeValue ook = 1.0 / TypeValue(knbrs);
 
     TypeValue *kdists =
-        ams::ResourceManager::allocate<TypeValue>(ndata * knbrs, cache_location);
+        ams::ResourceManager::allocate<TypeValue>(ndata * knbrs,
+                                                  cache_location);
     TypeIndex *kidxs =
-        ams::ResourceManager::allocate<TypeIndex>(ndata * knbrs, cache_location);
+        ams::ResourceManager::allocate<TypeIndex>(ndata * knbrs,
+                                                  cache_location);
 
     // query faiss
     // TODO: This is a HACK. When searching more than 65535
@@ -539,7 +545,7 @@ private:
 #endif
 
     // compute means
-    if (cache_location== AMSResourceType::HOST) {
+    if (cache_location == AMSResourceType::HOST) {
       for (size_t i = 0; i < ndata; ++i) {
         CFATAL(UQModule,
                m_policy == AMSUQPolicy::DeltaUQ,
@@ -577,7 +583,8 @@ private:
             std::enable_if_t<!std::is_same<TypeValue, T>::value> * = nullptr>
   inline void _evaluate(const size_t ndata, T *data, bool *is_acceptable) const
   {
-    TypeValue *vdata = data_handler::cast_to_typevalue(cache_location, ndata, data);
+    TypeValue *vdata =
+        data_handler::cast_to_typevalue(cache_location, ndata, data);
     _evaluate(ndata, data, is_acceptable);
     delete[] vdata;
   }
@@ -609,7 +616,7 @@ private:
   PERFFASPECT()
   inline void _evaluate(const size_t ndata, bool *is_acceptable) const
   {
-    if ( cache_location == AMSResourceType::HOST ) {
+    if (cache_location == AMSResourceType::HOST) {
 #ifdef __ENABLE_CUDA__
       random_uq_Device<<<1, 1>>>(is_acceptable, ndata, acceptable_error);
 #endif
