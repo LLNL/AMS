@@ -136,16 +136,17 @@ protected:
 #endif
     print();
   }
-#else
+#else  // Disabled FAISS
   HDCache(const std::string &cache_path,
-          int knbrs,
           bool use_device,
           const AMSUQPolicy uqPolicy,
+          int knbrs,
           TypeInValue threshold = 0.5)
-      : m_index(nullptr),
+      : m_index(load_cache(cache_path)),
         m_dim(0),
-        m_use_random(true),
+        m_use_random(false),
         m_knbrs(knbrs),
+        m_policy(uqPolicy),
         m_use_device(use_device),
         acceptable_error(threshold)
   {
@@ -251,11 +252,13 @@ public:
   ~HDCache()
   {
     DBG(UQModule, "Deleting UQ-Module");
+#ifdef __ENABLE_FAISS__
     if (m_index) {
       DBG(UQModule, "Deleting HD-Cache");
       m_index->reset();
       delete m_index;
     }
+#endif
   }
 
   //! ------------------------------------------------------------------------
@@ -626,7 +629,7 @@ private:
 
     if (data_on_device) {
 #ifdef __ENABLE_CUDA__
-      random_uq_device<<<1, 1>>>(is_acceptable, ndata, acceptable_error);
+      random_uq_Device<<<1, 1>>>(is_acceptable, ndata, acceptable_error);
 #endif
     } else {
       random_uq_host(is_acceptable, ndata, acceptable_error);
