@@ -5,20 +5,23 @@
  * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
  */
 
+#include "AMS.h"
+
 #include <vector>
 
-#include "AMS.h"
+#include "wf/resource_manager.hpp"
 #include "wf/workflow.hpp"
 
-struct AMSWrap{
+struct AMSWrap {
   std::vector<std::pair<AMSDType, void *>> executors;
-  ~AMSWrap() {
-    for ( auto E : executors ){
-      if ( E.second != nullptr ){
-        if ( E.first == AMSDType::Double ){
-          delete reinterpret_cast<ams::AMSWorkflow<double> *> (E.second);
-        } else{
-          delete reinterpret_cast<ams::AMSWorkflow<float> *> (E.second);
+  ~AMSWrap()
+  {
+    for (auto E : executors) {
+      if (E.second != nullptr) {
+        if (E.first == AMSDType::Double) {
+          delete reinterpret_cast<ams::AMSWorkflow<double> *>(E.second);
+        } else {
+          delete reinterpret_cast<ams::AMSWorkflow<float> *>(E.second);
         }
       }
     }
@@ -36,6 +39,9 @@ void _AMSExecute(AMSExecutor executor,
                  int outputDim,
                  MPI_Comm Comm = 0)
 {
+  static std::once_flag flag;
+  std::call_once(flag, [&]() { ams::ResourceManager::init(); });
+
   uint64_t index = reinterpret_cast<uint64_t>(executor);
 
   if (index >= _amsWrap.executors.size())
@@ -81,7 +87,7 @@ AMSExecutor AMSCreateExecutor(const AMSConfig config)
                                      config.SPath,
                                      config.DBPath,
                                      config.dbType,
-                                     config.device == AMSResourceType::HOST,
+                                     config.device,
                                      config.threshold,
                                      config.uqPolicy,
                                      config.nClusters,
@@ -89,7 +95,8 @@ AMSExecutor AMSCreateExecutor(const AMSConfig config)
                                      config.wSize,
                                      config.ePolicy);
 
-    _amsWrap.executors.push_back(std::make_pair(config.dType, static_cast<void *>(dWF)));
+    _amsWrap.executors.push_back(
+        std::make_pair(config.dType, static_cast<void *>(dWF)));
     return reinterpret_cast<AMSExecutor>(_amsWrap.executors.size() - 1L);
   } else if (config.dType == AMSDType::Single) {
     ams::AMSWorkflow<float> *sWF =
@@ -98,14 +105,15 @@ AMSExecutor AMSCreateExecutor(const AMSConfig config)
                                     config.SPath,
                                     config.DBPath,
                                     config.dbType,
-                                    config.device == AMSResourceType::HOST,
+                                    config.device,
                                     static_cast<float>(config.threshold),
                                     config.uqPolicy,
                                     config.nClusters,
                                     config.pId,
                                     config.wSize,
                                     config.ePolicy);
-    _amsWrap.executors.push_back(std::make_pair(config.dType, static_cast<void *>(sWF)));
+    _amsWrap.executors.push_back(
+        std::make_pair(config.dType, static_cast<void *>(sWF)));
 
     return reinterpret_cast<AMSExecutor>(_amsWrap.executors.size() - 1L);
   } else {
@@ -155,32 +163,12 @@ void AMSDistributedExecute(AMSExecutor executor,
 
 const char *AMSGetAllocatorName(AMSResourceType device)
 {
-  if (device == AMSResourceType::HOST) {
-    return ams::ResourceManager::getHostAllocatorName();
-  } else if (device == AMSResourceType::DEVICE) {
-    return ams::ResourceManager::getDeviceAllocatorName();
-  }
-
-  throw std::runtime_error("requested Device Allocator does not exist");
-
-  return nullptr;
+  return std::move(ams::ResourceManager::getAllocatorName(device)).c_str();
 }
 
-void AMSSetupAllocator(const AMSResourceType Resource)
+void AMSSetAllocator(AMSResourceType resource, const char *alloc_name)
 {
-  ams::ResourceManager::setup(Resource);
-}
-
-void AMSResourceInfo() { ams::ResourceManager::list_allocators(); }
-
-int AMSGetLocationId(void *ptr)
-{
-  return ams::ResourceManager::getDataAllocationId(ptr);
-}
-
-void AMSSetDefaultAllocator(const AMSResourceType device)
-{
-  ams::ResourceManager::setDefaultDataAllocator(device);
+  ams::ResourceManager::setAllocator(std::string(alloc_name), resource);
 }
 
 #ifdef __cplusplus

@@ -24,19 +24,41 @@ namespace ams
  * a unified interface to the umpire library for memory allocations
  * and data movements/copies.
  */
+
+struct AMSAllocator {
+  int id;
+  umpire::Allocator allocator;
+
+  AMSAllocator(std::string alloc_name)
+  {
+    auto& rm = umpire::ResourceManager::getInstance();
+    allocator = rm.getAllocator(alloc_name);
+  }
+
+  void* allocate(size_t num_bytes);
+  void deallocate(void* ptr);
+
+  void setAllocator(umpire::Allocator& alloc);
+
+  std::string getName();
+
+  void registerPtr(void* ptr, size_t nBytes);
+  static void deregisterPtr(void* ptr)
+  {
+    auto& rm = umpire::ResourceManager::getInstance();
+    rm.deregisterAllocation(ptr);
+  }
+
+  void getAllocatorStats(size_t& wm, size_t& cs, size_t& as);
+};
+
 class ResourceManager
 {
 public:
 private:
-  /** @brief  Used internally to allocate from the user define default resource (Device, Host Memory) */
-  static AMSResourceType default_resource;
-
   /** @brief  Used internally to map resource types (Device, host, pinned memory) to
    * umpire allocator ids. */
-  static int allocator_ids[AMSResourceType::RSEND];
-
-  /** @brief The names of the user defined allocators */
-  static std::string allocator_names[AMSResourceType::RSEND];
+  static std::vector<AMSAllocator*> RMAllocators;
 
 public:
   ResourceManager() = delete;
@@ -45,88 +67,10 @@ public:
   ResourceManager& operator=(const ResourceManager&) = delete;
   ResourceManager& operator=(ResourceManager&&) = delete;
 
-  /** @brief The names of the user defined allocators */
-  static const char* getDeviceAllocatorName();
-
-  /** @brief Get the name of the Host allocator */
-  static const char* getHostAllocatorName();
-
-  /** @brief Get the name of the Pinned memory Allocator */
-  static const char* getPinnedAllocatorName();
-
-  /** @brief Get the name of the Pinned memory Allocator */
-  static const char* getAllocatorName(AMSResourceType Resource);
-
-  /** @brief setup allocators in the resource manager */
-  static void setup(const AMSResourceType resource);
-
-  /** @brief Print out all available allocators */
-  static void list_allocators();
-
-  /** @brief Get the default memory allocator */
-  static AMSResourceType getDefaultDataAllocator();
-
-  /** @brief Set the default memory allocator */
-  static void setDefaultDataAllocator(AMSResourceType resource);
-
-  /** @brief Check if default allocator is set to Device
-   *  @pre The library currently assumes the default memory allocator
-   *  also describes the executing device.
-   */
-  static bool isDeviceExecution();
-
-  /** @brief Check if pointer is allocatd through
-   *  @tparam TypeInValue The type of pointer being tested.
-   *  @param[in] data pointer to memory.
-   *  @return Boolean value describing whether the pointer has
-   *  been allocated through an internal allocator
-   */
-  template <typename TypeInValue>
-  static bool hasAllocator(const TypeInValue* data)
+  /** @brief return the name of an allocator */
+  static std::string getAllocatorName(AMSResourceType resource)
   {
-    static auto& rm = umpire::ResourceManager::getInstance();
-    void* vdata = static_cast<void*>(const_cast<TypeInValue*>(data));
-    return rm.hasAllocator(vdata);
-  }
-
-  /** @brief Returns the id of the allocator allocated the defined memory.
-   *  @tparam TypeInValue The type of pointer being tested.
-   *  @param[in] data pointer to memory.
-   *  @return Allocator Id.
-   */
-  template <typename TypeInValue>
-  static int getDataAllocationId(const TypeInValue* data)
-  {
-    static auto& rm = umpire::ResourceManager::getInstance();
-    void* vdata = static_cast<void*>(const_cast<TypeInValue*>(data));
-    return hasAllocator(vdata) ? rm.getAllocator(vdata).getId() : -1;
-  }
-
-  /** @brief Returns the name of the allocator allocated the defined memory.
-   *  @tparam TypeInValue The type of pointer being tested.
-   *  @param[in] data pointer to memory.
-   *  @return Allocator name if allocated through umpire else "unknown".
-   */
-  template <typename TypeInValue>
-  static const std::string getDataAllocationName(const TypeInValue* data)
-  {
-    static auto& rm = umpire::ResourceManager::getInstance();
-    void* vdata = static_cast<void*>(const_cast<TypeInValue*>(data));
-    return rm.hasAllocator(vdata) ? rm.getAllocator(vdata).getName()
-                                  : "unknown";
-  }
-
-  /** @brief checks whether the data are resident on the device.
-   *  @tparam TypeInValue The type of pointer being tested.
-   *  @param[in] data pointer to memory.
-   *  @return True when data are on Device.
-   */
-  template <typename TypeInValue>
-  static bool is_on_device(const TypeInValue* data)
-  {
-    auto alloc_id = getDataAllocationId(data);
-    return ResourceManager::isDeviceExecution() && alloc_id != -1 &&
-           alloc_id == allocator_ids[AMSResourceType::DEVICE];
+    return RMAllocators[resource]->getName();
   }
 
   /** @brief Allocates nvalues on the specified device.
@@ -137,23 +81,10 @@ public:
    */
   template <typename TypeInValue>
   PERFFASPECT()
-  static TypeInValue* allocate(size_t nvalues,
-                               AMSResourceType dev = default_resource)
+  static TypeInValue* allocate(size_t nvalues, AMSResourceType dev)
   {
-    static auto& rm = umpire::ResourceManager::getInstance();
-    DBG(ResourceManager,
-        "Requesting to allocate %ld values using allocator :%s",
-        nvalues,
-        getAllocatorName(dev));
-    auto alloc = rm.getAllocator(allocator_ids[dev]);
-    TypeInValue* ret = static_cast<TypeInValue*>(
-        alloc.allocate(nvalues * sizeof(TypeInValue)));
-    CFATAL(ResourceManager,
-           ret == nullptr,
-           "Failed to allocated %ld values on device %d",
-           nvalues,
-           dev);
-    return ret;
+    return static_cast<TypeInValue*>(
+        RMAllocators[dev]->allocate(nvalues * sizeof(TypeInValue)));
   }
 
   /** @brief deallocates pointer from the specified device.
@@ -166,10 +97,7 @@ public:
   PERFFASPECT()
   static void deallocate(TypeInValue* data, AMSResourceType dev)
   {
-    static auto& rm = umpire::ResourceManager::getInstance();
-    if (hasAllocator(data)) {
-      rm.getAllocator(allocator_ids[dev]).deallocate(data);
-    }
+    RMAllocators[dev]->deallocate(data);
   }
 
   /** @brief registers an external pointer in the umpire allocation records.
@@ -179,15 +107,9 @@ public:
    *  @return void.
    */
   PERFFASPECT()
-  static void registerExternal(void* ptr,
-                               size_t nBytes,
-                               AMSResourceType dev = default_resource)
+  static void registerExternal(void* ptr, size_t nBytes, AMSResourceType dev)
   {
-    auto& rm = umpire::ResourceManager::getInstance();
-    auto alloc = rm.getAllocator(allocator_ids[dev]);
-    rm.registerAllocation(ptr,
-                          umpire::util::AllocationRecord(
-                              ptr, nBytes, alloc.getAllocationStrategy()));
+    RMAllocators[dev]->registerPtr(ptr, nBytes);
   }
 
   /** @brief removes a registered external pointer from the umpire allocation records.
@@ -196,8 +118,7 @@ public:
    */
   static void deregisterExternal(void* ptr)
   {
-    auto& rm = umpire::ResourceManager::getInstance();
-    rm.deregisterAllocation(ptr);
+    AMSAllocator::deregisterPtr(ptr);
   }
 
   /** @brief copy values from src to destination regardless of their memory location.
@@ -221,10 +142,37 @@ public:
    *  @return void.
    */
   template <typename T>
-  static void deallocate(std::vector<T*>& dPtr)
+  static void deallocate(std::vector<T*>& dPtr, AMSResourceType resource)
   {
     for (auto* I : dPtr)
-      deallocate(I);
+      RMAllocators[resource]->deallocate(I);
+  }
+
+  static void init()
+  {
+    DBG(ResourceManager, "Default initialization of allocators");
+    if (!RMAllocators[AMSResourceType::HOST])
+      setAllocator("HOST", AMSResourceType::HOST);
+#ifdef __ENABLE_CUDA__
+    if (!RMAllocators[AMSResourceType::DEVICE])
+      setAllocator("DEVICE", AMSResourceType::DEVICE);
+
+    if (!RMAllocators[AMSResourceType::PINNED])
+      setAllocator("PINNED", AMSResourceType::PINNED);
+#endif
+  }
+
+  static void setAllocator(std::string alloc_name, AMSResourceType resource)
+  {
+    if (RMAllocators[resource]) {
+      delete RMAllocators[resource];
+    }
+
+    RMAllocators[resource] = new AMSAllocator(alloc_name);
+    DBG(ResourceManager,
+        "Set Allocator [%d] to pool with name : %s",
+        resource,
+        RMAllocators[resource]->getName().c_str());
   }
 
   /** @brief Returns the memory consumption of the given resource as measured from Umpire.
@@ -239,11 +187,7 @@ public:
                                 size_t& cs,
                                 size_t& as)
   {
-    auto& rm = umpire::ResourceManager::getInstance();
-    auto alloc = rm.getAllocator(allocator_ids[resource]);
-    wm = alloc.getHighWatermark();
-    cs = alloc.getCurrentSize();
-    as = alloc.getActualSize();
+    RMAllocators[resource]->getAllocatorStats(wm, cs, as);
     return;
   }
   //! ------------------------------------------------------------------------

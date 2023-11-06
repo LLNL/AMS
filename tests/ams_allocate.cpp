@@ -11,91 +11,71 @@
 #include <iostream>
 #include <umpire/ResourceManager.hpp>
 #include <umpire/Umpire.hpp>
+#include <umpire/strategy/QuickPool.hpp>
 #include <wf/resource_manager.hpp>
+
+int test_allocation(AMSResourceType resource, std::string pool_name)
+{
+  std::cout << "Testing Pool: " << pool_name << "\n";
+  auto& rm = umpire::ResourceManager::getInstance();
+  double* data = ams::ResourceManager::allocate<double>(1, resource);
+  auto found_allocator = rm.getAllocator(data);
+  if (ams::ResourceManager::getAllocatorName(resource) !=
+      found_allocator.getName()) {
+    std::cout << "Allocator Name"
+              << ams::ResourceManager::getAllocatorName(resource)
+              << "Actual Allocation " << found_allocator.getName() << "\n";
+    return 1;
+  }
+
+
+  if (ams::ResourceManager::getAllocatorName(resource) != pool_name) {
+    std::cout << "Allocator Name"
+              << ams::ResourceManager::getAllocatorName(resource)
+              << "is not equal to pool name " << pool_name << "\n";
+    return 1;
+  }
+
+  found_allocator = rm.getAllocator(data);
+  if (ams::ResourceManager::getAllocatorName(resource) !=
+      found_allocator.getName().data()) {
+    std::cout << "Device Allocator Name"
+              << ams::ResourceManager::getAllocatorName(resource)
+              << "Actual Allocation " << found_allocator.getName() << "\n";
+    return 3;
+  }
+
+  ams::ResourceManager::deallocate(data, resource);
+  return 0;
+}
 
 int main(int argc, char* argv[])
 {
-  auto& rm = umpire::ResourceManager::getInstance();
   int device = std::atoi(argv[1]);
 
-  AMSSetupAllocator(AMSResourceType::HOST);
+  // Testing with global umpire allocators
+  ams::ResourceManager::init();
+  if (device == 1) {
+    if (test_allocation(AMSResourceType::DEVICE, "DEVICE") != 0) return 1;
+  } else if (device == 0) {
+    if (test_allocation(AMSResourceType::HOST, "HOST") != 0) return 1;
+  }
+
+  // Testing with pools
 
   if (device == 1) {
-    AMSSetupAllocator(AMSResourceType::DEVICE);
-    AMSSetDefaultAllocator(AMSResourceType::DEVICE);
-    std::cout << "Starting allocation[Done]\n";
-    double* data =
-        ams::ResourceManager::allocate<double>(1, AMSResourceType::DEVICE);
-    auto found_allocator = rm.getAllocator(data);
-    if (strcmp(ams::ResourceManager::getDeviceAllocatorName(),
-               found_allocator.getName().data()) != 0) {
-      std::cout << "Device Allocator Name"
-                << ams::ResourceManager::getDeviceAllocatorName()
-                << "Actual Allocation " << found_allocator.getName() << "\n";
-      return 1;
-    }
-    std::cout << "Explicit device allocation[Done]\n";
-
-    ams::ResourceManager::deallocate(data, AMSResourceType::DEVICE);
-    std::cout << "Explicit device de-allocation[Done]\n";
-
-    ams::ResourceManager::setDefaultDataAllocator(AMSResourceType::DEVICE);
-
-    if (ams::ResourceManager::getDefaultDataAllocator() !=
-        AMSResourceType::DEVICE) {
-      std::cout << "Default allocator not set correctly\n";
-      return 2;
-    }
-    std::cout << "Set default allocator to device[Done]\n";
-
-    data = ams::ResourceManager::allocate<double>(1);
-
-    found_allocator = rm.getAllocator(data);
-    if (strcmp(ams::ResourceManager::getDeviceAllocatorName(),
-               found_allocator.getName().data()) != 0) {
-      std::cout << "Device Allocator Name"
-                << ams::ResourceManager::getDeviceAllocatorName()
-                << "Actual Allocation " << found_allocator.getName() << "\n";
-      return 3;
-    }
-    std::cout << "Implicit device allocation [Done]\n";
+    auto& rm = umpire::ResourceManager::getInstance();
+    auto alloc_resource = rm.makeAllocator<umpire::strategy::QuickPool, true>(
+        "test-device", rm.getAllocator("DEVICE"));
+    ams::ResourceManager::setAllocator("test-device", AMSResourceType::DEVICE);
+    if (test_allocation(AMSResourceType::DEVICE, "test-device") != 0) return 1;
   } else if (device == 0) {
-    AMSSetDefaultAllocator(AMSResourceType::HOST);
-    std::cout << "Starting allocation[Done]\n";
-    double* data =
-        ams::ResourceManager::allocate<double>(1, AMSResourceType::HOST);
-    auto found_allocator = rm.getAllocator(data);
-    if (strcmp(ams::ResourceManager::getHostAllocatorName(),
-               found_allocator.getName().data()) != 0) {
-      std::cout << "Host Allocator Name"
-                << ams::ResourceManager::getHostAllocatorName()
-                << "Actual Allocation " << found_allocator.getName() << "\n";
-      return 1;
-    }
-    std::cout << "Explicit device allocation[Done]\n";
-
-    ams::ResourceManager::deallocate(data, AMSResourceType::HOST);
-    std::cout << "Explicit device de-allocation[Done]\n";
-
-    ams::ResourceManager::setDefaultDataAllocator(AMSResourceType::HOST);
-
-    if (ams::ResourceManager::getDefaultDataAllocator() !=
-        AMSResourceType::HOST) {
-      std::cout << "Default allocator not set correctly\n";
-      return 2;
-    }
-    std::cout << "Set default allocator to device[Done]\n";
-
-    data = ams::ResourceManager::allocate<double>(1);
-
-    found_allocator = rm.getAllocator(data);
-    if (strcmp(ams::ResourceManager::getHostAllocatorName(),
-               found_allocator.getName().data()) != 0) {
-      std::cout << "Host Allocator Name"
-                << ams::ResourceManager::getHostAllocatorName()
-                << "Actual Allocation " << found_allocator.getName() << "\n";
-      return 3;
-    }
-    std::cout << "Implicit device allocation [Done]\n";
+    auto& rm = umpire::ResourceManager::getInstance();
+    auto alloc_resource = rm.makeAllocator<umpire::strategy::QuickPool, true>(
+        "test-host", rm.getAllocator("HOST"));
+    ams::ResourceManager::setAllocator("test-host", AMSResourceType::HOST);
+    if (test_allocation(AMSResourceType::HOST, "test-host") != 0) return 1;
   }
+
+  return 0;
 }

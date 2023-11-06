@@ -44,7 +44,7 @@ public:
   template <
       class TypeInValue,
       std::enable_if_t<std::is_same<TypeValue, TypeInValue>::value>* = nullptr>
-  static inline TypeValue* cast_to_typevalue(const size_t n, TypeInValue* data)
+  static inline TypeValue* cast_to_typevalue(AMSResourceType resource, const size_t n, TypeInValue* data)
   {
     return data;
   }
@@ -66,9 +66,9 @@ public:
   template <
       typename TypeInValue,
       std::enable_if_t<!std::is_same<TypeValue, TypeInValue>::value>* = nullptr>
-  static inline TypeValue* cast_to_typevalue(const size_t n, TypeInValue* data)
+  static inline TypeValue* cast_to_typevalue(AMSResourceType resource, const size_t n, TypeInValue* data)
   {
-    TypeValue* fdata = ams::ResourceManager::allocate<TypeValue>(n);
+    TypeValue* fdata = ams::ResourceManager::allocate<TypeValue>(resource, n);
     std::transform(data, data + n, fdata, [&](const TypeInValue& v) {
       return static_cast<TypeValue>(v);
     });
@@ -135,6 +135,7 @@ public:
   template <typename TypeInValue>
 PERFFASPECT()
   static inline TypeValue* linearize_features(
+      AMSResourceType resource,
       const size_t n,
       const std::vector<const TypeInValue*>& features)
   {
@@ -142,12 +143,9 @@ PERFFASPECT()
     const size_t nfeatures = features.size();
     const size_t nvalues = n * nfeatures;
 
-    TypeValue* data = ams::ResourceManager::allocate<TypeValue>(nvalues);
+    TypeValue* data = ams::ResourceManager::allocate<TypeValue>(nvalues, resource);
 
-    const bool features_on_device =
-        ams::ResourceManager::is_on_device(features[0]);
-
-    if (!features_on_device) {
+    if (resource == AMSResourceType::HOST) {
       for (size_t d = 0; d < nfeatures; d++) {
         for (size_t i = 0; i < n; i++) {
           data[i * nfeatures + d] = static_cast<TypeValue>(features[d][i]);
@@ -163,6 +161,7 @@ PERFFASPECT()
    * vector in the dense vector if the respective index
    * of the predicate vector is equal to 'denseVal.
    *
+   * @param[in] dataLocation Location of the data
    * @param[in] predicate A boolean vector storing which elements in the vector
    * should be dropped.
    * @param[in] n The number of elements of the C-vectors.
@@ -174,7 +173,7 @@ PERFFASPECT()
    * @return Total number of elements stored in the dense vector
    * */
 PERFFASPECT()
-  static inline size_t pack(const bool* predicate,
+  static inline size_t pack(AMSResourceType dataLocation, const bool* predicate,
                             const size_t n,
                             std::vector<const TypeValue*>& sparse,
                             std::vector<TypeValue*>& dense,
@@ -186,7 +185,7 @@ PERFFASPECT()
     size_t npacked = 0;
     size_t dims = sparse.size();
 
-    if (!ams::ResourceManager::isDeviceExecution()) {
+    if (dataLocation != AMSResourceType::DEVICE) {
       for (size_t i = 0; i < n; i++) {
         if (predicate[i] == denseVal) {
           for (size_t j = 0; j < dims; j++)
@@ -208,6 +207,7 @@ PERFFASPECT()
   /* @brief The function stores all elements from the dense
    * vector to the sparse vector.
    *
+   * @param[in] dataLocation Location of the data
    * @param[in] predicate A boolean vector storing which elements in the vector
    * should be kept.
    * @param[in] n The number of elements of the C-vectors.
@@ -219,7 +219,7 @@ PERFFASPECT()
    * to be copied to the sparse vectors.
    * */
 PERFFASPECT()
-  static inline void unpack(const bool* predicate,
+  static inline void unpack(AMSResourceType dataLocation, const bool* predicate,
                             const size_t n,
                             std::vector<TypeValue*>& dense,
                             std::vector<TypeValue*>& sparse,
@@ -231,7 +231,7 @@ PERFFASPECT()
 
     size_t npacked = 0;
     size_t dims = sparse.size();
-    if (!ams::ResourceManager::isDeviceExecution()) {
+    if (dataLocation != AMSResourceType::DEVICE) {
       for (size_t i = 0; i < n; i++) {
         if (predicate[i] == denseVal) {
           for (size_t j = 0; j < dims; j++)
@@ -254,6 +254,7 @@ PERFFASPECT()
    * vector in the dense vector if the respective index
    * of the predicate vector is equal to 'denseVal.
    *
+   * @param[in] dataLocation Location of the data
    * @param[in] predicate A boolean vector storing which elements in the vector
    * @param[out] sparse_indices A vector storing the mapping from dense elements
    * to sparse elements.
@@ -266,7 +267,7 @@ PERFFASPECT()
    * @return Total number of elements stored in the dense vector
    * */
 PERFFASPECT()
-  static inline size_t pack(const bool* predicate,
+  static inline size_t pack(AMSResourceType dataLocation, const bool* predicate,
                             int* sparse_indices,
                             const size_t n,
                             std::vector<const TypeValue*>& sparse,
@@ -280,7 +281,7 @@ PERFFASPECT()
     size_t npacked = 0;
     int dims = sparse.size();
 
-    if (!ams::ResourceManager::isDeviceExecution()) {
+    if (dataLocation != AMSResourceType::DEVICE) {
       for (size_t i = 0; i < n; i++) {
         if (predicate[i] == denseVal) {
           for (size_t j = 0; j < dims; j++)
@@ -304,6 +305,7 @@ PERFFASPECT()
   /* @brief The function copies all elements from the dense
    * vector to the sparse vector.
    *
+   * @param[in] dataLocation Location of the data
    * @param[in] sparse_indices A vector storing the mapping from sparse to
    * dense.
    * @param[in] n The number of elements of the C-vectors.
@@ -315,7 +317,7 @@ PERFFASPECT()
    * to be copied to the sparse vectors.
    * */
 PERFFASPECT()
-  static inline void unpack(int* sparse_indices,
+  static inline void unpack(AMSResourceType dataLocation, int* sparse_indices,
                             const size_t nPacked,
                             std::vector<TypeValue*>& dense,
                             std::vector<TypeValue*>& sparse,
@@ -327,7 +329,7 @@ PERFFASPECT()
 
     int dims = sparse.size();
 
-    if (!ams::ResourceManager::isDeviceExecution()) {
+    if (dataLocation != AMSResourceType::DEVICE) {
       for (size_t i = 0; i < nPacked; i++)
         for (size_t j = 0; j < dims; j++)
           sparse[j][sparse_indices[i]] = dense[j][i];

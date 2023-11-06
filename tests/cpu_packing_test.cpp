@@ -51,12 +51,13 @@ int main(int argc, char* argv[])
   using data_handler = DataHandler<double>;
   const size_t size = SIZE;
   int device = std::atoi(argv[1]);
-  AMSSetupAllocator(AMSResourceType::HOST);
+  ams::ResourceManager::init();
   if (device == 0) {
-    bool* predicate = ams::ResourceManager::allocate<bool>(SIZE);
-    double* dense = ams::ResourceManager::allocate<double>(SIZE);
-    double* sparse = ams::ResourceManager::allocate<double>(SIZE);
-    double* rsparse = ams::ResourceManager::allocate<double>(SIZE);
+    AMSResourceType resource = AMSResourceType::HOST;
+    bool* predicate = ams::ResourceManager::allocate<bool>(SIZE, resource);
+    double* dense = ams::ResourceManager::allocate<double>(SIZE, resource);
+    double* sparse = ams::ResourceManager::allocate<double>(SIZE, resource);
+    double* rsparse = ams::ResourceManager::allocate<double>(SIZE, resource);
 
     initPredicate(predicate, sparse, SIZE);
     std::vector<const double*> s_data({const_cast<const double*>(sparse)});
@@ -65,7 +66,8 @@ int main(int argc, char* argv[])
     int elements;
 
     for (int flag = 0; flag < 2; flag++) {
-      elements = data_handler::pack(predicate, size, s_data, d_data, flag);
+      elements =
+          data_handler::pack(resource, predicate, size, s_data, d_data, flag);
 
       if (elements != (SIZE + flag) / 2) {
         std::cout << "Did not compute dense number correctly " << elements
@@ -78,7 +80,7 @@ int main(int argc, char* argv[])
         return 1;
       }
 
-      data_handler::unpack(predicate, size, d_data, sr_data, flag);
+      data_handler::unpack(resource, predicate, size, d_data, sr_data, flag);
 
       if (verify(predicate, sparse, rsparse, size, flag)) {
         std::cout << "Unpacking packed data does not match initial values\n";
@@ -91,8 +93,7 @@ int main(int argc, char* argv[])
     ResourceManager::deallocate(sparse, AMSResourceType::HOST);
     ResourceManager::deallocate(rsparse, AMSResourceType::HOST);
   } else if (device == 1) {
-    AMSSetupAllocator(AMSResourceType::DEVICE);
-    AMSSetDefaultAllocator(AMSResourceType::DEVICE);
+    AMSResourceType resource = AMSResourceType::DEVICE;
     bool* h_predicate =
         ams::ResourceManager::allocate<bool>(SIZE, AMSResourceType::HOST);
     double* h_dense =
@@ -104,11 +105,11 @@ int main(int argc, char* argv[])
 
     initPredicate(h_predicate, h_sparse, SIZE);
 
-    bool* predicate = ams::ResourceManager::allocate<bool>(SIZE);
-    double* dense = ams::ResourceManager::allocate<double>(SIZE);
-    double* sparse = ams::ResourceManager::allocate<double>(SIZE);
-    double* rsparse = ams::ResourceManager::allocate<double>(SIZE);
-    int* reindex = ams::ResourceManager::allocate<int>(SIZE);
+    bool* predicate = ams::ResourceManager::allocate<bool>(SIZE, resource);
+    double* dense = ams::ResourceManager::allocate<double>(SIZE, resource);
+    double* sparse = ams::ResourceManager::allocate<double>(SIZE, resource);
+    double* rsparse = ams::ResourceManager::allocate<double>(SIZE, resource);
+    int* reindex = ams::ResourceManager::allocate<int>(SIZE, resource);
 
     ResourceManager::copy(h_predicate, predicate);
     ResourceManager::copy(h_sparse, sparse);
@@ -119,7 +120,8 @@ int main(int argc, char* argv[])
 
     for (int flag = 0; flag < 2; flag++) {
       int elements;
-      elements = data_handler::pack(predicate, size, s_data, d_data, flag);
+      elements =
+          data_handler::pack(resource, predicate, size, s_data, d_data, flag);
 
       if (elements != (SIZE + flag) / 2) {
         std::cout << "Did not compute dense number correctly(" << elements
@@ -134,7 +136,7 @@ int main(int argc, char* argv[])
         return 1;
       }
 
-      data_handler::unpack(predicate, size, d_data, sr_data, flag);
+      data_handler::unpack(resource, predicate, size, d_data, sr_data, flag);
 
       ams::ResourceManager::copy(rsparse, h_rsparse);
 

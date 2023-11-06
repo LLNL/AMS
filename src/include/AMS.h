@@ -58,9 +58,9 @@ typedef enum { UBALANCED = 0, BALANCED } AMSExecPolicy;
 typedef enum { None = 0, CSV, REDIS, HDF5, RMQ } AMSDBType;
 
 typedef enum {
-  FAISSMean =0,
+  FAISSMean = 0,
   FAISSMax,
-  DeltaUQ // Not supported
+  DeltaUQ  // Not supported
 } AMSUQPolicy;
 
 typedef struct ams_conf {
@@ -105,11 +105,8 @@ void AMSDestroyExecutor(AMSExecutor executor);
 int AMSSetCommunicator(MPI_Comm Comm);
 #endif
 
+void AMSSetAllocator(AMSResourceType resource, const char *alloc_name);
 const char *AMSGetAllocatorName(AMSResourceType device);
-void AMSSetupAllocator(const AMSResourceType device);
-void AMSSetDefaultAllocator(const AMSResourceType device);
-void AMSResourceInfo();
-int AMSGetLocationId(void *ptr);
 
 #ifdef __cplusplus
 }

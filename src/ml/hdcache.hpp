@@ -68,11 +68,10 @@ class HDCache
   const uint8_t m_dim;
 
   const bool m_use_random;
-  const bool m_use_device;
   const int m_knbrs = 0;
   const AMSUQPolicy m_policy = AMSUQPolicy::FAISSMean;
 
-  AMSResourceType defaultRes;
+  AMSResourceType cache_location;
 
   const TypeValue acceptable_error;
 
@@ -97,22 +96,20 @@ protected:
   //! ------------------------------------------------------------------------
   //! constructors
   //! ------------------------------------------------------------------------
-  HDCache(bool use_device, TypeInValue threshold = 0.5)
+  HDCache(AMSResourceType resource, TypeInValue threshold = 0.5)
       : m_index(nullptr),
         m_dim(0),
         m_use_random(true),
         m_knbrs(-1),
-        m_use_device(use_device),
+        cache_location(resource),
         acceptable_error(threshold)
   {
-    defaultRes =
-        (m_use_device) ? AMSResourceType::DEVICE : AMSResourceType::HOST;
     print();
   }
 
 #ifdef __ENABLE_FAISS__
   HDCache(const std::string &cache_path,
-          bool use_device,
+          AMSResourceType resource,
           const AMSUQPolicy uqPolicy,
           int knbrs,
           TypeInValue threshold = 0.5)
@@ -121,14 +118,12 @@ protected:
         m_use_random(false),
         m_knbrs(knbrs),
         m_policy(uqPolicy),
-        m_use_device(use_device),
+        cache_location(resource),
         acceptable_error(threshold)
   {
-    defaultRes =
-        (m_use_device) ? AMSResourceType::DEVICE : AMSResourceType::HOST;
 #ifdef __ENABLE_CUDA__
     // Copy index to device side
-    if (use_device) {
+    if (cache_location == AMSResourceType::DEVICE) {
       faiss::gpu::GpuClonerOptions copyOptions;
       faiss::gpu::ToGpuCloner cloner(&res, 0, copyOptions);
       m_index = cloner.clone_Index(m_index);
@@ -138,7 +133,7 @@ protected:
   }
 #else  // Disabled FAISS
   HDCache(const std::string &cache_path,
-          bool use_device,
+          AMSResourceType resource,
           const AMSUQPolicy uqPolicy,
           int knbrs,
           TypeInValue threshold = 0.5)
@@ -147,11 +142,9 @@ protected:
         m_use_random(false),
         m_knbrs(knbrs),
         m_policy(uqPolicy),
-        m_use_device(use_device),
+        cache_location(resource),
         acceptable_error(threshold)
   {
-    defaultRes =
-        (m_use_device) ? AMSResourceType::DEVICE : AMSResourceType::HOST;
     WARNING(UQModule, "Ignoring cache path because FAISS is not available")
     print();
   }
@@ -160,7 +153,7 @@ protected:
 public:
   static std::shared_ptr<HDCache<TypeInValue>> find_cache(
       const std::string &cache_path,
-      bool use_device,
+      AMSResourceType resource,
       const AMSUQPolicy uqPolicy,
       int knbrs,
       TypeInValue threshold = 0.5)
@@ -170,7 +163,7 @@ public:
     if (model != instances.end()) {
       // Model Found
       auto cache = model->second;
-      if (use_device != cache->m_use_device)
+      if (resource != cache->cache_location)
         throw std::runtime_error(
             "Currently we do not support loading the same index on different "
             "devices.");
@@ -201,7 +194,7 @@ public:
 
   static std::shared_ptr<HDCache<TypeInValue>> getInstance(
       const std::string &cache_path,
-      bool use_device,
+      AMSResourceType resource,
       const AMSUQPolicy uqPolicy,
       int knbrs,
       TypeInValue threshold = 0.5)
@@ -210,7 +203,7 @@ public:
     // Cache does not exist. We need to create one
     //
     std::shared_ptr<HDCache<TypeInValue>> cache =
-        find_cache(cache_path, use_device, uqPolicy, knbrs, threshold);
+        find_cache(cache_path, resource, uqPolicy, knbrs, threshold);
     if (cache) {
       DBG(UQModule, "Returning existing cache under (%s)", cache_path.c_str())
       return cache;
@@ -219,19 +212,19 @@ public:
     DBG(UQModule, "Generating new cache under (%s)", cache_path.c_str())
     std::shared_ptr<HDCache<TypeInValue>> new_cache =
         std::shared_ptr<HDCache<TypeInValue>>(new HDCache<TypeInValue>(
-            cache_path, use_device, uqPolicy, knbrs, threshold));
+            cache_path, resource, uqPolicy, knbrs, threshold));
 
     instances.insert(std::make_pair(cache_path, new_cache));
     return new_cache;
   }
 
   static std::shared_ptr<HDCache<TypeInValue>> getInstance(
-      bool use_device,
+      AMSResourceType resource,
       float threshold = 0.5)
   {
     static std::string random_path("random");
     std::shared_ptr<HDCache<TypeInValue>> cache = find_cache(
-        random_path, use_device, AMSUQPolicy::FAISSMean, -1, threshold);
+        random_path, resource, AMSUQPolicy::FAISSMean, -1, threshold);
     if (cache) {
       DBG(UQModule, "Returning existing cache under (%s)", random_path.c_str())
       return cache;
@@ -243,7 +236,7 @@ public:
         threshold)
     std::shared_ptr<HDCache<TypeInValue>> new_cache =
         std::shared_ptr<HDCache<TypeInValue>>(
-            new HDCache<TypeInValue>(use_device, threshold));
+            new HDCache<TypeInValue>(resource, threshold));
 
     instances.insert(std::make_pair(random_path, new_cache));
     return new_cache;
@@ -255,8 +248,12 @@ public:
 #ifdef __ENABLE_FAISS__
     if (m_index) {
       DBG(UQModule, "Deleting HD-Cache");
-      m_index->reset();
-      delete m_index;
+      /// TODO: Deleting the cache on device can, and does
+      /// result in C++ destructor.
+      if (cache_location != AMSResourceType::DEVICE) {
+        m_index->reset();
+        delete m_index;
+      }
     }
 #endif
   }
@@ -272,7 +269,7 @@ public:
     }
     DBG(UQModule,
         "HDCache (on_device = %d random = %d %s)",
-        m_use_device,
+        cache_location,
         m_use_random,
         info.c_str());
   }
@@ -349,9 +346,10 @@ public:
            !has_index(),
            "HDCache does not have a valid and trained index!")
 
-    TypeValue *lin_data = data_handler::linearize_features(ndata, inputs);
+    TypeValue *lin_data =
+        data_handler::linearize_features(cache_location, ndata, inputs);
     _add(ndata, lin_data);
-    ams::ResourceManager::deallocate(lin_data, defaultRes);
+    ams::ResourceManager::deallocate(lin_data, cache_location);
   }
 
   //! -----------------------------------------------------------------------
@@ -377,9 +375,10 @@ public:
   void train(const size_t ndata, const std::vector<TypeInValue *> &inputs)
   {
     if (m_use_random) return;
-    TypeValue *lin_data = data_handler::linearize_features(ndata, inputs);
+    TypeValue *lin_data =
+        data_handler::linearize_features(cache_location, ndata, inputs);
     _train(ndata, lin_data);
-    ams::ResourceManager::deallocate(lin_data, defaultRes);
+    ams::ResourceManager::deallocate(lin_data, cache_location);
   }
 
   //! ------------------------------------------------------------------------
@@ -439,9 +438,10 @@ public:
     if (m_use_random) {
       _evaluate(ndata, is_acceptable);
     } else {
-      TypeValue *lin_data = data_handler::linearize_features(ndata, inputs);
+      TypeValue *lin_data =
+          data_handler::linearize_features(cache_location, ndata, inputs);
       _evaluate(ndata, lin_data, is_acceptable);
-      ams::ResourceManager::deallocate(lin_data, defaultRes);
+      ams::ResourceManager::deallocate(lin_data, cache_location);
     }
     DBG(UQModule, "Done with evalution of uq");
   }
@@ -469,7 +469,8 @@ private:
   PERFFASPECT()
   inline void _add(const size_t ndata, const T *data)
   {
-    TypeValue *vdata = data_handler::cast_to_typevalue(ndata, data);
+    TypeValue *vdata =
+        data_handler::cast_to_typevalue(cache_location, ndata, data);
     _add(ndata, vdata);
     delete[] vdata;
   }
@@ -501,7 +502,8 @@ private:
   PERFFASPECT()
   inline void _train(const size_t ndata, const T *data)
   {
-    TypeValue *vdata = data_handler::cast_to_typevalue(ndata, data);
+    TypeValue *vdata =
+        data_handler::cast_to_typevalue(cache_location, ndata, data);
     _train(ndata, vdata);
     delete[] vdata;
   }
@@ -517,23 +519,12 @@ private:
     const size_t knbrs = static_cast<size_t>(m_knbrs);
     static const TypeValue ook = 1.0 / TypeValue(knbrs);
 
-    const bool input_on_device = ams::ResourceManager::is_on_device(data);
-    const bool output_on_device =
-        ams::ResourceManager::is_on_device(is_acceptable);
-
-    if (input_on_device != output_on_device) {
-      WARNING(UQModule,
-              "Input is ( on_device: %d)"
-              " Output is ( on_device: %d)"
-              " on different devices",
-              input_on_device,
-              output_on_device)
-    }
-
     TypeValue *kdists =
-        ams::ResourceManager::allocate<TypeValue>(ndata * knbrs, defaultRes);
+        ams::ResourceManager::allocate<TypeValue>(ndata * knbrs,
+                                                  cache_location);
     TypeIndex *kidxs =
-        ams::ResourceManager::allocate<TypeIndex>(ndata * knbrs, defaultRes);
+        ams::ResourceManager::allocate<TypeIndex>(ndata * knbrs,
+                                                  cache_location);
 
     // query faiss
     // TODO: This is a HACK. When searching more than 65535
@@ -554,7 +545,7 @@ private:
 #endif
 
     // compute means
-    if (defaultRes == AMSResourceType::HOST) {
+    if (cache_location == AMSResourceType::HOST) {
       for (size_t i = 0; i < ndata; ++i) {
         CFATAL(UQModule,
                m_policy == AMSUQPolicy::DeltaUQ,
@@ -583,8 +574,8 @@ private:
           kdists, is_acceptable, ndata, knbrs, acceptable_error);
     }
 
-    ams::ResourceManager::deallocate(kdists, defaultRes);
-    ams::ResourceManager::deallocate(kidxs, defaultRes);
+    ams::ResourceManager::deallocate(kdists, cache_location);
+    ams::ResourceManager::deallocate(kidxs, cache_location);
   }
 
   //! evaluate cache uncertainty when (data type != TypeValue)
@@ -592,7 +583,8 @@ private:
             std::enable_if_t<!std::is_same<TypeValue, T>::value> * = nullptr>
   inline void _evaluate(const size_t ndata, T *data, bool *is_acceptable) const
   {
-    TypeValue *vdata = data_handler::cast_to_typevalue(ndata, data);
+    TypeValue *vdata =
+        data_handler::cast_to_typevalue(cache_location, ndata, data);
     _evaluate(ndata, data, is_acceptable);
     delete[] vdata;
   }
@@ -624,10 +616,7 @@ private:
   PERFFASPECT()
   inline void _evaluate(const size_t ndata, bool *is_acceptable) const
   {
-    const bool data_on_device =
-        ams::ResourceManager::is_on_device(is_acceptable);
-
-    if (data_on_device) {
+    if (cache_location == AMSResourceType::HOST) {
 #ifdef __ENABLE_CUDA__
       random_uq_Device<<<1, 1>>>(is_acceptable, ndata, acceptable_error);
 #endif

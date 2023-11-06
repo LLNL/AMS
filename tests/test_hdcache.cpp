@@ -153,24 +153,21 @@ int main(int argc, char *argv[])
   int nDims = std::atoi(argv[7]);
   int nElements = std::atoi(argv[8]);
 
-  AMSSetupAllocator(AMSResourceType::HOST);
   AMSResourceType resource = AMSResourceType::HOST;
-  if (use_device == 1) {
-    AMSSetupAllocator(AMSResourceType::DEVICE);
-    AMSSetDefaultAllocator(AMSResourceType::DEVICE);
-    resource = AMSResourceType::DEVICE;
-  }
+  if (use_device == 1) resource = AMSResourceType::DEVICE;
+
+  ams::ResourceManager::init();
 
   if (std::strcmp("double", data_type) == 0) {
     std::shared_ptr<HDCache<double>> cache = HDCache<double>::getInstance(
-        faiss_path, use_device, uq_policy, 10, threshold);
+        faiss_path, resource, uq_policy, 10, threshold);
     bool result =
         do_faiss(cache, resource, nClusters, nDims, nElements, threshold);
     cache.reset();
     return !result;
   } else if (std::strcmp("single", data_type) == 0) {
     std::shared_ptr<HDCache<float>> cache = HDCache<float>::getInstance(
-        faiss_path, use_device, uq_policy, 10, threshold);
+        faiss_path, resource, uq_policy, 10, threshold);
     bool result =
         do_faiss(cache, resource, nClusters, nDims, nElements, threshold);
     cache.reset();

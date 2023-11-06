@@ -11,6 +11,7 @@
 #include <mfem.hpp>
 #include <random>
 #include <string>
+#include <umpire/strategy/QuickPool.hpp>
 #include <unordered_set>
 #include <vector>
 
@@ -23,6 +24,94 @@
 // this allows us to check how easy is it to test ams
 
 #include "AMS.h"
+
+void printMemory(std::unordered_set<std::string> &allocators)
+{
+  auto &rm = umpire::ResourceManager::getInstance();
+  for (auto AN : allocators) {
+    auto alloc = rm.getAllocator(AN);
+    size_t wm = alloc.getHighWatermark();
+    size_t cs = alloc.getCurrentSize();
+    size_t as = alloc.getActualSize();
+    std::cout << "Allocator '" << AN << "' High WaterMark:" << wm
+              << " Current Size:" << cs << " Actual Size:" << as << "\n";
+  }
+}
+
+
+void createUmpirePool(std::string parent_name, std::string pool_name)
+{
+  std::cout << "Pool Name " << pool_name << "Parent Allocation " << parent_name
+            << "\n";
+  auto &rm = umpire::ResourceManager::getInstance();
+  auto alloc_resource = rm.makeAllocator<umpire::strategy::QuickPool, true>(
+      pool_name, rm.getAllocator(parent_name));
+}
+
+std::unordered_set<std::string> createMemoryAllocators(
+    std::string pool,
+    std::string &physics_host_alloc,
+    std::string &physics_device_alloc,
+    std::string &physics_pinned_alloc,
+    std::string &ams_host_alloc,
+    std::string &ams_device_alloc,
+    std::string &ams_pinned_alloc)
+{
+  std::unordered_set<std::string> allocator_names;
+  if (pool == "default") {
+    physics_host_alloc = ams_host_alloc = "HOST";
+    allocator_names.insert(ams_host_alloc);
+#ifdef __ENABLE_CUDA__
+    physics_device_alloc = ams_device_alloc = "DEVICE";
+    allocator_names.insert(ams_device_alloc);
+    physics_pinned_alloc = ams_pinned_alloc = "PINNED";
+    allocator_names.insert(ams_pinned_alloc);
+#endif
+  } else if (pool == "split") {
+    physics_host_alloc = "phys-host";
+    createUmpirePool("HOST", "phys-host");
+    allocator_names.insert(physics_host_alloc);
+
+    ams_host_alloc = "ams-host";
+    createUmpirePool("HOST", ams_host_alloc);
+    allocator_names.insert(ams_host_alloc);
+
+#ifdef __ENABLE_CUDA__
+    physics_device_alloc = "phys-device";
+    createUmpirePool("DEVICE", physics_device_alloc);
+    allocator_names.insert(physics_device_alloc);
+
+    physics_pinned_alloc = "phys-pinned";
+    createUmpirePool("PINNED", physics_pinned_alloc);
+    allocator_names.insert(physics_pinned_alloc);
+
+    ams_device_alloc = "ams-device";
+    createUmpirePool("DEVICE", ams_device_alloc);
+    allocator_names.insert(ams_device_alloc);
+
+    ams_pinned_alloc = "ams-pinned";
+    createUmpirePool("PINNED", ams_pinned_alloc);
+    allocator_names.insert(ams_pinned_alloc);
+#endif
+  } else if (pool == "same") {
+    physics_host_alloc = ams_host_alloc = "common-host";
+    createUmpirePool("HOST", "common-host");
+    allocator_names.insert(physics_host_alloc);
+#ifdef __ENABLE_CUDA__
+    physics_device_alloc = ams_device_alloc = "common-device";
+    createUmpirePool("DEVICE", "common-device");
+    allocator_names.insert(ams_device_alloc);
+    physics_pinned_alloc = ams_pinned_alloc = "common-pinned";
+    createUmpirePool("PINNED", "common-pinned");
+    allocator_names.insert(ams_pinned_alloc);
+#endif
+  } else {
+    std::cout << "Stategy is " << pool << "\n";
+    throw std::runtime_error("Pool strategy does not exist\n");
+  }
+  return std::move(allocator_names);
+}
+
 
 using TypeValue = double;
 using mfem::ForallWrap;
@@ -96,6 +185,7 @@ int main(int argc, char **argv)
   TypeValue avg = 0.5;
   TypeValue stdDev = 0.2;
   bool reqDB = false;
+  const char *pool = "default";
 
 #ifdef __ENABLE_DB__
   reqDB = true;
@@ -203,6 +293,14 @@ int main(int argc, char **argv)
   args.AddOption(
       &verbose, "-v", "--verbose", "-qu", "--quiet", "Print extra stuff");
 
+  args.AddOption(&pool,
+                 "-ptype",
+                 "--pool-type",
+                 "How to assign memory pools to AMSlib:\n"
+                 "\t 'default' Use the default Umpire pool\n"
+                 "\t 'split' provide a separate pool to AMSlib\n"
+                 "\t 'same': assign the same with physics to AMS\n");
+
   // -------------------------------------------------------------------------
   // parse arguments
   // -------------------------------------------------------------------------
@@ -306,30 +404,43 @@ int main(int argc, char **argv)
   std::cerr << "Rank:" << rId << " Threshold " << threshold << "\n";
 
   // -------------------------------------------------------------------------
-  // setup data allocators
-  // -------------------------------------------------------------------------
-  AMSSetupAllocator(AMSResourceType::HOST);
-  if (use_device) {
-    AMSSetupAllocator(AMSResourceType::DEVICE);
-    AMSSetupAllocator(AMSResourceType::PINNED);
-    AMSSetDefaultAllocator(AMSResourceType::DEVICE);
-  } else {
-    AMSSetDefaultAllocator(AMSResourceType::HOST);
-  }
-
-  // -------------------------------------------------------------------------
   // setup mfem memory manager
   // -------------------------------------------------------------------------
   // hardcoded names!
-  const std::string &alloc_name_host(
-      AMSGetAllocatorName(AMSResourceType::HOST));
-  const std::string &alloc_name_device(
-      AMSGetAllocatorName(AMSResourceType::DEVICE));
 
-  mfem::MemoryManager::SetUmpireHostAllocatorName(alloc_name_host.c_str());
+  std::string physics_host_alloc;
+  std::string physics_device_alloc;
+  std::string physics_pinned_alloc;
+
+  std::string ams_host_alloc;
+  std::string ams_device_alloc;
+  std::string ams_pinned_alloc;
+
+  auto allocator_names = createMemoryAllocators(std::string(pool),
+                                                physics_host_alloc,
+                                                physics_device_alloc,
+                                                physics_pinned_alloc,
+                                                ams_host_alloc,
+                                                ams_device_alloc,
+                                                ams_pinned_alloc);
+
+
+  mfem::MemoryManager::SetUmpireHostAllocatorName(physics_host_alloc.c_str());
   if (use_device) {
     mfem::MemoryManager::SetUmpireDeviceAllocatorName(
-        alloc_name_device.c_str());
+        physics_device_alloc.c_str());
+  }
+
+
+  // When we are not allocating from parent/root umpire allocator
+  // we need to inform AMS about the pool allocators.
+  if (strcmp(pool, "default") != 0) {
+    AMSSetAllocator(AMSResourceType::HOST, ams_host_alloc.c_str());
+
+    if (use_device) {
+      AMSSetAllocator(AMSResourceType::DEVICE, ams_device_alloc.c_str());
+      AMSSetAllocator(AMSResourceType::PINNED, ams_pinned_alloc.c_str());
+    }
   }
 
   mfem::Device::SetMemoryTypes(mfem::MemoryType::HOST_UMPIRE,
@@ -340,7 +451,6 @@ int main(int argc, char **argv)
   device.Print();
   std::cout << std::endl;
 
-  //AMSResourceInfo();
 
   // -------------------------------------------------------------------------
   // setup indicators
@@ -399,7 +509,7 @@ int main(int argc, char **argv)
     if (eos_name == std::string("ideal_gas")) {
       eoses[mat_idx] = new IdealGas(1.6, 1.4);
     } else if (eos_name == std::string("constant_host")) {
-      eoses[mat_idx] = new ConstantEOSOnHost(alloc_name_host.c_str(), 1.0);
+      eoses[mat_idx] = new ConstantEOSOnHost(physics_host_alloc.c_str(), 1.0);
     } else {
       std::cerr << "unknown eos `" << eos_name << "'" << std::endl;
       return 1;
@@ -696,6 +806,7 @@ int main(int argc, char **argv)
     }
     CALIPER(CALI_MARK_END("Cycle");)
     MPI_CALL(MPI_Barrier(MPI_COMM_WORLD));
+    printMemory(allocator_names);
   }
 #ifdef USE_AMS
   delete[] workflow;

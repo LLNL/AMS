@@ -38,7 +38,7 @@ class SurrogateModel
 
 private:
   const std::string model_path;
-  const bool _is_cpu;
+  AMSResourceType model_resource;
 
 
 #ifdef __ENABLE_TORCH__
@@ -91,7 +91,7 @@ private:
     // Transpose to get continuous memory and
     // perform single memcpy.
     tensor = tensor.transpose(1, 0);
-    if (_is_cpu) {
+    if (model_resource == AMSResourceType::HOST) {
       for (long j = 0; j < numCols; j++) {
         auto tmp = tensor[j].contiguous();
         TypeInValue* ptr = tmp.data_ptr<TypeInValue>();
@@ -190,11 +190,11 @@ private:
 
 #endif
 
-  SurrogateModel(const char* model_path, bool is_cpu = true)
-      : model_path(model_path), _is_cpu(is_cpu)
+  SurrogateModel(const char* model_path, AMSResourceType resource = AMSResourceType::HOST)
+      : model_path(model_path), model_resource(resource)
   {
 
-    if (_is_cpu)
+    if (resource != AMSResourceType::DEVICE)
       _load<TypeInValue>(model_path, "cpu");
     else
       _load<TypeInValue>(model_path, "cuda");
@@ -226,14 +226,14 @@ public:
 
   static std::shared_ptr<SurrogateModel<TypeInValue>> getInstance(
       const char* model_path,
-      bool is_cpu = true)
+      AMSResourceType resource = AMSResourceType::HOST)
   {
     auto model =
         SurrogateModel<TypeInValue>::instances.find(std::string(model_path));
     if (model != instances.end()) {
       // Model Found
       auto torch_model = model->second;
-      if (is_cpu != torch_model->is_cpu())
+      if ( resource != torch_model->model_resource)
         throw std::runtime_error(
             "Currently we are not supporting loading the same model file on "
             "different devices.");
@@ -252,7 +252,7 @@ public:
     DBG(Surrogate, "Generating new model under (%s)", model_path);
     std::shared_ptr<SurrogateModel<TypeInValue>> torch_model =
         std::shared_ptr<SurrogateModel<TypeInValue>>(
-            new SurrogateModel<TypeInValue>(model_path, is_cpu));
+            new SurrogateModel<TypeInValue>(model_path, resource));
     instances.insert(std::make_pair(std::string(model_path), torch_model));
     return torch_model;
   };
@@ -295,7 +295,6 @@ public:
   }
 #endif
 
-  bool is_cpu() { return _is_cpu; }
 };
 
 template <typename T>
