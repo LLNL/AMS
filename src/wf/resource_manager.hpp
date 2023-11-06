@@ -48,6 +48,8 @@ struct AMSAllocator {
     auto& rm = umpire::ResourceManager::getInstance();
     rm.deregisterAllocation(ptr);
   }
+
+  void getAllocatorStats(size_t& wm, size_t& cs, size_t& as);
 };
 
 class ResourceManager
@@ -185,11 +187,7 @@ public:
                                 size_t& cs,
                                 size_t& as)
   {
-    auto& rm = umpire::ResourceManager::getInstance();
-    auto alloc = rm.getAllocator(allocator_ids[resource]);
-    wm = alloc.getHighWatermark();
-    cs = alloc.getCurrentSize();
-    as = alloc.getActualSize();
+    RMAllocators[resource]->getAllocatorStats(wm, cs, as);
     return;
   }
   //! ------------------------------------------------------------------------
