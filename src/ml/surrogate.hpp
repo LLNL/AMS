@@ -8,7 +8,6 @@
 #ifndef __AMS_SURROGATE_HPP__
 #define __AMS_SURROGATE_HPP__
 
-#include <ATen/core/ivalue.h>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -16,6 +15,7 @@
 
 #ifdef __ENABLE_TORCH__
 #include <ATen/core/interned_strings.h>
+#include <ATen/core/ivalue.h>
 #include <torch/script.h>  // One-stop header.
 #endif
 
@@ -106,11 +106,11 @@ private:
     }
   }
 
-PERFFASPECT()
+  PERFFASPECT()
   inline void tensorToHostArray(at::Tensor tensor,
-                            long numRows,
-                            long numCols,
-                            TypeInValue** array)
+                                long numRows,
+                                long numCols,
+                                TypeInValue** array)
   {
     // Transpose to get continuous memory and
     // perform single memcpy.
@@ -189,15 +189,16 @@ PERFFASPECT()
       assert(outputs_stdev && "Expected non-null outputs_stdev");
       // The deltauq surrogate returns a tuple of (outputs, outputs_stdev)
       auto output_tuple = module.forward({input}).toTuple();
-      at::Tensor output_mean_tensor = output_tuple->elements()[0].toTensor().detach();
-      at::Tensor output_stdev_tensor = output_tuple->elements()[1].toTensor().detach();
+      at::Tensor output_mean_tensor =
+          output_tuple->elements()[0].toTensor().detach();
+      at::Tensor output_stdev_tensor =
+          output_tuple->elements()[1].toTensor().detach();
       tensorToArray(output_mean_tensor, num_elements, num_out, outputs);
       tensorToHostArray(output_stdev_tensor,
                         num_elements,
                         num_out,
                         outputs_stdev);
-    }
-    else {
+    } else {
       at::Tensor output = module.forward({input}).toTensor().detach();
       tensorToArray(output, num_elements, num_out, outputs);
     }
@@ -232,7 +233,9 @@ PERFFASPECT()
   SurrogateModel(const char* model_path,
                  AMSResourceType resource = AMSResourceType::HOST,
                  bool is_DeltaUQ = false)
-      : model_path(model_path), model_resource(resource), _is_DeltaUQ(is_DeltaUQ)
+      : model_path(model_path),
+        model_resource(resource),
+        _is_DeltaUQ(is_DeltaUQ)
   {
     if (resource != AMSResourceType::DEVICE)
       _load<TypeInValue>(model_path, "cpu");
@@ -274,12 +277,12 @@ public:
     if (model != instances.end()) {
       // Model Found
       auto torch_model = model->second;
-      if ( resource != torch_model->model_resource)
+      if (resource != torch_model->model_resource)
         throw std::runtime_error(
             "Currently we are not supporting loading the same model file on "
             "different devices.");
 
-      if(is_DeltaUQ != torch_model->is_DeltaUQ())
+      if (is_DeltaUQ != torch_model->is_DeltaUQ())
         THROW(std::runtime_error, "Loaded model instance is not DeltaUQ");
 
       if (!same_type<TypeInValue>(torch_model->is_double()))
@@ -313,7 +316,7 @@ public:
                        size_t num_out,
                        const TypeInValue** inputs,
                        TypeInValue** outputs,
-                       TypeInValue **outputs_stdev = nullptr)
+                       TypeInValue** outputs_stdev = nullptr)
   {
     _evaluate(num_elements, num_in, num_out, inputs, outputs, outputs_stdev);
   }
