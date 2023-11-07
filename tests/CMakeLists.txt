@@ -39,7 +39,7 @@ ADDTEST(ams_hdcache_max_double  test_hdcache.cpp AMSHDCacheMaxPolicyDouble ${CMA
 
 ADDTEST(ams_hdcache_mean_single test_hdcache.cpp AMSHDCacheMeanPolicySingle ${CMAKE_CURRENT_SOURCE_DIR}/faiss_debug.pt "single" 1 10 4.0 4 5)
 # The max case fails on DEVICE. We should be aware abou this when adding support for CI for GPUs
-ADDTEST(ams_hdcache_max_single  test_hdcache.cpp AMSHDCacheMaxPolicySingle ${CMAKE_CURRENT_SOURCE_DIR}/faiss_debug.pt "single" 1 10 4.0 4 5)
+ADDTEST(ams_hdcache_max_single  test_hdcache.cpp AMSHDCacheMaxPolicySingle ${CMAKE_CURRENT_SOURCE_DIR}/faiss_debug.pt "single" 2 10 4.0 4 5)
 if (WITH_TORCH)
   add_test(NAME AMSExampleFaissInferSingle::HOST COMMAND  ams_example --precision single -S ${CMAKE_CURRENT_SOURCE_DIR}/debug_model.pt -H ${CMAKE_CURRENT_SOURCE_DIR}/example_faiss.idx -e 100)
   add_test(NAME AMSExampleFaissInferDouble::HOST COMMAND  ams_example --precision double -S ${CMAKE_CURRENT_SOURCE_DIR}/debug_model.pt -H ${CMAKE_CURRENT_SOURCE_DIR}/example_faiss.idx -e 100)
