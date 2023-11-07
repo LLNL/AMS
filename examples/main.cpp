@@ -112,8 +112,6 @@ std::unordered_set<std::string> createMemoryAllocators(
   return std::move(allocator_names);
 }
 
-
-using TypeValue = double;
 using mfem::ForallWrap;
 
 int computeNumElements(int globalNumElements, int id, int numRanks)
@@ -137,219 +135,36 @@ void random_init(mfem::Array<T> &arr)
   }
 }
 
-PERFFASPECT()
-int main(int argc, char **argv)
+// Runs AMS using typed value.
+// TODO: Gather arguments in a struct.
+// TODO: Move parsing of arguments in main.
+template <typename TypeValue>
+int run(const char *device_name,
+        const char *db_type,
+        const char *uq_policy_opt,
+        AMSDType precision,
+        int seed,
+        int rId,
+        int imbalance,
+        int wS,
+        double avg,
+        double stdDev,
+        double threshold,
+        const char *pool,
+        int num_mats,
+        int num_elems,
+        int num_qpts,
+        double empty_element_ratio,
+        bool verbose,
+        const char *eos_name,
+        int stop_cycle,
+        bool pack_sparse_mats,
+        const char *hdcache_path,
+        const char *model_path,
+        const char *db_config,
+        bool lbalance,
+        int k_nearest)
 {
-  // -------------------------------------------------------------------------
-  // declare runtime options and default values
-  // -------------------------------------------------------------------------
-
-  // Number of ranks in this run
-  int wS = 1;
-  // My Local Id
-  int rId = 0;
-  // Level of Threading provided by MPI
-  int provided = 0;
-  MPI_CALL(MPI_Init_thread(&argc, &argv, MPI_THREAD_SERIALIZED, &provided));
-  MPI_CALL(MPI_Comm_size(MPI_COMM_WORLD, &wS));
-  MPI_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &rId));
-  // FIXME: Create a logger class to write
-  // depending on rank id and severity.
-  if (rId != 0) {
-    std::cout.setstate(std::ios::failbit);
-  }
-
-  const char *device_name = "cpu";
-  const char *eos_name = "ideal_gas";
-  const char *model_path = "";
-  const char *hdcache_path = "";
-  const char *db_config = "";
-  const char *db_type = "";
-
-  const char *uq_policy_opt = "mean";
-  int k_nearest = 5;
-
-  int seed = 0;
-  TypeValue empty_element_ratio = -1;
-
-  int stop_cycle = 1;
-
-  int num_mats = 5;
-  int num_elems = 10000;
-  int num_qpts = 64;
-  bool pack_sparse_mats = true;
-
-  bool imbalance = false;
-  bool lbalance = false;
-  TypeValue threshold = 0.5;
-  TypeValue avg = 0.5;
-  TypeValue stdDev = 0.2;
-  bool reqDB = false;
-  const char *pool = "default";
-
-#ifdef __ENABLE_DB__
-  reqDB = true;
-#endif
-
-  bool verbose = false;
-
-  // -------------------------------------------------------------------------
-  // setup command line parser
-  // -------------------------------------------------------------------------
-  mfem::OptionsParser args(argc, argv);
-  args.AddOption(&device_name, "-d", "--device", "Device config string");
-
-  // surrogate model
-  args.AddOption(&model_path, "-S", "--surrogate", "Path to surrogate model");
-  args.AddOption(&hdcache_path, "-H", "--hdcache", "Path to hdcache index");
-
-  // eos model and length of simulation
-  args.AddOption(&eos_name, "-z", "--eos", "EOS model type");
-  args.AddOption(&stop_cycle, "-c", "--stop-cycle", "Stop cycle");
-
-  // data parameters
-  args.AddOption(&num_mats, "-m", "--num-mats", "Number of materials");
-  args.AddOption(&num_elems, "-e", "--num-elems", "Number of elements");
-  args.AddOption(&num_qpts,
-                 "-q",
-                 "--num-qpts",
-                 "Number of quadrature points per element");
-  args.AddOption(&empty_element_ratio,
-                 "-r",
-                 "--empty-element-ratio",
-                 "Fraction of elements that are empty "
-                 "for each material. If -1 use a random value for each. ");
-
-  // random speed and packing
-  args.AddOption(&seed, "-s", "--seed", "Seed for rand");
-  args.AddOption(&pack_sparse_mats,
-                 "-p",
-                 "--pack-sparse",
-                 "-np",
-                 "--do-not-pack-sparse",
-                 "pack sparse material data before evals (cpu only)");
-
-  args.AddOption(&imbalance,
-                 "-i",
-                 "--with-imbalance",
-                 "-ni",
-                 "--without-imbalance",
-                 "Create artificial load imbalance across ranks");
-
-  args.AddOption(&avg,
-                 "-avg",
-                 "--average",
-                 "Average value of random number generator of imbalance "
-                 "threshold");
-
-  args.AddOption(&stdDev,
-                 "-std",
-                 "--stdev",
-                 "Standard deviation of random number generator of imbalance ");
-
-  args.AddOption(&lbalance,
-                 "-lb",
-                 "--with-load-balance",
-                 "-nlb",
-                 "--without-load-balance",
-                 "Enable Load balance module in AMS");
-
-  args.AddOption(&threshold,
-                 "-t",
-                 "--threshold",
-                 "Threshold value used to control selection of surrogate "
-                 "vs physics execution");
-
-  args.AddOption(&db_config,
-                 "-db",
-                 "--dbconfig",
-                 "Path to directory where applications will store their data "
-                 "(or Path to JSON configuration if RabbitMQ is chosen)",
-                 reqDB);
-
-  args.AddOption(&db_type,
-                 "-dt",
-                 "--dbtype",
-                 "Configuration option of the different DB types:\n"
-                 "\t 'csv' Use csv as back end\n"
-                 "\t 'hdf5': use hdf5 as a back end\n"
-                 "\t 'rmq': use RabbitMQ as a back end\n");
-
-  args.AddOption(&k_nearest,
-                 "-knn",
-                 "--k-nearest-neighbors",
-                 "Number of closest neightbors we should look at");
-
-  args.AddOption(&uq_policy_opt,
-                 "-uq",
-                 "--uqtype",
-                 "Types of UQ to select from: \n"
-                 "\t 'mean' Uncertainty is computed in comparison against the "
-                 "mean distance of k-nearest neighbors\n"
-                 "\t 'max': Uncertainty is computed in comparison with the "
-                 "k'st cluster \n"
-                 "\t 'deltauq': Uncertainty through DUQ (not supported)\n");
-
-  args.AddOption(
-      &verbose, "-v", "--verbose", "-qu", "--quiet", "Print extra stuff");
-
-  args.AddOption(&pool,
-                 "-ptype",
-                 "--pool-type",
-                 "How to assign memory pools to AMSlib:\n"
-                 "\t 'default' Use the default Umpire pool\n"
-                 "\t 'split' provide a separate pool to AMSlib\n"
-                 "\t 'same': assign the same with physics to AMS\n");
-
-  // -------------------------------------------------------------------------
-  // parse arguments
-  // -------------------------------------------------------------------------
-  args.Parse();
-  if (!args.Good()) {
-    args.PrintUsage(std::cout);
-    return -1;
-  }
-
-  if (rId == 0) {
-    args.PrintOptions(std::cout);
-    std::cout << std::endl;
-  }
-
-  // -------------------------------------------------------------------------
-  // additional argument validation
-  // -------------------------------------------------------------------------
-  if (eos_options.find(eos_name) != eos_options.end()) {
-    std::cout << "Using eos = '" << eos_name << "'" << std::endl;
-  } else {
-    std::cerr << "Unsupported eos '" << eos_name << "'" << std::endl
-              << "Available options: " << std::endl;
-
-    for (const auto &s : eos_options) {
-      std::cerr << " - " << s << std::endl;
-    }
-    return -1;
-  }
-
-  // small validation
-  assert(stop_cycle > 0);
-  assert(num_mats > 0);
-  assert(num_elems > 0);
-  assert(num_qpts > 0);
-
-#ifdef __ENABLE_TORCH__
-  if (model_path == nullptr) {
-    std::cerr << "Compiled with Py-Torch enabled. It is mandatory to provide a "
-                 "surrogate model"
-              << std::endl;
-    exit(-1);
-  }
-#endif
-  assert((empty_element_ratio >= 0 && empty_element_ratio < 1) ||
-         empty_element_ratio == -1);
-
-  std::cout << "Total computed elements across all ranks: " << wS * num_elems
-            << "(Weak Scaling)\n";
-
   // -------------------------------------------------------------------------
   // setup
   // -------------------------------------------------------------------------
@@ -504,12 +319,13 @@ int main(int argc, char **argv)
   // ---------------------------------------------------------------------
   // setup EOS models
   // ---------------------------------------------------------------------
-  std::vector<EOS *> eoses(num_mats, nullptr);
+  std::vector<EOS<TypeValue> *> eoses(num_mats, nullptr);
   for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
     if (eos_name == std::string("ideal_gas")) {
-      eoses[mat_idx] = new IdealGas(1.6, 1.4);
+      eoses[mat_idx] = new IdealGas<TypeValue>(1.6, 1.4);
     } else if (eos_name == std::string("constant_host")) {
-      eoses[mat_idx] = new ConstantEOSOnHost(physics_host_alloc.c_str(), 1.0);
+      eoses[mat_idx] =
+          new ConstantEOSOnHost<TypeValue>(physics_host_alloc.c_str(), 1.0);
     } else {
       std::cerr << "unknown eos `" << eos_name << "'" << std::endl;
       return 1;
@@ -541,10 +357,10 @@ int main(int argc, char **argv)
   if (lbalance) ams_loadBalance = AMSExecPolicy::BALANCED;
 
   AMSConfig amsConf = {ams_loadBalance,
-                       AMSDType::Double,
+                       precision,
                        ams_device,
                        dbType,
-                       callBack,
+                       (AMSPhysicFn)callBack<TypeValue>,
                        (char *)surrogate_path,
                        (char *)uq_path,
                        (char *)db_path,
@@ -710,12 +526,12 @@ int main(int argc, char **argv)
                   d_dense_energy);
           CALIPER(CALI_MARK_END("SPARSE_TO_DENSE");)
           // -------------------------------------------------------------
-          std::vector<const double *> inputs = {&d_dense_density(0, 0),
-                                                &d_dense_energy(0, 0)};
-          std::vector<double *> outputs = {&d_dense_pressure(0, 0),
-                                           &d_dense_soundspeed2(0, 0),
-                                           &d_dense_bulkmod(0, 0),
-                                           &d_dense_temperature(0, 0)};
+          std::vector<const TypeValue *> inputs = {&d_dense_density(0, 0),
+                                                   &d_dense_energy(0, 0)};
+          std::vector<TypeValue *> outputs = {&d_dense_pressure(0, 0),
+                                              &d_dense_soundspeed2(0, 0),
+                                              &d_dense_bulkmod(0, 0),
+                                              &d_dense_temperature(0, 0)};
 
 #ifdef USE_AMS
 #ifdef __ENABLE_MPI__
@@ -768,12 +584,12 @@ int main(int argc, char **argv)
           std::cout << " material " << mat_idx << ": using dense packing for "
                     << num_elems << " elems" << std::endl;
 
-          std::vector<const double *> inputs = {&d_density(0, 0, mat_idx),
-                                                &d_energy(0, 0, mat_idx)};
-          std::vector<double *> outputs = {&d_pressure(0, 0, mat_idx),
-                                           &d_soundspeed2(0, 0, mat_idx),
-                                           &d_bulkmod(0, 0, mat_idx),
-                                           &d_temperature(0, 0, mat_idx)};
+          std::vector<const TypeValue *> inputs = {&d_density(0, 0, mat_idx),
+                                                   &d_energy(0, 0, mat_idx)};
+          std::vector<TypeValue *> outputs = {&d_pressure(0, 0, mat_idx),
+                                              &d_soundspeed2(0, 0, mat_idx),
+                                              &d_bulkmod(0, 0, mat_idx),
+                                              &d_temperature(0, 0, mat_idx)};
 #ifdef __ENABLE_MPI__
           AMSDistributedExecute(workflow[mat_idx],
                                 MPI_COMM_WORLD,
@@ -819,6 +635,299 @@ int main(int argc, char **argv)
   }
 
   CALIPER(CALI_MARK_END("TimeStepLoop"););
-  MPI_CALL(MPI_Finalize());
+
   return 0;
+}
+
+PERFFASPECT()
+int main(int argc, char **argv)
+{
+  // -------------------------------------------------------------------------
+  // declare runtime options and default values
+  // -------------------------------------------------------------------------
+
+  // Number of ranks in this run
+  int wS = 1;
+  // My Local Id
+  int rId = 0;
+  // Level of Threading provided by MPI
+  int provided = 0;
+  MPI_CALL(MPI_Init_thread(&argc, &argv, MPI_THREAD_SERIALIZED, &provided));
+  MPI_CALL(MPI_Comm_size(MPI_COMM_WORLD, &wS));
+  MPI_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &rId));
+  // FIXME: Create a logger class to write
+  // depending on rank id and severity.
+  if (rId != 0) {
+    std::cout.setstate(std::ios::failbit);
+  }
+
+  const char *device_name = "cpu";
+  const char *eos_name = "ideal_gas";
+  const char *model_path = "";
+  const char *hdcache_path = "";
+  const char *db_config = "";
+  const char *db_type = "";
+
+  const char *precision_opt = "double";
+  AMSDType precision = AMSDType::Double;
+
+  const char *uq_policy_opt = "mean";
+  int k_nearest = 5;
+
+  int seed = 0;
+  double empty_element_ratio = -1;
+
+  int stop_cycle = 1;
+
+  int num_mats = 5;
+  int num_elems = 10000;
+  int num_qpts = 64;
+  bool pack_sparse_mats = true;
+
+  bool imbalance = false;
+  bool lbalance = false;
+  double threshold = 0.5;
+  double avg = 0.5;
+  double stdDev = 0.2;
+  bool reqDB = false;
+  const char *pool = "default";
+
+#ifdef __ENABLE_DB__
+  reqDB = true;
+#endif
+
+  bool verbose = false;
+
+  // -------------------------------------------------------------------------
+  // setup command line parser
+  // -------------------------------------------------------------------------
+  mfem::OptionsParser args(argc, argv);
+  args.AddOption(&device_name, "-d", "--device", "Device config string");
+
+  // set precision
+  args.AddOption(&precision_opt,
+                 "-pr",
+                 "--precision",
+                 "Set precision (single or double)");
+
+  // surrogate model
+  args.AddOption(&model_path, "-S", "--surrogate", "Path to surrogate model");
+  args.AddOption(&hdcache_path, "-H", "--hdcache", "Path to hdcache index");
+
+  // eos model and length of simulation
+  args.AddOption(&eos_name, "-z", "--eos", "EOS model type");
+  args.AddOption(&stop_cycle, "-c", "--stop-cycle", "Stop cycle");
+
+  // data parameters
+  args.AddOption(&num_mats, "-m", "--num-mats", "Number of materials");
+  args.AddOption(&num_elems, "-e", "--num-elems", "Number of elements");
+  args.AddOption(&num_qpts,
+                 "-q",
+                 "--num-qpts",
+                 "Number of quadrature points per element");
+  args.AddOption(&empty_element_ratio,
+                 "-r",
+                 "--empty-element-ratio",
+                 "Fraction of elements that are empty "
+                 "for each material. If -1 use a random value for each. ");
+
+  // random speed and packing
+  args.AddOption(&seed, "-s", "--seed", "Seed for rand");
+  args.AddOption(&pack_sparse_mats,
+                 "-p",
+                 "--pack-sparse",
+                 "-np",
+                 "--do-not-pack-sparse",
+                 "pack sparse material data before evals (cpu only)");
+
+  args.AddOption(&imbalance,
+                 "-i",
+                 "--with-imbalance",
+                 "-ni",
+                 "--without-imbalance",
+                 "Create artificial load imbalance across ranks");
+
+  args.AddOption(&avg,
+                 "-avg",
+                 "--average",
+                 "Average value of random number generator of imbalance "
+                 "threshold");
+
+  args.AddOption(&stdDev,
+                 "-std",
+                 "--stdev",
+                 "Standard deviation of random number generator of imbalance ");
+
+  args.AddOption(&lbalance,
+                 "-lb",
+                 "--with-load-balance",
+                 "-nlb",
+                 "--without-load-balance",
+                 "Enable Load balance module in AMS");
+
+  args.AddOption(&threshold,
+                 "-t",
+                 "--threshold",
+                 "Threshold value used to control selection of surrogate "
+                 "vs physics execution");
+
+  args.AddOption(&db_config,
+                 "-db",
+                 "--dbconfig",
+                 "Path to directory where applications will store their data "
+                 "(or Path to JSON configuration if RabbitMQ is chosen)",
+                 reqDB);
+
+  args.AddOption(&db_type,
+                 "-dt",
+                 "--dbtype",
+                 "Configuration option of the different DB types:\n"
+                 "\t 'csv' Use csv as back end\n"
+                 "\t 'hdf5': use hdf5 as a back end\n"
+                 "\t 'rmq': use RabbitMQ as a back end\n");
+
+  args.AddOption(&k_nearest,
+                 "-knn",
+                 "--k-nearest-neighbors",
+                 "Number of closest neightbors we should look at");
+
+  args.AddOption(&uq_policy_opt,
+                 "-uq",
+                 "--uqtype",
+                 "Types of UQ to select from: \n"
+                 "\t 'mean' Uncertainty is computed in comparison against the "
+                 "mean distance of k-nearest neighbors\n"
+                 "\t 'max': Uncertainty is computed in comparison with the "
+                 "k'st cluster \n"
+                 "\t 'deltauq': Uncertainty through DUQ (not supported)\n");
+
+  args.AddOption(
+      &verbose, "-v", "--verbose", "-qu", "--quiet", "Print extra stuff");
+
+  args.AddOption(&pool,
+                 "-ptype",
+                 "--pool-type",
+                 "How to assign memory pools to AMSlib:\n"
+                 "\t 'default' Use the default Umpire pool\n"
+                 "\t 'split' provide a separate pool to AMSlib\n"
+                 "\t 'same': assign the same with physics to AMS\n");
+
+  // -------------------------------------------------------------------------
+  // parse arguments
+  // -------------------------------------------------------------------------
+  args.Parse();
+  if (!args.Good()) {
+    args.PrintUsage(std::cout);
+    return -1;
+  }
+
+  if (rId == 0) {
+    args.PrintOptions(std::cout);
+    std::cout << std::endl;
+  }
+
+  // -------------------------------------------------------------------------
+  // additional argument validation
+  // -------------------------------------------------------------------------
+  if (eos_options.find(eos_name) != eos_options.end()) {
+    std::cout << "Using eos = '" << eos_name << "'" << std::endl;
+  } else {
+    std::cerr << "Unsupported eos '" << eos_name << "'" << std::endl
+              << "Available options: " << std::endl;
+
+    for (const auto &s : eos_options) {
+      std::cerr << " - " << s << std::endl;
+    }
+    return -1;
+  }
+
+  // small validation
+  assert(stop_cycle > 0);
+  assert(num_mats > 0);
+  assert(num_elems > 0);
+  assert(num_qpts > 0);
+
+#ifdef __ENABLE_TORCH__
+  if (model_path == nullptr) {
+    std::cerr << "Compiled with Py-Torch enabled. It is mandatory to provide a "
+                 "surrogate model"
+              << std::endl;
+    exit(-1);
+  }
+#endif
+  assert((empty_element_ratio >= 0 && empty_element_ratio < 1) ||
+         empty_element_ratio == -1);
+
+  std::cout << "Total computed elements across all ranks: " << wS * num_elems
+            << "(Weak Scaling)\n";
+
+  if (strcmp(precision_opt, "single") == 0)
+    precision = AMSDType::Single;
+  else if (strcmp(precision_opt, "double") == 0)
+    precision = AMSDType::Double;
+  else {
+    std::cerr << "Invalid precision " << precision_opt << "\n";
+    return -1;
+  }
+
+  int ret = 0;
+  if (precision == AMSDType::Single)
+    ret = run<float>(device_name,
+                     db_type,
+                     uq_policy_opt,
+                     precision,
+                     seed,
+                     rId,
+                     imbalance,
+                     wS,
+                     avg,
+                     stdDev,
+                     threshold,
+                     pool,
+                     num_mats,
+                     num_elems,
+                     num_qpts,
+                     empty_element_ratio,
+                     verbose,
+                     eos_name,
+                     stop_cycle,
+                     pack_sparse_mats,
+                     hdcache_path,
+                     model_path,
+                     db_config,
+                     lbalance,
+                     k_nearest);
+  else if (precision == AMSDType::Double)
+    ret = run<double>(device_name,
+                      db_type,
+                      uq_policy_opt,
+                      precision,
+                      seed,
+                      rId,
+                      imbalance,
+                      wS,
+                      avg,
+                      stdDev,
+                      threshold,
+                      pool,
+                      num_mats,
+                      num_elems,
+                      num_qpts,
+                      empty_element_ratio,
+                      verbose,
+                      eos_name,
+                      stop_cycle,
+                      pack_sparse_mats,
+                      hdcache_path,
+                      model_path,
+                      db_config,
+                      lbalance,
+                      k_nearest);
+  else {
+    std::cerr << "Invalid precision " << precision_opt << "\n";
+    return -1;
+  }
+
+  MPI_CALL(MPI_Finalize());
+  return ret;
 }

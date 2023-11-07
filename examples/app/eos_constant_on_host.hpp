@@ -13,11 +13,12 @@
 
 #include "eos.hpp"
 
-class ConstantEOSOnHost : public EOS
+template<typename FPType>
+class ConstantEOSOnHost : public EOS<FPType>
 {
   umpire::ResourceManager &rm_;
   const char *host_allocator_name_;
-  const double val_;
+  const FPType val_;
 
   static const char *GetResourceName(camp::resources::Platform platform)
   {
@@ -47,7 +48,7 @@ class ConstantEOSOnHost : public EOS
   }
 
 public:
-  ConstantEOSOnHost(const char *host_allocator_name, double val)
+  ConstantEOSOnHost(const char *host_allocator_name, FPType val)
       : rm_(umpire::ResourceManager::getInstance()),
         host_allocator_name_(host_allocator_name),
         val_(val)
@@ -58,8 +59,8 @@ public:
     __attribute__((annotate("@critical_path(pointcut='around')")))
 #endif
   void Eval(const int length,
-            const double **inputs,
-            double **outputs) const override
+            const FPType **inputs,
+            FPType **outputs) const override
   {
     Eval(length,
          inputs[0],
@@ -74,12 +75,12 @@ public:
     __attribute__((annotate("@critical_path(pointcut='around')")))
 #endif
   void Eval(const int length,
-            const double *density,
-            const double *energy,
-            double *pressure,
-            double *soundspeed2,
-            double *bulkmod,
-            double *temperature) const override
+            const FPType *density,
+            const FPType *energy,
+            FPType *pressure,
+            FPType *soundspeed2,
+            FPType *bulkmod,
+            FPType *temperature) const override
   {
     Eval_with_filter(length,
                      density,
@@ -95,20 +96,20 @@ public:
     __attribute__((annotate("@critical_path(pointcut='around')")))
 #endif
   void Eval_with_filter(const int length,
-                        const double *density,
-                        const double *energy,
+                        const FPType *density,
+                        const FPType *energy,
                         const bool *filter,
-                        double *pressure,
-                        double *soundspeed2,
-                        double *bulkmod,
-                        double *temperature) const override
+                        FPType *pressure,
+                        FPType *soundspeed2,
+                        FPType *bulkmod,
+                        FPType *temperature) const override
   {
     auto plt = GetPlatform((void *)density);
     const char *res_name = GetResourceName(plt);
 
-    double *h_density, *h_energy;
+    FPType *h_density, *h_energy;
     bool *h_filter = nullptr;
-    double *h_pressure, *h_soundspeed2, *h_bulkmod, *h_temperature;
+    FPType *h_pressure, *h_soundspeed2, *h_bulkmod, *h_temperature;
 
     // NOTE: probably better to check if cuda or hip or sycl since omp is the
     // host mem space
@@ -119,28 +120,28 @@ public:
       auto allocator = rm_.getAllocator(host_allocator_name_);
 
       // not needed for constant eos but hey let's do it anyways
-      h_density = (double *)allocator.allocate(length * sizeof(double));
-      h_energy = (double *)allocator.allocate(length * sizeof(double));
+      h_density = (FPType *)allocator.allocate(length * sizeof(FPType));
+      h_energy = (FPType *)allocator.allocate(length * sizeof(FPType));
       rm_.copy(h_density,
-               const_cast<double *>(density),
-               length * sizeof(double));
-      rm_.copy(h_energy, const_cast<double *>(energy), length * sizeof(double));
+               const_cast<FPType *>(density),
+               length * sizeof(FPType));
+      rm_.copy(h_energy, const_cast<FPType *>(energy), length * sizeof(FPType));
 
       if (filter) {
         h_filter = (bool *)allocator.allocate(length * sizeof(bool));
         rm_.copy(h_filter, const_cast<bool *>(filter), length * sizeof(bool));
       }
 
-      h_pressure = (double *)allocator.allocate(length * sizeof(double));
-      h_soundspeed2 = (double *)allocator.allocate(length * sizeof(double));
-      h_bulkmod = (double *)allocator.allocate(length * sizeof(double));
-      h_temperature = (double *)allocator.allocate(length * sizeof(double));
+      h_pressure = (FPType *)allocator.allocate(length * sizeof(FPType));
+      h_soundspeed2 = (FPType *)allocator.allocate(length * sizeof(FPType));
+      h_bulkmod = (FPType *)allocator.allocate(length * sizeof(FPType));
+      h_temperature = (FPType *)allocator.allocate(length * sizeof(FPType));
 
     } else {
       std::cerr << "Memory is on the host, nothing special to do" << std::endl;
 
-      h_density = const_cast<double *>(density);
-      h_energy = const_cast<double *>(energy);
+      h_density = const_cast<FPType *>(density);
+      h_energy = const_cast<FPType *>(energy);
 
       h_filter = const_cast<bool *>(filter);
 
@@ -152,8 +153,8 @@ public:
 
     for (int i = 0; i < length; ++i) {
       // Unused
-      // const double density = h_density[i];
-      // const double energy = h_energy[i];
+      // const FPType density = h_density[i];
+      // const FPType energy = h_energy[i];
       if (filter && h_filter[i]) {
         continue;
       }
@@ -166,10 +167,10 @@ public:
     if (plt != camp::resources::Platform::host) {
       std::cerr << "Moving back to " << res_name << std::endl;
 
-      rm_.copy(pressure, h_pressure, length * sizeof(double));
-      rm_.copy(soundspeed2, h_soundspeed2, length * sizeof(double));
-      rm_.copy(bulkmod, h_bulkmod, length * sizeof(double));
-      rm_.copy(temperature, h_temperature, length * sizeof(double));
+      rm_.copy(pressure, h_pressure, length * sizeof(FPType));
+      rm_.copy(soundspeed2, h_soundspeed2, length * sizeof(FPType));
+      rm_.copy(bulkmod, h_bulkmod, length * sizeof(FPType));
+      rm_.copy(temperature, h_temperature, length * sizeof(FPType));
 
       rm_.deallocate(h_temperature);
       rm_.deallocate(h_bulkmod);

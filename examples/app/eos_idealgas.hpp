@@ -13,13 +13,14 @@
 
 //! Ideal Gas EOS
 //! Code given by Thomas Stitt
-class IdealGas : public EOS
+template<typename FPType>
+class IdealGas : public EOS<FPType>
 {
-  const double gamma_;
-  const double specific_heat_;
+  const FPType gamma_;
+  const FPType specific_heat_;
 
 public:
-  IdealGas(double gamma, double specific_heat)
+  IdealGas(FPType gamma, FPType specific_heat)
       : gamma_(gamma), specific_heat_(specific_heat)
   {
   }
@@ -28,15 +29,15 @@ public:
    __attribute__((annotate("@critical_path(pointcut='around')")))
 #endif
   void Eval(const int length,
-            const double *density,
-            const double *energy,
-            double *pressure,
-            double *soundspeed2,
-            double *bulkmod,
-            double *temperature) const override
+            const FPType *density,
+            const FPType *energy,
+            FPType *pressure,
+            FPType *soundspeed2,
+            FPType *bulkmod,
+            FPType *temperature) const override
   {
-    const double gamma = gamma_;
-    const double specific_heat = specific_heat_;
+    const FPType gamma = gamma_;
+    const FPType specific_heat = specific_heat_;
 
     using mfem::ForallWrap;
     MFEM_FORALL(i, length, {
@@ -48,16 +49,16 @@ public:
   }
 
   void Eval_with_filter(const int length,
-                        const double *density,
-                        const double *energy,
+                        const FPType *density,
+                        const FPType *energy,
                         const bool *filter,
-                        double *pressure,
-                        double *soundspeed2,
-                        double *bulkmod,
-                        double *temperature) const override
+                        FPType *pressure,
+                        FPType *soundspeed2,
+                        FPType *bulkmod,
+                        FPType *temperature) const override
   {
-    const double gamma = gamma_;
-    const double specific_heat = specific_heat_;
+    const FPType gamma = gamma_;
+    const FPType specific_heat = specific_heat_;
 
     using mfem::ForallWrap;
     MFEM_FORALL(i, length, {
@@ -74,8 +75,8 @@ public:
    __attribute__((annotate("@critical_path(pointcut='around')")))
 #endif
   void Eval(const int length,
-            const double **inputs,
-            double **outputs) const override
+            const FPType **inputs,
+            FPType **outputs) const override
   {
     Eval(length,
          inputs[0],
