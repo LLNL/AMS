@@ -49,16 +49,12 @@ using namespace sw::redis;
 #include <amqpcpp.h>
 #include <amqpcpp/libevent.h>
 #include <amqpcpp/linux_tcp.h>
-#include <event2/buffer.h>
 #include <event2/event-config.h>
 #include <event2/event.h>
 #include <event2/thread.h>
 #include <openssl/err.h>
 #include <openssl/opensslv.h>
 #include <openssl/ssl.h>
-#include <pthread.h>
-#include <signal.h>
-#include <unistd.h>
 
 #include <algorithm>
 #include <chrono>
@@ -66,14 +62,6 @@ using namespace sw::redis;
 #include <thread>
 #include <tuple>
 #include <unordered_map>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-#include "base64.h"
-#ifdef __cplusplus
-}
-#endif
 
 #endif  // __ENABLE_RMQ__
 
@@ -683,114 +671,279 @@ public:
 
 #ifdef __ENABLE_RMQ__
 
-/** @brief Structure that represents a JSON structure */
-typedef std::unordered_map<std::string, std::string> json;
-/** @brief Structure that represents a received RabbitMQ message */
+/**
+  * @brief AMS represents the header as follows:
+  * The header is 12 bytes long:
+  *   - 1 byte is the size of the header (here 12). Limit max: 255
+  *   - 1 byte is the precision (4 for float, 8 for double). Limit max: 255
+  *   - 2 bytes are the MPI rank (0 if AMS is not running with MPI). Limit max: 65535
+  *   - 4 bytes are the number of elements in the message. Limit max: 2^32 - 1
+  *   - 2 bytes are the input dimension. Limit max: 65535
+  *   - 2 bytes are the output dimension. Limit max: 65535
+  * 
+  * |__Header__|__Datatype__|___Rank___|__#elems__|___InDim___|___OutDim___|...real data...|
+  * ^          ^            ^          ^          ^           ^            ^               ^
+  * |  Byte 1  |   Byte 2   | Byte 3-4 | Byte 4-8 | Byte 8-10 | Byte 10-12 |   Byte 12-X   |
+  *
+  * where X = datatype * num_element * (InDim + OutDim). Total message size is 12+X. 
+  *
+  * The data starts at byte 12, ends at byte X.
+  * The data is structured as pairs of input/outputs. Let K be the total number of 
+  * elements, then we have K pairs of inputs/outputs (either float or double):
+  *
+  *  |__Header_(12B)__|__Input 1__|__Output 1__|...|__Input_K__|__Output_K__|
+  */
+template <typename TypeValue>
+struct AMSMsgHeader {
+  /** @brief Heaader size (bytes) */
+  uint8_t hsize;
+  /** @brief Data type size (bytes) */
+  uint8_t dtype;
+  /** @brief MPI rank */
+  uint16_t mpi_rank;
+  /** @brief Number of elements */
+  uint32_t num_elem;
+  /** @brief Inputs dimension */
+  uint16_t in_dim;
+  /** @brief Outputs dimension */
+  uint16_t out_dim;
+
+  /**
+   * @brief Constructor for AMSMsgHeader
+   * @param[in]  mpi_rank     MPI rank
+   * @param[in]  num_elem     Number of elements (input/outputs)
+   * @param[in]  in_dim       Inputs dimension
+   * @param[in]  out_dim      Outputs dimension
+   */
+  AMSMsgHeader(size_t mpi_rank, size_t num_elem, size_t in_dim, size_t out_dim)
+      : hsize(static_cast<uint8_t>(AMSMsgHeader::size())),
+        dtype(static_cast<uint8_t>(sizeof(TypeValue))),
+        mpi_rank(static_cast<uint16_t>(mpi_rank)),
+        num_elem(static_cast<uint32_t>(num_elem)),
+        in_dim(static_cast<uint16_t>(in_dim)),
+        out_dim(static_cast<uint16_t>(out_dim))
+  {
+  }
+
+  /**
+   * @brief Return the size of a header in the AMS protocol.
+   * @return The size of a message header in AMS (in byte)
+   */
+  static size_t size()
+  {
+    return sizeof(hsize) + sizeof(dtype) + sizeof(mpi_rank) + sizeof(num_elem) +
+           sizeof(in_dim) + sizeof(out_dim);
+  }
+
+  /**
+   * @brief Fill an empty buffer with a valid header.
+   * @param[in] data_blob The buffer to fill
+   * @return The number of bytes in the header or 0 if error
+   */
+  size_t encode(uint8_t* data_blob)
+  {
+    if (!data_blob) return 0;
+
+    size_t current_offset = 0;
+    // Header size (should be 1 bytes)
+    data_blob[current_offset] = hsize;
+    current_offset += sizeof(hsize);
+    // Data type (should be 1 bytes)
+    data_blob[current_offset] = dtype;
+    current_offset += sizeof(dtype);
+    // MPI rank (should be 2 bytes)
+    std::memcpy(data_blob + current_offset, &(mpi_rank), sizeof(mpi_rank));
+    current_offset += sizeof(mpi_rank);
+    // Num elem (should be 4 bytes)
+    std::memcpy(data_blob + current_offset, &(num_elem), sizeof(num_elem));
+    current_offset += sizeof(num_elem);
+    // Input dim (should be 2 bytes)
+    std::memcpy(data_blob + current_offset, &(in_dim), sizeof(in_dim));
+    current_offset += sizeof(in_dim);
+    // Output dim (should be 2 bytes)
+    std::memcpy(data_blob + current_offset, &(out_dim), sizeof(out_dim));
+    current_offset += sizeof(out_dim);
+
+    return current_offset;
+  }
+};
+
+
+/**
+ * @brief Class representing a message for the AMSLib
+ */
+template <typename TypeValue>
+class AMSMessage
+{
+private:
+  /** @brief message ID */
+  int _id;
+  /** @brief The MPI rank (0 if MPI is not used) */
+  int _rank;
+  /** @brief The data represented as a binary blob */
+  uint8_t* _data;
+  /** @brief The total size of the binary blob in bytes */
+  size_t _total_size;
+  /** @brief The number of input/output pairs */
+  size_t _num_elements;
+  /** @brief The dimensions of inputs */
+  size_t _input_dim;
+  /** @brief The dimensions of outputs */
+  size_t _output_dim;
+
+public:
+  /**
+   * @brief Constructor
+   * @param[in]  num_elements        Number of elements
+   * @param[in]  inputs              Inputs
+   * @param[in]  outputs             Outputs
+   */
+  AMSMessage(int id,
+             size_t num_elements,
+             const std::vector<TypeValue*>& inputs,
+             const std::vector<TypeValue*>& outputs)
+      : _id(id),
+        _num_elements(num_elements),
+        _input_dim(inputs.size()),
+        _output_dim(outputs.size()),
+        _data(nullptr),
+        _total_size(0)
+  {
+#ifdef __ENABLE_MPI__
+    MPI_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &_rank));
+#endif
+    _total_size = AMSMsgHeader<TypeValue>::size() + getDataSize();
+    _data = ams::ResourceManager::allocate<uint8_t>(_total_size,
+                                                    AMSResourceType::HOST);
+
+    AMSMsgHeader<TypeValue> header(_rank,
+                                   _num_elements,
+                                   _input_dim,
+                                   _output_dim);
+    size_t current_offset = header.encode(_data);
+    current_offset = encode_data(_data, current_offset, inputs, outputs);
+  }
+
+  AMSMessage(const AMSMessage&) = delete;
+  AMSMessage& operator=(const AMSMessage&) = delete;
+
+  AMSMessage(AMSMessage&& other) noexcept { *this = std::move(other); }
+
+  AMSMessage& operator=(AMSMessage&& other) noexcept
+  {
+    if (this != &other) {
+      _id = other._id;
+      _num_elements = other._num_elements;
+      _input_dim = other._input_dim;
+      _output_dim = other._output_dim;
+      _total_size = other._total_size;
+      _data = other._data;
+      other._data = nullptr;
+    }
+    return *this;
+  }
+
+  /**
+   * @brief Fill a buffer with a data section starting at a given position.
+   * @param[in]  data_blob          The buffer to fill
+   * @param[in]  offset     Position where to start writing in the buffer
+   * @param[in]  inputs             Inputs
+   * @param[in]  outputs            Outputs
+   * @return The number of bytes in the message or 0 if error
+   */
+  size_t encode_data(uint8_t* data_blob,
+                     size_t offset,
+                     const std::vector<TypeValue*>& inputs,
+                     const std::vector<TypeValue*>& outputs)
+  {
+    if (!data_blob) return 0;
+    // Creating the body part of the messages
+    // TODO: slow method (one copy per element!), improve by reducing number of copies
+    for (size_t i = 0; i < _num_elements; i++) {
+      for (size_t j = 0; j < _input_dim; j++) {
+        ams::ResourceManager::copy<TypeValue>(&(inputs[j][i]),
+                                              reinterpret_cast<TypeValue*>(
+                                                  _data + offset),
+                                              sizeof(TypeValue));
+        offset += sizeof(TypeValue);
+      }
+      for (size_t j = 0; j < _output_dim; j++) {
+        ams::ResourceManager::copy<TypeValue>(&(outputs[j][i]),
+                                              reinterpret_cast<TypeValue*>(
+                                                  _data + offset),
+                                              sizeof(TypeValue));
+        offset += sizeof(TypeValue);
+      }
+    }
+
+    return offset;
+  }
+
+  /**
+   *  @brief Return the size of the data portion for that message
+   *  @return  Size in bytes of the data portion
+   */
+  size_t getDataSize()
+  {
+    return (_num_elements * (_input_dim + _output_dim)) * sizeof(TypeValue);
+  }
+
+  /**
+   * @brief Return the underlying data pointer
+   * @return Data pointer (binary blob)
+   */
+  uint8_t* data() const { return _data; }
+
+  /**
+   * @brief Return message ID
+   * @return message ID
+   */
+  int id() const { return _id; }
+
+  /**
+   * @brief Return the size in bytes of the underlying binary blob
+   * @return Byte size of data pointer
+   */
+  size_t size() const { return _total_size; }
+
+  ~AMSMessage()
+  {
+    if (_data)
+      ams::ResourceManager::deallocate<uint8_t>(_data, AMSResourceType::HOST);
+  }
+};  // class AMSMessage
+
+/** @brief Structure that represents a received RabbitMQ message.
+ * - The first field is the message content (body)
+ * - The second field is the RMQ exchange from which the message
+ *   has been received
+ * - The third field is the routing key
+ * - The fourth is the delivery tag (ID of the message)
+ * - The fifth field is a boolean that indicates if that message
+ *   has been redelivered by RMQ.
+ */
 typedef std::tuple<std::string, std::string, std::string, uint64_t, bool>
     inbound_msg;
 
 /**
- * @brief Structure that is passed to each worker thread that sends data.
- */
-struct rmq_sender {
-  struct event_base* loop;
-  pthread_t id;
-};
-
-/**
- * @brief Worker function responsible of starting the event loop for each thread.
- * @param[in] arg a pointer on a worker structure
- */
-void* start_worker_sender(void* arg)
-{
-  struct rmq_sender* w = (struct rmq_sender*)arg;
-  event_base_dispatch(w->loop);
-  return NULL;
-}
-
-/**
- * @brief Structure that is passed to each worker thread receiving data.
- */
-struct rmq_consumer {
-  struct event_base* loop;
-  pthread_t id;
-  std::shared_ptr<AMQP::TcpChannel> channel;
-  std::string queue;
-  std::shared_ptr<std::vector<inbound_msg>> messages;  // Messages received
-};
-
-/**
- * @brief Worker function responsible of starting the event loop for each thread.
- * @param[in] arg a pointer on a worker structure
- */
-void* start_worker_consumer(void* arg)
-{
-  struct rmq_consumer* w = (struct rmq_consumer*)arg;
-
-  // callback function that is called when the consume operation starts
-  auto startCb = [](const std::string& consumertag) {
-    DBG(RabbitMQDB,
-        "consume operation started with tag: %s",
-        consumertag.c_str())
-  };
-
-  // callback function that is called when the consume operation failed
-  auto errorCb = [](const char* message) {
-    CFATAL(RabbitMQDB, false, "consume operation failed: %s", message);
-  };
-  // callback operation when a message was received
-  auto messageCb = [w](const AMQP::Message& message,
-                       uint64_t deliveryTag,
-                       bool redelivered) {
-    // acknowledge the message
-    w->channel->ack(deliveryTag);
-    std::string s(message.body(), message.bodySize());
-    w->messages->push_back(std::make_tuple(std::move(s),
-                                           message.exchange(),
-                                           message.routingkey(),
-                                           deliveryTag,
-                                           redelivered));
-    DBG(RabbitMQDB,
-        "message received [tag=%d] : '%s' of size %d B from '%s'/'%s'",
-        deliveryTag,
-        s.c_str(),
-        message.bodySize(),
-        message.exchange().c_str(),
-        message.routingkey().c_str())
-  };
-
-  /* callback that is called when the consumer is cancelled by RabbitMQ (this
-   * only happens in rare situations, for example when someone removes the queue
-   * that you are consuming from)
-   */
-  auto cancelledCb = [](const std::string& consumertag) {
-    WARNING(RabbitMQDB,
-            "consume operation cancelled by the RabbitMQ server: %s",
-            consumertag.c_str())
-  };
-
-  // start consuming from the queue, and install the callbacks
-  w->channel->consume(w->queue)
-      .onReceived(messageCb)
-      .onSuccess(startCb)
-      .onCancelled(cancelledCb)
-      .onError(errorCb);
-
-  // We start the event loop
-  event_base_dispatch(w->loop);
-  return NULL;
-}
-
-/**
  * @brief Specific handler for RabbitMQ connections based on libevent.
  */
-class RabbitMQHandler : public AMQP::LibEventHandler
+template <typename TypeValue>
+class RMQConsumerHandler : public AMQP::LibEventHandler
 {
 private:
   /** @brief Path to TLS certificate */
-  const char* _cacert;
+  std::string _cacert;
   /** @brief The MPI rank (0 if MPI is not used) */
   int _rank;
+  /** @brief LibEvent I/O loop */
+  std::shared_ptr<struct event_base> _loop;
+  /** @brief main channel used to send data to the broker */
+  std::shared_ptr<AMQP::TcpChannel> _channel;
+  /** @brief RabbitMQ queue */
+  std::string _queue;
+  /** @brief Queue that contains all the messages received on receiver queue */
+  std::shared_ptr<std::vector<inbound_msg>> _messages;
 
 public:
   /**
@@ -799,11 +952,23 @@ public:
    *  @param[in]  cacert       SSL Cacert
    *  @param[in]  rank         MPI rank
    */
-  RabbitMQHandler(int rank, struct event_base* loop, std::string cacert)
-      : AMQP::LibEventHandler(loop), _rank(rank), _cacert(cacert.c_str())
+  RMQConsumerHandler(std::shared_ptr<struct event_base> loop,
+                     std::string cacert,
+                     std::string queue)
+      : AMQP::LibEventHandler(loop.get()),
+        _loop(loop),
+        _rank(0),
+        _cacert(std::move(cacert)),
+        _queue(queue),
+        _messages(std::make_shared<std::vector<inbound_msg>>()),
+        _channel(nullptr)
   {
+#ifdef __ENABLE_MPI__
+    MPI_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &_rank));
+#endif
   }
-  virtual ~RabbitMQHandler() = default;
+
+  ~RMQConsumerHandler() = default;
 
 private:
   /**
@@ -822,12 +987,16 @@ private:
     ERR_clear_error();
     unsigned long err;
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
-    int ret = SSL_use_certificate_file(ssl, _cacert, SSL_FILETYPE_PEM);
+    int ret = SSL_use_certificate_file(ssl, _cacert.c_str(), SSL_FILETYPE_PEM);
 #else
-    int ret = SSL_use_certificate_chain_file(ssl, _cacert);
+    int ret = SSL_use_certificate_chain_file(ssl, _cacert.c_str());
 #endif
+    // TODO: with openssl 3.0
+    // SSL_set_options(ssl, SSL_OP_IGNORE_UNEXPECTED_EOF);
+
     if (ret != 1) {
-      std::string error("openssl: error loading ca-chain from [");
+      std::string error("openssl: error loading ca-chain (" + _cacert +
+                        ") + from [");
       SSL_get_error(ssl, ret);
       if ((err = ERR_get_error())) {
         error += std::string(ERR_reason_error_string(err));
@@ -835,7 +1004,9 @@ private:
       error += "]";
       throw std::runtime_error(error);
     } else {
-      DBG(RabbitMQDB, "Success logged with ca-chain %s", _cacert)
+      DBG(RMQConsumerHandler,
+          "Success logged with ca-chain %s",
+          _cacert.c_str())
       return true;
     }
   }
@@ -853,8 +1024,8 @@ private:
   virtual bool onSecured(AMQP::TcpConnection* connection,
                          const SSL* ssl) override
   {
-    DBG(RabbitMQDB,
-        "[rank=%d][ info ] Secured TLS connection has been established",
+    DBG(RMQConsumerHandler,
+        "[rank=%d] Secured TLS connection has been established.",
         _rank)
     return true;
   }
@@ -866,9 +1037,106 @@ private:
    */
   virtual void onReady(AMQP::TcpConnection* connection) override
   {
-    DBG(RabbitMQDB,
-        "[rank=%d][  ok  ] Sucessfuly logged in. Connection ready to use!\n",
+    DBG(RMQConsumerHandler,
+        "[rank=%d] Sucessfuly logged in. Connection ready to use.\n",
         _rank)
+
+    _channel = std::make_shared<AMQP::TcpChannel>(connection);
+    _channel->onError([&](const char* message) {
+      CFATAL(RMQConsumerHandler,
+             false,
+             "[rank=%d] Error on channel: %s",
+             _rank,
+             message)
+    });
+
+    _channel->declareQueue(_queue)
+        .onSuccess([&](const std::string& name,
+                       uint32_t messagecount,
+                       uint32_t consumercount) {
+          if (messagecount > 0 || consumercount > 1) {
+            CWARNING(RMQConsumerHandler,
+                     _rank == 0,
+                     "[rank=%d] declared queue: %s (messagecount=%d, "
+                     "consumercount=%d)",
+                     _rank,
+                     _queue.c_str(),
+                     messagecount,
+                     consumercount)
+          }
+          // We can now install callback functions for when we will consumme messages
+          // callback function that is called when the consume operation starts
+          auto startCb = [](const std::string& consumertag) {
+            DBG(RMQConsumerHandler,
+                "consume operation started with tag: %s",
+                consumertag.c_str())
+          };
+
+          // callback function that is called when the consume operation failed
+          auto errorCb = [](const char* message) {
+            CFATAL(RMQConsumerHandler,
+                   false,
+                   "consume operation failed: %s",
+                   message);
+          };
+          // callback operation when a message was received
+          auto messageCb = [&](const AMQP::Message& message,
+                               uint64_t deliveryTag,
+                               bool redelivered) {
+            // acknowledge the message
+            _channel->ack(deliveryTag);
+            std::string msg(message.body(), message.bodySize());
+            DBG(RMQConsumerHandler,
+                "message received [tag=%d] : '%s' of size %d B from '%s'/'%s'",
+                deliveryTag,
+                msg.c_str(),
+                message.bodySize(),
+                message.exchange().c_str(),
+                message.routingkey().c_str())
+            _messages->push_back(std::make_tuple(std::move(msg),
+                                                 message.exchange(),
+                                                 message.routingkey(),
+                                                 deliveryTag,
+                                                 redelivered));
+          };
+
+          /* callback that is called when the consumer is cancelled by RabbitMQ (this
+          * only happens in rare situations, for example when someone removes the queue
+          * that you are consuming from)
+          */
+          auto cancelledCb = [](const std::string& consumertag) {
+            WARNING(RMQConsumerHandler,
+                    "consume operation cancelled by the RabbitMQ server: %s",
+                    consumertag.c_str())
+          };
+
+          // start consuming from the queue, and install the callbacks
+          _channel->consume(_queue)
+              .onReceived(messageCb)
+              .onSuccess(startCb)
+              .onCancelled(cancelledCb)
+              .onError(errorCb);
+        })
+        .onError([&](const char* message) {
+          CFATAL(RMQConsumerHandler,
+                 false,
+                 "[ERROR][rank=%d] Error while creating broker queue (%s): %s",
+                 _rank,
+                 _queue.c_str(),
+                 message)
+        });
+  }
+
+  /**
+    *  Method that is called when the AMQP protocol is ended. This is the
+    *  counter-part of a call to connection.close() to graceful shutdown
+    *  the connection. Note that the TCP connection is at this time still 
+    *  active, and you will also receive calls to onLost() and onDetached()
+    *  @param  connection      The connection over which the AMQP protocol ended
+    */
+  virtual void onClosed(AMQP::TcpConnection* connection) override
+  {
+    DBG(RMQConsumerHandler, "[rank=%d] Connection is closed.\n", _rank)
   }
 
   /**
@@ -883,279 +1151,574 @@ private:
   virtual void onError(AMQP::TcpConnection* connection,
                        const char* message) override
   {
-    DBG(RabbitMQDB,
+    DBG(RMQConsumerHandler,
         "[rank=%d] fatal error when establishing TCP connection: %s\n",
         _rank,
         message)
   }
-};  // class RabbitMQHandler
-
-/**
- * @brief An EventBuffer encapsulates an evbuffer (libevent structure).
- * Each time data is pushed to the underlying evbuffer, the callback will be
- * called.
- */
-template <typename TypeValue>
-class EventBuffer
-{
-private:
-  /** @brief AMQP reliable channel (wrapper of a classic channel with added functionalities) */
-  std::shared_ptr<AMQP::Reliable<AMQP::Tagger>> _rchannel;
-  /** @brief Name of the RabbitMQ queue */
-  std::string _queue;
-  /** @brief Internal queue of messages to send (data, num_elements) */
-  std::deque<std::tuple<void*, size_t>> _messages;
-  /** @brief Total number of bytes that must be send */
-  size_t _byte_to_send;
-  /** @brief MPI rank */
-  int _rank;
-  /** @brief Thread ID */
-  pthread_t _tid;
-  /** @brief Event loop */
-  struct event_base* _loop;
-  /** @brief The buffer event structure */
-  struct evbuffer* _buffer;
-  /** @brief Signal event for exiting properly the loop */
-  struct event* _signal_exit;
-  /** @brief Signal event for exiting properly the loop */
-  struct event* _signal_term;
-  /** @brief Custom signal code (by default SIGUSR1) that can be intercepted */
-  int _sig_exit;
-  /** @brief Internal counter for number of messages acknowledged */
-  int _counter_ack;
-  /** @brief Internal counter for number of messages negatively acknowledged */
-  int _counter_nack;
 
   /**
-   *  @brief  Callback method that is called by libevent when data is being
-   * added to the buffer event
-   *  @param[in]  fd          The loop in which the event was triggered
-   *  @param[in]  event       Internal timer object
-   *  @param[in]  argc        The events that triggered this call
-   */
-  static void callback_commit(struct evbuffer* buffer,
-                              const struct evbuffer_cb_info* info,
-                              void* arg)
+    *  Final method that is called. This signals that no further calls to your
+    *  handler will be made about the connection.
+    *  @param  connection      The connection that can be destructed
+    */
+  virtual void onDetached(AMQP::TcpConnection* connection) override
   {
-    EventBuffer* self = static_cast<EventBuffer*>(arg);
-    // we remove only if some byte got added (this callback will get
-    // trigger when data is added AND removed from the buffer
-    DBG(RabbitMQDB,
-        "evbuffer_cb_info(lenght=%zu): n_added=%zu B, n_deleted=%zu B, "
-        "orig_size=%zu B",
-        evbuffer_get_length(buffer),
-        info->n_added,
-        info->n_deleted,
-        info->orig_size)
-
-    if (info->n_added > 0) {
-      // Destination buffer (of TypeValue size, either float or double)
-      size_t datlen = info->n_added;  // Total number of bytes
-      int k = datlen / sizeof(TypeValue);
-      if (datlen % sizeof(TypeValue) != 0) {
-        CFATAL(RabbitMQDB,
-               false,
-               "Buffer seems corrupted or not the right type of TypeValue");
-      }
-      auto data = std::make_unique<TypeValue[]>(datlen);
-
-      evbuffer_lock(buffer);
-      // Now we drain the evbuffer structure to fill up the destination buffer
-      int nbyte_drained = evbuffer_remove(buffer, data.get(), datlen);
-      if (nbyte_drained < 0) {
-        WARNING(RabbitMQDB,
-                "evbuffer_remove(): cannot remove %d data from buffer",
-                nbyte_drained);
-      }
-      evbuffer_unlock(buffer);
-
-      std::string result = std::to_string(self->_rank) + ":";
-      for (int i = 0; i < k - 1; i++) {
-        result.append(std::to_string(data[i]) + ":");
-      }
-      result.append(std::to_string(data[k - 1]) + "\n");
-
-      // For resiliency reasons we encode the result in base64
-      // Not that it increases the size (n) of messages by approx 4*(n/3)
-      std::string result_b64 = self->encode64(result);
-      DBG(RabbitMQDB,
-          "[rank=%d] #elements (float/double) = %d, stringify size = %d, size "
-          "in base64 "
-          "= %d",
-          self->_rank,
-          k,
-          result.size(),
-          result_b64.size())
-      if (result_b64.size() % 4 != 0) {
-        WARNING(EventBuffer,
-                "[rank=%d] Frame size (%d elements)"
-                "cannot be %d more than a multiple of 4!",
-                self->_rank,
-                result_b64.size(),
-                result_b64.size() % 4)
-      }
-
-      // publish a message via the reliable-channel
-      self->_rchannel->publish("", self->_queue, result_b64)
-          .onAck([self, nbyte_drained]() {
-            DBG(RabbitMQDB,
-                "[rank=%d] message got ack successfully",
-                self->_rank)
-            self->_byte_to_send = self->_byte_to_send - nbyte_drained;
-            self->_counter_ack++;
-          })
-          .onNack([self]() {
-            self->_counter_nack++;
-            WARNING(RabbitMQDB, "[rank=%d] message negative ack", self->_rank)
-          })
-          .onLost([self]() {
-            CFATAL(RabbitMQDB, false, "[rank=%d] message got lost", self->_rank)
-          })
-          .onError([self](const char* message) {
-            CFATAL(RabbitMQDB,
-                   false,
-                   "[rank=%d] message did not get send: %s",
-                   self->_rank,
-                   message)
-          });
-    }
+    //  add your own implementation, like cleanup resources or exit the application
+    DBG(RMQConsumerHandler, "[rank=%d] Connection is detached.\n", _rank)
   }
-
-  /**
-   *  @brief Callback method that is called by libevent when the signal sig is
-   * intercepted
-   *  @param[in]  fd          The loop in which the event was triggered
-   *  @param[in]  event       Internal event object (evsignal in this case)
-   *  @param[in]  argc        The events that triggered this call
-   */
-  static void callback_exit(int fd, short event, void* argc)
-  {
-    EventBuffer* self = static_cast<EventBuffer*>(argc);
-    DBG(RabbitMQDB,
-        "caught an interrupt signal; exiting cleanly event loop after %d "
-        "messages ack (%d negative ack) ...",
-        self->_counter_ack,
-        self->_counter_nack)
-    event_base_loopexit(self->_loop, NULL);
-  }
-
-public:
-  /**
-   *  @brief Constructor
-   *  @param[in]  loop        Event loop (Libevent in this case)
-   *  @param[in]  channel     AMQP TCP channel
-   *  @param[in]  queue       Name of the queue the Event Buffer will publish on
-   */
-  EventBuffer(int rank,
-              struct event_base* loop,
-              std::shared_ptr<AMQP::TcpChannel> channel,
-              std::string queue)
-      : _rank(rank),
-        _loop(loop),
-        _buffer(nullptr),
-        _rchannel(
-            std::make_shared<AMQP::Reliable<AMQP::Tagger>>(*channel.get())),
-        _queue(std::move(queue)),
-        _byte_to_send(0),
-        _counter_ack(0),
-        _counter_nack(0)
-  {
-    pthread_t _tid = pthread_self();
-    // initialize the libev buff event structure
-    _buffer = evbuffer_new();
-    evbuffer_add_cb(_buffer, callback_commit, this);
-    /**
-     * Force all the callbacks on an evbuffer to be run not immediately after
-     * the evbuffer is altered, but instead from inside the event loop.
-     * Without that, the call to callback() would block the main thread.
-     */
-    evbuffer_defer_callbacks(_buffer, _loop);
-    // We install signal callbacks
-    _sig_exit = SIGUSR1;
-    _signal_exit = evsignal_new(_loop, _sig_exit, callback_exit, this);
-    event_add(_signal_exit, NULL);
-    _signal_term = evsignal_new(_loop, SIGTERM, callback_exit, this);
-    event_add(_signal_term, NULL);
-  }
-
-  /**
-   *  @brief   Return the size of the buffer in bytes.
-   *  @return  Buffer size in bytes.
-   */
-  size_t size() { return evbuffer_get_length(_buffer); }
-
-  /**
-   *  @brief   Return True if the buffer is empty.
-   *  @return  True if the number of bytes that has to be sent is equals to 0.
-   */
-  bool is_drained()
-  {
-    return (_byte_to_send == 0) && (evbuffer_get_length(_buffer) == 0);
-  }
-
-  /**
-   *  @brief   Push data to the underlying event buffer, which
-   * will trigger the callback.
-   *  @return  The number of bytes that has to be sent.
-   */
-  size_t get_byte_to_send() { return _byte_to_send; }
-
-  /**
-   *  @brief  Push data to the underlying event buffer, which
-   * will trigger the callback.
-   *  @param[in]  data            The data pointer
-   *  @param[in]  data_size       The number of bytes in the data pointer
-   */
-  void push(void* data, size_t data_size)
-  {
-    evbuffer_lock(_buffer);
-    DBG(RabbitMQDB,
-        "[push()] adding %zu B to buffer => "
-        "size of evbuffer %zu",
-        data_size,
-        size())
-
-    int ret = evbuffer_add(_buffer, data, data_size);
-    if (ret == -1) {
-      perror("Error evbuffer_add()\n");
-    }
-    _byte_to_send = _byte_to_send + data_size;
-    evbuffer_unlock(_buffer);
-  }
-
-  /**
-   *  @brief  Method to encode a string into base64
-   *  @param[in]  input       The input string
-   *  @return                 The encoded string
-   */
-  std::string encode64(const std::string& input)
-  {
-    if (input.size() == 0) return "";
-    size_t unencoded_length = input.size();
-    size_t encoded_length = base64_encoded_length(unencoded_length);
-    char* base64_encoded_string =
-        (char*)malloc((encoded_length + 1) * sizeof(char));
-    ssize_t encoded_size = base64_encode(base64_encoded_string,
-                                         encoded_length + 1,
-                                         input.c_str(),
-                                         unencoded_length);
-    std::string result(base64_encoded_string);
-    free(base64_encoded_string);
-    return result;
-  }
-
-  /** @brief Destructor */
-  ~EventBuffer()
-  {
-    evbuffer_free(_buffer);
-    event_free(_signal_exit);
-    event_free(_signal_term);
-  }
-};  // class EventBuffer
+};  // class RMQConsumerHandler
 
 /**
  * @brief Class that manages a RabbitMQ broker and handles connection, event
  * loop and set up various handlers.
+ */
+template <typename TypeValue>
+class RMQConsumer
+{
+private:
+  /** @brief Connection to the broker */
+  AMQP::TcpConnection* _connection;
+  /** @brief name of the queue to send data */
+  std::string _queue;
+  /** @brief TLS certificate file */
+  std::string _cacert;
+  /** @brief MPI rank (if MPI is used, otherwise 0) */
+  int _rank;
+  /** @brief The event loop for sender (usually the default one in libevent) */
+  std::shared_ptr<struct event_base> _loop;
+  /** @brief The handler which contains various callbacks for the sender */
+  std::shared_ptr<RMQConsumerHandler<TypeValue>> _handler;
+  /** @brief Queue that contains all the messages received on receiver queue (messages can be popped in) */
+  std::vector<inbound_msg> _messages;
+
+public:
+  RMQConsumer(const RMQConsumer&) = delete;
+  RMQConsumer& operator=(const RMQConsumer&) = delete;
+
+  RMQConsumer(const AMQP::Address& address,
+              std::string cacert,
+              std::string queue)
+      : _rank(0), _queue(queue), _cacert(cacert), _handler(nullptr)
+  {
+#ifdef __ENABLE_MPI__
+    MPI_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &_rank));
+#endif
+#ifdef EVTHREAD_USE_PTHREADS_IMPLEMENTED
+    evthread_use_pthreads();
+#endif
+    CDEBUG(RMQConsumer,
+           _rank == 0,
+           "Libevent %s (LIBEVENT_VERSION_NUMBER = %#010x)",
+           event_get_version(),
+           event_get_version_number());
+    CDEBUG(RMQConsumer,
+           _rank == 0,
+           "%s (OPENSSL_VERSION_NUMBER = %#010x)",
+           OPENSSL_VERSION_TEXT,
+           OPENSSL_VERSION_NUMBER);
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+    SSL_library_init();
+#else
+    OPENSSL_init_ssl(0, NULL);
+#endif
+    CINFO(RMQConsumer,
+          _rank == 0,
+          "RabbitMQ address: %s:%d/%s (queue = %s)",
+          address.hostname().c_str(),
+          address.port(),
+          address.vhost().c_str(),
+          _queue.c_str())
+
+    _loop = std::shared_ptr<struct event_base>(event_base_new(),
+                                               [](struct event_base* event) {
+                                                 event_base_free(event);
+                                               });
+    _handler =
+        std::make_shared<RMQConsumerHandler<TypeValue>>(_loop, _cacert, _queue);
+    _connection = new AMQP::TcpConnection(_handler.get(), address);
+  }
+
+  /**
+   * @brief Start the underlying I/O loop (blocking call)
+   */
+  void start() { event_base_dispatch(_loop.get()); }
+
+  /**
+   * @brief Stop the underlying I/O loop
+   */
+  void stop() { event_base_loopexit(_loop.get(), NULL); }
+
+  /**
+   * @brief Return the most recent messages and delete it
+   * @return A structure inbound_msg which is a std::tuple (see typedef)
+   */
+  inbound_msg pop_messages()
+  {
+    if (!_messages.empty()) {
+      inbound_msg msg = _messages.back();
+      _messages.pop_back();
+      return msg;
+    }
+    return std::make_tuple("", "", "", -1, false);
+  }
+
+  /**
+   * @brief Return the message corresponding to the delivery tag. Do not delete the
+   * message.
+   * @param[in] delivery_tag Delivery tag that will be returned (if found)
+   * @return A structure inbound_msg which is a std::tuple (see typedef)
+   */
+  inbound_msg get_messages(uint64_t delivery_tag)
+  {
+    if (!_messages.empty()) {
+      auto it = std::find_if(_messages.begin(),
+                             _messages.end(),
+                             [&delivery_tag](const inbound_msg& e) {
+                               return std::get<3>(e) == delivery_tag;
+                             });
+      if (it != _messages.end()) return *it;
+    }
+    return std::make_tuple("", "", "", -1, false);
+  }
+
+  ~RMQConsumer()
+  {
+    _connection->close(false);
+    delete _connection;
+  }
+};  // class RMQConsumer
+
+/**
+ * @brief Specific handler for RabbitMQ connections based on libevent.
+ */
+template <typename TypeValue>
+class RMQPublisherHandler : public AMQP::LibEventHandler
+{
+private:
+  /** @brief Path to TLS certificate */
+  std::string _cacert;
+  /** @brief The MPI rank (0 if MPI is not used) */
+  int _rank;
+  /** @brief LibEvent I/O loop */
+  std::shared_ptr<struct event_base> _loop;
+  /** @brief main channel used to send data to the broker */
+  std::shared_ptr<AMQP::TcpChannel> _channel;
+  /** @brief AMQP reliable channel (wrapper of classic channel with added functionalities) */
+  std::shared_ptr<AMQP::Reliable<AMQP::Tagger>> _rchannel;
+  /** @brief RabbitMQ queue */
+  std::string _queue;
+  /** @brief Total number of messages sent */
+  int _nb_msg;
+  /** @brief Number of messages successfully acknowledged */
+  int _nb_msg_ack;
+
+public:
+  /**
+   *  @brief Constructor
+   *  @param[in]  loop         Event Loop
+   *  @param[in]  cacert       SSL Cacert
+   *  @param[in]  rank         MPI rank
+   */
+  RMQPublisherHandler(std::shared_ptr<struct event_base> loop,
+                      std::string cacert,
+                      std::string queue)
+      : AMQP::LibEventHandler(loop.get()),
+        _loop(loop),
+        _rank(0),
+        _cacert(std::move(cacert)),
+        _queue(queue),
+        _nb_msg_ack(0),
+        _nb_msg(0),
+        _channel(nullptr),
+        _rchannel(nullptr)
+  {
+#ifdef __ENABLE_MPI__
+    MPI_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &_rank));
+#endif
+  }
+
+  /**
+   *  @brief  Publish data on RMQ queue.
+   *  @param[in]  data            The data pointer
+   *  @param[in]  data_size       The number of bytes in the data pointer
+   */
+  void publish(const AMSMessage<TypeValue>& msg)
+  {
+    if (_rchannel) {
+      // publish a message via the reliable-channel
+      _rchannel
+          ->publish("", _queue, reinterpret_cast<char*>(msg.data()), msg.size())
+          .onAck([&]() {
+            DBG(RMQPublisherHandler,
+                "[rank=%d] message #%d got acknowledged successfully by RMQ "
+                "server",
+                _rank,
+                _nb_msg)
+            _nb_msg_ack++;
+          })
+          .onNack([&]() {
+            WARNING(RMQPublisherHandler,
+                    "[rank=%d] message #%d received negative acknowledged by "
+                    "RMQ "
+                    "server",
+                    _rank,
+                    _nb_msg)
+          })
+          .onLost([&]() {
+            CFATAL(RMQPublisherHandler,
+                   false,
+                   "[rank=%d] message #%d likely got lost by RMQ server",
+                   _rank,
+                   _nb_msg)
+          })
+          .onError([&](const char* err_message) {
+            CFATAL(RMQPublisherHandler,
+                   false,
+                   "[rank=%d] message #%d did not get send: %s",
+                   _rank,
+                   _nb_msg,
+                   err_message)
+          });
+    } else {
+      WARNING(RMQPublisherHandler,
+              "[rank=%d] The reliable channel was not ready for message #%d.",
+              _rank,
+              _nb_msg)
+    }
+    _nb_msg++;
+  }
+
+  ~RMQPublisherHandler() = default;
+
+private:
+  /**
+   *  @brief Method that is called after a TCP connection has been set up, and
+   * right before the SSL handshake is going to be performed to secure the
+   * connection (only for amqps:// connections). This method can be overridden
+   * in user space to load client side certificates.
+   *  @param[in]  connection      The connection for which TLS was just started
+   *  @param[in]  ssl             Pointer to the SSL structure that can be
+   * modified
+   *  @return     bool            True to proceed / accept the connection, false
+   * to break up
+   */
+  virtual bool onSecuring(AMQP::TcpConnection* connection, SSL* ssl)
+  {
+    ERR_clear_error();
+    unsigned long err;
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+    int ret = SSL_use_certificate_file(ssl, _cacert.c_str(), SSL_FILETYPE_PEM);
+#else
+    int ret = SSL_use_certificate_chain_file(ssl, _cacert.c_str());
+#endif
+    if (ret != 1) {
+      std::string error("openssl: error loading ca-chain (" + _cacert +
+                        ") + from [");
+      SSL_get_error(ssl, ret);
+      if ((err = ERR_get_error())) {
+        error += std::string(ERR_reason_error_string(err));
+      }
+      error += "]";
+      throw std::runtime_error(error);
+    } else {
+      DBG(RMQPublisherHandler,
+          "Success logged with ca-chain %s",
+          _cacert.c_str())
+      return true;
+    }
+  }
+
+  /**
+   *  @brief Method that is called when the secure TLS connection has been
+   * established. This is only called for amqps:// connections. It allows you to
+   * inspect whether the connection is secure enough for your liking (you can
+   *  for example check the server certificate). The AMQP protocol still has
+   *  to be started.
+   *  @param[in]  connection      The connection that has been secured
+   *  @param[in]  ssl             SSL structure from openssl library
+   *  @return     bool            True if connection can be used
+   */
+  virtual bool onSecured(AMQP::TcpConnection* connection,
+                         const SSL* ssl) override
+  {
+    DBG(RMQPublisherHandler,
+        "[rank=%d] Secured TLS connection has been established.",
+        _rank)
+    return true;
+  }
+
+  /**
+   *  @brief Method that is called by the AMQP library when the login attempt
+   *  succeeded. After this the connection is ready to use.
+   *  @param[in]  connection      The connection that can now be used
+   */
+  virtual void onReady(AMQP::TcpConnection* connection) override
+  {
+    DBG(RMQPublisherHandler,
+        "[rank=%d] Sucessfuly logged in. Connection ready to use.\n",
+        _rank)
+
+    _channel = std::make_shared<AMQP::TcpChannel>(connection);
+    _channel->onError([&](const char* message) {
+      CFATAL(RMQPublisherHandler,
+             false,
+             "[rank=%d] Error on channel: %s",
+             _rank,
+             message)
+    });
+
+    _channel->declareQueue(_queue)
+        .onSuccess([&](const std::string& name,
+                       uint32_t messagecount,
+                       uint32_t consumercount) {
+          if (messagecount > 0 || consumercount > 1) {
+            CWARNING(RMQPublisherHandler,
+                     _rank == 0,
+                     "[rank=%d] declared queue: %s (messagecount=%d, "
+                     "consumercount=%d)",
+                     _rank,
+                     _queue.c_str(),
+                     messagecount,
+                     consumercount)
+          }
+          // We can now instantiate the shared buffer between AMS and RMQ
+          DBG(RMQPublisherHandler,
+              "[rank=%d] declared queue: %s",
+              _rank,
+              _queue.c_str())
+          _rchannel =
+              std::make_shared<AMQP::Reliable<AMQP::Tagger>>(*_channel.get());
+        })
+        .onError([&](const char* message) {
+          CFATAL(RMQPublisherHandler,
+                 false,
+                 "[ERROR][rank=%d] Error while creating broker queue (%s): %s",
+                 _rank,
+                 _queue.c_str(),
+                 message)
+        });
+  }
+
+  /**
+    *  Method that is called when the AMQP protocol is ended. This is the
+    *  counter-part of a call to connection.close() to graceful shutdown
+    *  the connection. Note that the TCP connection is at this time still 
+    *  active, and you will also receive calls to onLost() and onDetached()
+    *  @param  connection      The connection over which the AMQP protocol ended
+    */
+  virtual void onClosed(AMQP::TcpConnection* connection) override
+  {
+    DBG(RMQPublisherHandler, "[rank=%d] Connection is closed.\n", _rank)
+  }
+
+  /**
+   *  @brief Method that is called by the AMQP library when a fatal error occurs
+   *  on the connection, for example because data received from RabbitMQ
+   *  could not be recognized, or the underlying connection is lost. This
+   *  call is normally followed by a call to onLost() (if the error occurred
+   *  after the TCP connection was established) and onDetached().
+   *  @param[in]  connection      The connection on which the error occurred
+   *  @param[in]  message         A human readable error message
+   */
+  virtual void onError(AMQP::TcpConnection* connection,
+                       const char* message) override
+  {
+    DBG(RMQPublisherHandler,
+        "[rank=%d] fatal error when establishing TCP connection: %s\n",
+        _rank,
+        message)
+  }
+
+  /**
+    *  Final method that is called. This signals that no further calls to your
+    *  handler will be made about the connection.
+    *  @param  connection      The connection that can be destructed
+    */
+  virtual void onDetached(AMQP::TcpConnection* connection) override
+  {
+    //  add your own implementation, like cleanup resources or exit the application
+    DBG(RMQPublisherHandler, "[rank=%d] Connection is detached.\n", _rank)
+  }
+};  // class RMQPublisherHandler
+
+
+/**
+ * @brief Class that manages a RabbitMQ broker and handles connection, event
+ * loop and set up various handlers.
+ */
+template <typename TypeValue>
+class RMQPublisher
+{
+private:
+  /** @brief Connection to the broker */
+  AMQP::TcpConnection* _connection;
+  /** @brief name of the queue to send data */
+  std::string _queue;
+  /** @brief TLS certificate file */
+  std::string _cacert;
+  /** @brief MPI rank (if MPI is used, otherwise 0) */
+  int _rank;
+  /** @brief The event loop for sender (usually the default one in libevent) */
+  std::shared_ptr<struct event_base> _loop;
+  /** @brief The handler which contains various callbacks for the sender */
+  std::shared_ptr<RMQPublisherHandler<TypeValue>> _handler;
+
+public:
+  RMQPublisher(const RMQPublisher&) = delete;
+  RMQPublisher& operator=(const RMQPublisher&) = delete;
+
+  RMQPublisher(const AMQP::Address& address,
+               std::string cacert,
+               std::string queue)
+      : _rank(0), _queue(queue), _cacert(cacert), _handler(nullptr)
+  {
+#ifdef __ENABLE_MPI__
+    MPI_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &_rank));
+#endif
+#ifdef EVTHREAD_USE_PTHREADS_IMPLEMENTED
+    evthread_use_pthreads();
+#endif
+    CDEBUG(RMQPublisher,
+           _rank == 0,
+           "Libevent %s (LIBEVENT_VERSION_NUMBER = %#010x)",
+           event_get_version(),
+           event_get_version_number());
+    CDEBUG(RMQPublisher,
+           _rank == 0,
+           "%s (OPENSSL_VERSION_NUMBER = %#010x)",
+           OPENSSL_VERSION_TEXT,
+           OPENSSL_VERSION_NUMBER);
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+    SSL_library_init();
+#else
+    OPENSSL_init_ssl(0, NULL);
+#endif
+    CINFO(RMQPublisher,
+          _rank == 0,
+          "RabbitMQ address: %s:%d/%s (queue = %s)",
+          address.hostname().c_str(),
+          address.port(),
+          address.vhost().c_str(),
+          _queue.c_str())
+
+    _loop = std::shared_ptr<struct event_base>(event_base_new(),
+                                               [](struct event_base* event) {
+                                                 event_base_free(event);
+                                               });
+
+    _handler = std::make_shared<RMQPublisherHandler<TypeValue>>(_loop,
+                                                                _cacert,
+                                                                _queue);
+    _connection = new AMQP::TcpConnection(_handler.get(), address);
+  }
+
+  /**
+   * @brief Check if the underlying RabbitMQ connection is ready and usable
+   * @return True if the publisher is ready to publish
+   */
+  bool ready_publish() { return _connection->ready() && _connection->usable(); }
+
+  /**
+   * @brief Wait that the connection is ready (blocking call)
+   * @return True if the publisher is ready to publish
+   */
+  void wait_ready(int ms = 500, int timeout_sec = 30)
+  {
+    // We wait for the connection to be ready
+    int total_time = 0;
+    while (!ready_publish()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+      DBG(RMQPublisher,
+          "[rank=%d] Waiting for connection to be ready...",
+          _rank)
+      total_time += ms;
+      if (total_time > timeout_sec * 1000) {
+        DBG(RMQPublisher, "[rank=%d] Connection timeout", _rank)
+        break;
+        // TODO: if connection is not working -> revert to classic file DB.
+      }
+    }
+  }
+
+  /**
+   * @brief Start the underlying I/O loop (blocking call)
+   */
+  void start()
+  {
+    event_base_dispatch(_loop.get());
+    // We wait for the connection to be ready
+    wait_ready();
+  }
+
+  /**
+   * @brief Stop the underlying I/O loop
+   */
+  void stop() { event_base_loopexit(_loop.get(), NULL); }
+
+  void publish(const AMSMessage<TypeValue>& message)
+  {
+    _handler->publish(message);
+  }
+
+  ~RMQPublisher() { delete _connection; }
+};  // class RMQPublisher
+
+/**
+ * @brief Class that manages a RabbitMQ broker and handles connection, event
+ * loop and set up various handlers.
+ * @details This class manages a specific type of database backend in AMSLib.
+ * Instead of writing inputs/outputs directly to files (CSV or HDF5), we
+ * send these elements (a collection of inputs and their corresponding outputs)
+ * to a service called RabbitMQ which is listening on a given IP and port.
+ * 
+ * This class requires a RabbitMQ server to be running somewhere,
+ * the credentials of that server should be formatted as a JSON file as follows:
+ *
+ *  {
+ *    "rabbitmq-name": "testamsrabbitmq",
+ *    "rabbitmq-password": "XXX",
+ *    "rabbitmq-user": "pottier1",
+ *    "rabbitmq-vhost": "ams",
+ *    "service-port": 31495,
+ *    "service-host": "url.czapps.llnl.gov",
+ *    "rabbitmq-cert": "tls-cert.crt",
+ *    "rabbitmq-inbound-queue": "test4",
+ *    "rabbitmq-outbound-queue": "test3"
+ *  }
+ *
+ * The TLS certificate must be generated by the user and the absolute paths are preferred.
+ * A TLS certificate can be generated with the following command:
+ *
+ *    openssl s_client \ 
+ *        -connect $REMOTE_HOST:$REMOTE_PORT -showcerts < /dev/null \
+ *        2>/dev/null | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' > tls.crt
+ * 
+ * RabbitMQDB creates two RabbitMQ connections per MPI rank, one for publishing data to RMQ and one for consuming data.
+ * Each connection has its own I/O loop (based on Libevent) running in a dedicated thread because I/O loop are blocking.
+ * Therefore, we have two threads per MPI rank.
+ * 
+ * 1. Publishing data: When the store() method is being called, it triggers a series of calls:
+ *
+ *        RabbitMQDB::store() -> RMQPublisher::publish() -> RMQPublisherHandler::publish()
+ *
+ * Here, RMQPublisherHandler::publish() has access to internal RabbitMQ channels and can publish the message 
+ * on the outbound queue (rabbitmq-outbound-queue in the JSON configuration).
+ * Note that storing data like that is much faster than with writing files as a call to RabbitMQDB::store()
+ * is virtually free, the actual data sending part is taking place in a thread and does not slow down
+ * the main simulation (MPI).
+ *
+ * 2. Consuming data: The inbound queue (rabbitmq-inbound-queue in the JSON configuration) is the queue for incoming data. The
+ * RMQConsumer is listening on that queue for messages. In the AMSLib approach, that queue is used to communicate 
+ * updates to rank regarding the ML surrrogate model. RMQConsumer will automatically populate a std::vector with all
+ * messages received since the execution of AMS started.
+ *
+ * Glabal note: Most calls dealing with RabbitMQ (to establish a RMQ connection, opening a channel, publish data etc)
+ * are asynchronous callbacks (similar to asyncio in Python or future in C++).
+ * So, the simulation can have already started and the RMQ connection might not be valid which is why most part
+ * of the code that deals with RMQ are wrapped into callbacks that will get run only in case of success.
+ * For example, we create a channel only if the underlying connection has been succesfuly initiated
+ * (see RMQPublisherHandler::onReady()).
  */
 template <typename TypeValue>
 class RabbitMQDB final : public BaseDB<TypeValue>
@@ -1163,50 +1726,32 @@ class RabbitMQDB final : public BaseDB<TypeValue>
 private:
   /** @brief Path of the config file (JSON) */
   std::string _config;
-  /** @brief Connection to the broker */
-  AMQP::TcpConnection* _connection;
-  /** @brief main channel used to send data to the broker */
-  std::shared_ptr<AMQP::TcpChannel> _channel_send;
-  /** @brief main channel used to receive data from the broker */
-  std::shared_ptr<AMQP::TcpChannel> _channel_receive;
-  /** @brief Broker address */
-  AMQP::Address* _address;
   /** @brief name of the queue to send data */
   std::string _queue_sender;
   /** @brief name of the queue to receive data */
   std::string _queue_receiver;
   /** @brief MPI rank (if MPI is used, otherwise 0) */
   int _rank;
-  /** @brief The event loop for sender (usually the default one in libevent) */
-  struct event_base* _loop_sender;
-  /** @brief The event loop receiver */
-  struct event_base* _loop_receiver;
-  /** @brief The handler which contains various callbacks for the sender */
-  std::shared_ptr<RabbitMQHandler> _handler_sender;
-  /** @brief The handler which contains various callbacks for the receiver */
-  std::shared_ptr<RabbitMQHandler> _handler_receiver;
-  /** @brief evbuffer that is responsible to offload data to RabbitMQ*/
-  EventBuffer<TypeValue>* _evbuffer;
-  /** @brief The worker in charge of sending data to the broker (dedicated
-   * thread) */
-  std::shared_ptr<struct rmq_sender> _sender;
-  /** @brief The worker in charge of sending data to the broker (dedicated
-   * thread) */
-  std::shared_ptr<struct rmq_consumer> _receiver;
-  /** @brief The number of messages to be sent */
-  int _nb_msg_send;
-  /** @brief Queue that contains all the messages received on receiver queue */
-  std::shared_ptr<std::vector<inbound_msg>> _messages;
+  /** @brief Represent the ID of the last message sent */
+  int _msg_tag;
+  /** @brief Publisher sending messages to RMQ server */
+  std::shared_ptr<RMQPublisher<TypeValue>> _publisher;
+  /** @brief Thread in charge of the publisher */
+  std::thread _publisher_thread;
+  /** @brief Consumer listening to RMQ and consuming messages */
+  std::shared_ptr<RMQConsumer<TypeValue>> _consumer;
+  /** @brief Thread in charge of the consumer */
+  std::thread _consumer_thread;
 
   /**
    * @brief Read a JSON and create a hashmap
    * @param[in] fn Path of the RabbitMQ JSON config file
    * @return a hashmap (std::unordered_map) of the JSON file
    */
-  json _read_config(std::string fn)
+  std::unordered_map<std::string, std::string> _read_config(std::string fn)
   {
     std::ifstream config;
-    json connection_info = {
+    std::unordered_map<std::string, std::string> connection_info = {
         {"rabbitmq-erlang-cookie", ""},
         {"rabbitmq-name", ""},
         {"rabbitmq-password", ""},
@@ -1239,170 +1784,9 @@ private:
       config.close();
     } else {
       std::string err = "Could not open JSON file: " + fn;
-      throw std::runtime_error(err);
+      CFATAL(RabbitMQDB, false, err.c_str());
     }
     return connection_info;
-  }
-
-  /** @brief linearize all elements of a vector of C-vectors
-   * in a single C-vector. Data are transposed.
-   *
-   * @tparam TypeInValue Type of the source value.
-   * @param[in] n The number of elements of the vectors.
-   * @param[in] features A vector containing C-vector of feature values.
-   * @param[in] add_dims A bool. if true we add the dimensions of the 
-   * flatten feature as first element and second element of the result array.
-   * @return A pointer to a C-vector containing the linearized values. The
-   * C-vector is_same resident in the same device as the input feature pointers.
-   */
-  template <typename TypeInValue>
-  PERFFASPECT()
-  static inline TypeValue* flatten_features(
-      const size_t n,
-      const std::vector<TypeInValue*>& features,
-      bool add_dims = false)
-  {
-    const size_t nfeatures = features.size();
-    const size_t nvalues = n * nfeatures;
-
-    size_t offset = 0;
-    // Offset to have space to write off the dimensions at the begiginning of the array
-    if (add_dims) offset = 2;
-
-    TypeValue* data =
-        (TypeValue*)malloc((nvalues + offset) * sizeof(TypeValue));
-
-    if (add_dims) {
-      data[0] = (TypeValue)n;
-      data[1] = (TypeValue)features.size();
-    }
-
-    for (size_t d = 0; d < nfeatures; d++) {
-      for (size_t i = 0; i < n; i++) {
-        data[offset + (i * nfeatures) + d] =
-            static_cast<TypeValue>(features[d][i]);
-      }
-    }
-    return data;
-  }
-
-  /**
-   * @brief Initialize the connection with the broker, open a channel and set up a
-   * queue. Then it also sets up a worker thread and start its even loop. Now
-   * the broker is ready for push operation.
-   * @param[in] queue The name of the queue to declare
-   */
-  void start_sender(const std::string& queue)
-  {
-    _channel_send = std::make_shared<AMQP::TcpChannel>(_connection);
-    _channel_send->onError([&_rank = _rank](const char* message) {
-      CFATAL(RabbitMQDB,
-             false,
-             "[rank=%d] Error while creating broker channel: %s",
-             _rank,
-             message)
-      // TODO: throw dedicated excpetion and try to recover
-      // from it (re-trying to open a queue, testing if the RM server is alive
-      // etc)
-      throw std::runtime_error(message);
-    });
-
-    _channel_send->declareQueue(queue)
-        .onSuccess([queue, &_rank = _rank](const std::string& name,
-                                           uint32_t messagecount,
-                                           uint32_t consumercount) {
-          if (messagecount > 0 || consumercount > 1) {
-            WARNING(RabbitMQDB,
-                    "[rank=%d] declared queue: %s (messagecount=%d, "
-                    "consumercount=%d)",
-                    _rank,
-                    queue.c_str(),
-                    messagecount,
-                    consumercount)
-          }
-        })
-        .onError([queue, &_rank = _rank](const char* message) {
-          CFATAL(RabbitMQDB,
-                 false,
-                 "[ERROR][rank=%d] Error while creating broker queue (%s): %s",
-                 _rank,
-                 queue.c_str(),
-                 message)
-          // TODO: throw dedicated excpetion and try to recover
-          // from it (re-trying to open a queue, testing if the RM server is
-          // alive etc)
-          throw std::runtime_error(message);
-        });
-
-    _sender = std::make_shared<struct rmq_sender>();
-    _sender->loop = _loop_sender;
-    _evbuffer = new EventBuffer<TypeValue>(_rank,
-                                           _loop_sender,
-                                           _channel_send,
-                                           _queue_sender);
-    if (pthread_create(
-            &_sender->id, NULL, start_worker_sender, _sender.get())) {
-      FATAL(RabbitMQDB, "error pthread_create for sender worker");
-    }
-  }
-
-  /**
-   * @brief Initialize the connection with the broker, open a channel and set up a
-   * queue. Then it also sets up a worker thread and start its even loop. Now
-   * the broker is ready for push operation.
-   * @param[in] queue The name of the queue to declare
-   */
-  void start_receiver(const std::string& queue)
-  {
-    _channel_receive = std::make_shared<AMQP::TcpChannel>(_connection);
-    _channel_receive->onError([&_rank = _rank](const char* message) {
-      CFATAL(RabbitMQDB,
-             false,
-             "[rank=%d] Error while creating broker channel: %s",
-             _rank,
-             message)
-      // TODO: throw dedicated excpetion and try to recover
-      // from it (re-trying to open a queue, testing if the RM server is alive
-      // etc)
-      throw std::runtime_error(message);
-    });
-
-    _channel_receive->declareQueue(queue)
-        .onSuccess([queue, &_rank = _rank](const std::string& name,
-                                           uint32_t messagecount,
-                                           uint32_t consumercount) {
-          if (messagecount > 0 || consumercount > 1) {
-            WARNING(RabbitMQDB,
-                    "[rank=%d] declared queue: %s (messagecount=%d, "
-                    "consumercount=%d)",
-                    _rank,
-                    queue.c_str(),
-                    messagecount,
-                    consumercount)
-          }
-        })
-        .onError([queue, &_rank = _rank](const char* message) {
-          CFATAL(RabbitMQDB,
-                 false,
-                 "[ERROR][rank=%d] Error while creating broker queue (%s): %s",
-                 _rank,
-                 queue.c_str(),
-                 message)
-          // TODO: throw dedicated excpetion and try to recover
-          // from it (re-trying to open a queue, testing if the RM server is
-          // alive etc)
-          throw std::runtime_error(message);
-        });
-
-    _receiver = std::make_shared<struct rmq_consumer>();
-    _receiver->loop = _loop_receiver;
-    _receiver->channel = _channel_receive;
-    // Structure that will contain all messages received
-    _receiver->messages = std::make_shared<std::vector<inbound_msg>>();
-    if (pthread_create(
-            &_receiver->id, NULL, start_worker_consumer, _receiver.get())) {
-      FATAL(RabbitMQDB, "error pthread_create for receiver worker");
-    }
   }
 
 public:
@@ -1412,15 +1796,13 @@ public:
   RabbitMQDB(char* config, uint64_t id)
       : BaseDB<TypeValue>(id),
         _rank(0),
-        _nb_msg_send(0),
-        _handler_sender(nullptr),
-        _evbuffer(nullptr),
-        _address(nullptr),
-        _sender(nullptr),
-        _receiver(nullptr)
+        _msg_tag(0),
+        _config(std::string(config)),
+        _publisher(nullptr),
+        _consumer(nullptr)
   {
-    _config = std::string(config);
-    auto rmq_config = _read_config(this->_config);
+    std::unordered_map<std::string, std::string> rmq_config =
+        _read_config(_config);
     _queue_sender =
         rmq_config["rabbitmq-outbound-queue"];  // Queue to send data to
     _queue_receiver =
@@ -1428,141 +1810,52 @@ public:
     bool is_secure = true;
 
     if (rmq_config["service-port"].empty()) {
-      FATAL(RabbitMQDB,
-            "service-port is empty, make sure the port number is present in "
-            "the JSON configuration")
+      CFATAL(RabbitMQDB,
+             false,
+             "service-port is empty, make sure the port number is present in "
+             "the JSON configuration")
+      return;
     }
     if (rmq_config["service-host"].empty()) {
-      FATAL(RabbitMQDB,
-            "service-host is empty, make sure the host is present in the JSON "
-            "configuration")
+      CFATAL(RabbitMQDB,
+             false,
+             "service-host is empty, make sure the host is present in the JSON "
+             "configuration")
+      return;
     }
 
     uint16_t port = std::stoi(rmq_config["service-port"]);
     if (_queue_sender.empty() || _queue_receiver.empty()) {
-      FATAL(RabbitMQDB,
-            "Queues are empty, please check your credentials file and make "
-            "sure rabbitmq-inbound-queue and rabbitmq-outbound-queue exist")
+      CFATAL(RabbitMQDB,
+             false,
+             "Queues are empty, please check your credentials file and make "
+             "sure rabbitmq-inbound-queue and rabbitmq-outbound-queue exist")
+      return;
     }
-
-#ifdef __ENABLE_MPI__
-    MPI_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &_rank));
-#endif
-#ifdef EVTHREAD_USE_PTHREADS_IMPLEMENTED
-    evthread_use_pthreads();
-#endif
-    _loop_sender = event_base_new();
-    _loop_receiver = event_base_new();
-    CDEBUG(RabbitMQDB, _rank == 0, "Libevent %s\n", event_get_version());
-    CDEBUG(RabbitMQDB,
-           _rank == 0,
-           "%s (OPENSSL_VERSION_NUMBER = %#010x)\n",
-           OPENSSL_VERSION_TEXT,
-           OPENSSL_VERSION_NUMBER);
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-    SSL_library_init();
-#else
-    OPENSSL_init_ssl(0, NULL);
-#endif
-    _handler_sender = std::make_shared<RabbitMQHandler>(_rank,
-                                                        _loop_sender,
-                                                        rmq_config["rabbitmq-"
-                                                                   "cert"]);
-    _handler_receiver = std::make_shared<RabbitMQHandler>(_rank,
-                                                          _loop_receiver,
-                                                          rmq_config["rabbitmq-"
-                                                                     "cert"]);
 
     AMQP::Login login(rmq_config["rabbitmq-user"],
                       rmq_config["rabbitmq-password"]);
+    AMQP::Address address(rmq_config["service-host"],
+                          port,
+                          login,
+                          rmq_config["rabbitmq-vhost"],
+                          is_secure);
 
-    _address = new AMQP::Address(rmq_config["service-host"],
-                                 port,
-                                 login,
-                                 rmq_config["rabbitmq-vhost"],
-                                 is_secure);
+    std::string cacert = rmq_config["rabbitmq-cert"];
+    _publisher = std::make_shared<RMQPublisher<TypeValue>>(address,
+                                                           cacert,
+                                                           _queue_sender);
+    _consumer = std::make_shared<RMQConsumer<TypeValue>>(address,
+                                                         cacert,
+                                                         _queue_receiver);
 
-    if (_address == nullptr)
-      throw std::runtime_error("something is wrong, address is NULL");
-
-    CDEBUG(RabbitMQDB,
-           _rank == 0,
-           "RabbitMQ address: %s:%d/%s (sender queue = %s, receiver queue = "
-           "%s)",
-           _address->hostname().c_str(),
-           _address->port(),
-           _address->vhost().c_str(),
-           _queue_sender.c_str(),
-           _queue_receiver.c_str())
-
-    _connection = new AMQP::TcpConnection(_handler_sender.get(), *_address);
-    start_sender(_queue_sender);
-    start_receiver(_queue_receiver);
-    // mandatory to give some time to OpenSSL and RMQ to set things up,
-    // TODO: find a way to remove that magic sleep and actually check if OpenSSL
-    // + RMQ are up and running
-    std::this_thread::sleep_for(std::chrono::seconds(2));
-  }
-
-  /**
-   * @brief Make sure the evbuffer is being drained.
-   * This function blocks until the buffer is empty.
-   * @param[in] sleep_time Number of seconds between two checking (active
-   * pooling)
-   */
-  void drain(int sleep_time = 1)
-  {
-    if (!(_sender && _evbuffer)) {
-      return;
-    }
-    while (true) {
-      if (_evbuffer->is_drained()) {
-        break;
-      }
-      sleep(sleep_time);
-    }
-  }
-
-  /**
-   * @brief Return the most recent messages and delete it
-   * @return A structure inbound_msg which is a std::tuple (see typedef)
-   */
-  inbound_msg pop_messages()
-  {
-    if (!(_messages->empty())) {
-      inbound_msg msg = _messages->back();
-      _messages->pop_back();
-      return msg;
-    }
-    return std::make_tuple("", "", "", -1, false);
-  }
-
-  /**
-   * @brief Return the message corresponding to the delivery tag. Do not delete the
-   * message.
-   * @param[in] delivery_tag Delivery tag that will be returned (if found)
-   * @return A structure inbound_msg which is a std::tuple (see typedef)
-   */
-  inbound_msg get_messages(uint64_t delivery_tag)
-  {
-    if (!(_messages->empty())) {
-      auto it = std::find_if(_messages->begin(),
-                             _messages->end(),
-                             [&delivery_tag](const inbound_msg& e) {
-                               return std::get<3>(e) == delivery_tag;
-                             });
-      if (it != _messages->end()) return *it;
-    }
-    return std::make_tuple("", "", "", -1, false);
+    _publisher_thread = std::thread([&]() { _publisher->start(); });
+    _consumer_thread = std::thread([&]() { _consumer->start(); });
   }
 
   /**
    * @brief Takes an input and an output vector each holding 1-D vectors data, and push
-   * it onto the libevent buffer. We flatten the inputs/outputs and send one 
-   * message for each. The first two elements of the message are num_elements 
-   * and the feature size. These elements are needed to reconstruct the inputs
-   * and outputs on the other side (RabbitMQ).
-   * 
+   * it onto the libevent buffer.
    * @param[in] num_elements Number of elements of each 1-D vector
    * @param[in] inputs Vector of 1-D vectors containing the inputs to be sent
    * @param[in] outputs Vector of 1-D vectors, each 1-D vectors contains
@@ -1573,48 +1866,18 @@ public:
              std::vector<TypeValue*>& inputs,
              std::vector<TypeValue*>& outputs) override
   {
-    CINFO(RabbitMQDB,
-          true,
-          "RabbitMQDB of type %s stores %ld elements of input/output "
-          "dimensions (%d, %d)",
-          type().c_str(),
-          num_elements,
-          inputs.size(),
-          outputs.size())
-
-    const size_t inputs_size = num_elements * inputs.size();
-    auto inputs_data = flatten_features(num_elements, inputs, true);
     DBG(RabbitMQDB,
-        "[store(%d, %d, %d)] input sent %d B",
+        "[tag=%d] %s stores %ld elements of input/output "
+        "dimensions (%d, %d)",
+        _msg_tag,
+        type().c_str(),
         num_elements,
         inputs.size(),
-        outputs.size(),
-        inputs_size * sizeof(TypeValue))
-    _nb_msg_send++;
-    _evbuffer->push(static_cast<void*>(inputs_data),
-                    inputs_size * sizeof(TypeValue));
+        outputs.size())
 
-    // TODO: investigate that
-    // Necessary for some reasons, other the event buffer overheat
-    // "[err] buffer.c:1066: Assertion chain || datlen==0 failed in
-    // evbuffer_copyout" potentially segfault, and with CUDA could also lead to
-    // packet losses
-    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-
-    const size_t outputs_size = num_elements * outputs.size();
-    auto outputs_data = flatten_features(num_elements, outputs, true);
-    DBG(RabbitMQDB,
-        "[store(%d, %d, %d)] output sent %d B",
-        num_elements,
-        inputs.size(),
-        outputs.size(),
-        outputs_size * sizeof(TypeValue))
-    _nb_msg_send++;
-    _evbuffer->push(static_cast<void*>(outputs_data),
-                    outputs_size * sizeof(TypeValue));
-
-    free(inputs_data);
-    free(outputs_data);
+    auto msg = AMSMessage<TypeValue>(_msg_tag, num_elements, inputs, outputs);
+    _publisher->publish(msg);
+    _msg_tag++;
   }
 
   /**
@@ -1623,28 +1886,12 @@ public:
    */
   std::string type() override { return "rabbitmq"; }
 
-  AMSDBType dbType() { return AMSDBType::RMQ; };
-
-  /**
-   * @brief Return the number of messages that 
-   * has been push to the buffer
-   * @return The number of messages sent
-   */
-  int nb_msg() const { return _nb_msg_send; }
-
   ~RabbitMQDB()
   {
-    drain();
-    pthread_kill(_sender->id, SIGUSR1);
-    pthread_kill(_receiver->id, SIGUSR1);
-    _channel_send->close();
-    _channel_receive->close();
-    event_base_free(_loop_sender);
-    event_base_free(_loop_receiver);
-    delete _evbuffer;
-    delete _address;
-    _connection->close();
-    free(_connection);
+    _publisher->stop();
+    _consumer->stop();
+    _publisher_thread.join();
+    _consumer_thread.join();
   }
 };  // class RabbitMQDB
 
@@ -1663,6 +1910,7 @@ public:
 template <typename TypeValue>
 BaseDB<TypeValue>* createDB(char* dbPath, AMSDBType dbType, uint64_t rId = 0)
 {
+
   switch (dbType) {
     case AMSDBType::CSV:
       return new csvDB<TypeValue>(dbPath, rId);
