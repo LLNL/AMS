@@ -224,7 +224,8 @@ private:
                         long num_in,
                         size_t num_out,
                         const TypeInValue** inputs,
-                        TypeInValue** outputs)
+                        TypeInValue** outputs,
+                        TypeInValue** outputs_stdev)
   {
   }
 
