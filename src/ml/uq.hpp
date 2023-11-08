@@ -20,7 +20,7 @@ template <typename FPTypeValue>
 class UQ
 {
 public:
-PERFFASPECT()
+  PERFFASPECT()
   static void evaluate(
       AMSUQPolicy uqPolicy,
       const int totalElements,
@@ -42,7 +42,8 @@ PERFFASPECT()
                                                         AMSResourceType::HOST);
 
       CALIPER(CALI_MARK_BEGIN("SURROGATE");)
-      DBG(Workflow, "Model exists, I am calling DeltaUQ surrogate (for all data)");
+      DBG(Workflow,
+          "Model exists, I am calling DeltaUQ surrogate (for all data)");
       surrogate->evaluate(totalElements, inputs, outputs, outputs_stdev);
       CALIPER(CALI_MARK_END("SURROGATE");)
 
@@ -71,7 +72,8 @@ PERFFASPECT()
       }
 
       for (int dim = 0; dim < ndims; ++dim)
-        ams::ResourceManager::deallocate(outputs_stdev[dim], AMSResourceType::HOST);
+        ams::ResourceManager::deallocate(outputs_stdev[dim],
+                                         AMSResourceType::HOST);
       CALIPER(CALI_MARK_END("DELTAUQ");)
     } else {
       CALIPER(CALI_MARK_BEGIN("HDCACHE");)
@@ -85,7 +87,7 @@ PERFFASPECT()
     }
   }
 
-PERFFASPECT()
+  PERFFASPECT()
   static void setThreshold(FPTypeValue threshold) { _threshold = threshold; }
 
 private:

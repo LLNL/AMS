@@ -16,9 +16,9 @@
 #include <vector>
 
 #include "AMS.h"
-#include "ml/uq.hpp"
 #include "ml/hdcache.hpp"
 #include "ml/surrogate.hpp"
+#include "ml/uq.hpp"
 #include "resource_manager.hpp"
 #include "wf/basedb.hpp"
 
@@ -110,7 +110,8 @@ class AMSWorkflow
 
     std::vector<FPTypeValue *> hInputs, hOutputs;
 
-    if (appDataLoc == AMSResourceType::HOST ) return DB->store(num_elements, inputs, outputs);
+    if (appDataLoc == AMSResourceType::HOST)
+      return DB->store(num_elements, inputs, outputs);
 
     // Compute number of elements that fit inside the buffer
     size_t bElements = bSize / sizeof(FPTypeValue);
@@ -197,10 +198,9 @@ public:
                           uqPolicy == AMSUQPolicy::DeltaUQ_Mean)
                              ? true
                              : false);
-      surrogate = SurrogateModel<FPTypeValue>::getInstance(
-          surrogate_path,
-          appDataLoc,
-          is_DeltaUQ);
+      surrogate = SurrogateModel<FPTypeValue>::getInstance(surrogate_path,
+                                                           appDataLoc,
+                                                           is_DeltaUQ);
     }
 
     UQ<FPTypeValue>::setThreshold(threshold);
@@ -317,7 +317,8 @@ public:
       return;
     }
     // The predicate with which we will split the data on a later step
-    bool *p_ml_acceptable = ams::ResourceManager::allocate<bool>(totalElements, appDataLoc);
+    bool *p_ml_acceptable =
+        ams::ResourceManager::allocate<bool>(totalElements, appDataLoc);
 
     // -------------------------------------------------------------
     // STEP 1: call the hdcache to look at input uncertainties
@@ -325,12 +326,12 @@ public:
     // -------------------------------------------------------------
     CALIPER(CALI_MARK_BEGIN("UQ_MODULE");)
     UQ<FPTypeValue>::evaluate(uqPolicy,
-                 totalElements,
-                 origInputs,
-                 origOutputs,
-                 hdcache,
-                 surrogate,
-                 p_ml_acceptable);
+                              totalElements,
+                              origInputs,
+                              origOutputs,
+                              hdcache,
+                              surrogate,
+                              p_ml_acceptable);
     CALIPER(CALI_MARK_END("UQ_MODULE");)
 
     DBG(Workflow, "Computed Predicates")
@@ -341,7 +342,8 @@ public:
 
     for (int i = 0; i < inputDim; i++) {
       packedInputs.emplace_back(
-          ams::ResourceManager::allocate<FPTypeValue>(totalElements, appDataLoc));
+          ams::ResourceManager::allocate<FPTypeValue>(totalElements,
+                                                      appDataLoc));
     }
 
     DBG(Workflow, "Allocated input resources")
@@ -352,15 +354,16 @@ public:
     // STEP 3: call physics module only where d_dense_need_phys = true
     // -----------------------------------------------------------------
     // ---- 3a: we need to pack the sparse data based on the uq flag
-    const long packedElements =
-        data_handler::pack(appDataLoc, predicate, totalElements, origInputs, packedInputs);
+    const long packedElements = data_handler::pack(
+        appDataLoc, predicate, totalElements, origInputs, packedInputs);
 
     // Pointer values which store output data values
     // to be computed using the eos function.
     std::vector<FPTypeValue *> packedOutputs;
     for (int i = 0; i < outputDim; i++) {
       packedOutputs.emplace_back(
-          ams::ResourceManager::allocate<FPTypeValue>(packedElements, appDataLoc));
+          ams::ResourceManager::allocate<FPTypeValue>(packedElements,
+                                                      appDataLoc));
     }
 
     {
@@ -398,7 +401,8 @@ public:
     }
 
     // ---- 3c: unpack the data
-    data_handler::unpack(appDataLoc, predicate, totalElements, packedOutputs, origOutputs);
+    data_handler::unpack(
+        appDataLoc, predicate, totalElements, packedOutputs, origOutputs);
 
     DBG(Workflow, "Finished physics evaluation")
 

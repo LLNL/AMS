@@ -116,8 +116,9 @@ inline uint32_t getVerbosityLevel()
         actual_size);                                                \
   } while (0);
 
-#define THROW(exception, msg) \
-  throw exception(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + msg)
+#define THROW(exception, msg)                                              \
+  throw exception(std::string(__FILE__) + ":" + std::to_string(__LINE__) + \
+                  " " + msg)
 #else  // LIBAMS_VERBOSE is disabled
 #define CWARNING(id, condition, ...)
 
