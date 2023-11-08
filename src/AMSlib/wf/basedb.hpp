@@ -1273,37 +1273,6 @@ public:
     }
     return std::make_tuple("", "", "", -1, false);
   }
-  EventBuffer* self = static_cast<EventBuffer*>(arg);
-  // we remove only if some byte got added (this callback will get
-  // trigger when data is added AND removed from the buffer
-  DBG(RabbitMQDB,
-      "evbuffer_cb_info(lenght=%zu): n_added=%zu B, n_deleted=%zu B, "
-      "orig_size=%zu B",
-      evbuffer_get_length(buffer),
-      info->n_added,
-      info->n_deleted,
-      info->orig_size)
-
-  if (info->n_added > 0) {
-    // Destination buffer (of TypeValue size, either float or double)
-    size_t datlen = info->n_added;  // Total number of bytes
-    int k = datlen / sizeof(TypeValue);
-    if (datlen % sizeof(TypeValue) != 0) {
-      CFATAL(RabbitMQDB,
-             false,
-             "Buffer seems corrupted or not the right type of TypeValue");
-    }
-    auto data = std::make_unique<TypeValue[]>(6 + datlen);
-
-    evbuffer_lock(buffer);
-    // Now we drain the evbuffer structure to fill up the destination buffer
-    int nbyte_drained = evbuffer_remove(buffer, data.get(), datlen);
-    if (nbyte_drained < 0) {
-      WARNING(RabbitMQDB,
-              "evbuffer_remove(): cannot remove %d data from buffer",
-              nbyte_drained);
-    }
-    evbuffer_unlock(buffer);
 
     /**
    * @brief Return the message corresponding to the delivery tag. Do not delete the
@@ -1936,6 +1905,11 @@ public:
    * @return The type of the broker
    */
     std::string type() override { return "rabbitmq"; }
+
+  /**
+   * @brief Return the DB enumerationt type (File, Redis etc)
+   */
+  AMSDBType dbType() { return AMSDBType::RMQ; };
 
     ~RabbitMQDB()
     {
