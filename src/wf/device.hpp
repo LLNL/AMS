@@ -11,6 +11,9 @@
 #include <cstddef>
 #include <cstring>
 #include <iostream>
+#include <stdexcept>
+
+#include "wf/debug.h"
 
 #ifdef __ENABLE_CUDA__
 #include "cuda/utilities.cuh"
@@ -32,6 +35,13 @@ void computePredicate(float *data,
 #else
   return;
 #endif
+}
+
+PERFFASPECT()
+void computePredicateDeltaUQ()
+{
+  THROW(std::runtime_error,
+        "Computing DeltaUQ predications on device is not supported yet");
 }
 
 template <typename TypeInValue, typename TypeOutValue>
@@ -91,8 +101,14 @@ int unpack(bool cond,
            int dims)
 {
 #ifdef __ENABLE_CUDA__
-  return compact(cond, const_cast<const TypeValue**> (sparse),
-      dense, predicate, n, dims, 1024, true);
+  return compact(cond,
+                 const_cast<const TypeValue **>(sparse),
+                 dense,
+                 predicate,
+                 n,
+                 dims,
+                 1024,
+                 true);
 #else
   return 0;
 #endif
@@ -184,27 +200,27 @@ inline void DtoHMemcpy(void *dest, void *src, size_t nBytes)
 }
 #else
 PERFFASPECT()
-inline void DtoDMemcpy(void* dest, void* src, size_t nBytes)
+inline void DtoDMemcpy(void *dest, void *src, size_t nBytes)
 {
   std::cerr << "DtoD Memcpy Not Enabled" << std::endl;
   exit(-1);
 }
 
 PERFFASPECT()
-inline void HtoHMemcpy(void* dest, void* src, size_t nBytes)
+inline void HtoHMemcpy(void *dest, void *src, size_t nBytes)
 {
   std::memcpy(dest, src, nBytes);
 }
 
 PERFFASPECT()
-inline void HtoDMemcpy(void* dest, void* src, size_t nBytes)
+inline void HtoDMemcpy(void *dest, void *src, size_t nBytes)
 {
   std::cerr << "HtoD Memcpy Not Enabled" << std::endl;
   exit(-1);
 };
 
 PERFFASPECT()
-inline void DtoHMemcpy(void* dest, void* src, size_t nBytes)
+inline void DtoHMemcpy(void *dest, void *src, size_t nBytes)
 {
   std::cerr << "DtoH Memcpy Not Enabled" << std::endl;
   exit(-1);
