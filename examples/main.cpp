@@ -31,12 +31,15 @@ void printMemory(std::unordered_set<std::string> &allocators)
 {
   auto &rm = umpire::ResourceManager::getInstance();
   for (auto AN : allocators) {
-    auto alloc = rm.getAllocator(AN);
-    size_t wm = alloc.getHighWatermark();
-    size_t cs = alloc.getCurrentSize();
-    size_t as = alloc.getActualSize();
-    std::cout << "Allocator '" << AN << "' High WaterMark:" << wm
-              << " Current Size:" << cs << " Actual Size:" << as << "\n";
+    try {
+      auto alloc = rm.getAllocator(AN);
+      size_t wm = alloc.getHighWatermark();
+      size_t cs = alloc.getCurrentSize();
+      size_t as = alloc.getActualSize();
+      std::cout << "Allocator '" << AN << "' High WaterMark:" << wm
+                << " Current Size:" << cs << " Actual Size:" << as << "\n";
+    } catch (const umpire::util::Exception& e) {
+    }
   }
 }
 
@@ -61,12 +64,12 @@ std::unordered_set<std::string> createMemoryAllocators(
 {
   std::unordered_set<std::string> allocator_names;
   if (pool == "default") {
-    physics_host_alloc = ams_host_alloc = "HOST";
+    physics_host_alloc = ams_host_alloc = "ams-default-host";
     allocator_names.insert(ams_host_alloc);
 #ifdef __ENABLE_CUDA__
-    physics_device_alloc = ams_device_alloc = "DEVICE";
+    physics_device_alloc = ams_device_alloc = "ams-default-device";
     allocator_names.insert(ams_device_alloc);
-    physics_pinned_alloc = ams_pinned_alloc = "PINNED";
+    physics_pinned_alloc = ams_pinned_alloc = "ams-default-pinned";
     allocator_names.insert(ams_pinned_alloc);
 #endif
   } else if (pool == "split") {
@@ -74,7 +77,7 @@ std::unordered_set<std::string> createMemoryAllocators(
     createUmpirePool("HOST", "phys-host");
     allocator_names.insert(physics_host_alloc);
 
-    ams_host_alloc = "ams-host";
+    ams_host_alloc = "ams-example-host";
     createUmpirePool("HOST", ams_host_alloc);
     allocator_names.insert(ams_host_alloc);
 
@@ -87,11 +90,11 @@ std::unordered_set<std::string> createMemoryAllocators(
     createUmpirePool("PINNED", physics_pinned_alloc);
     allocator_names.insert(physics_pinned_alloc);
 
-    ams_device_alloc = "ams-device";
+    ams_device_alloc = "ams-example-device";
     createUmpirePool("DEVICE", ams_device_alloc);
     allocator_names.insert(ams_device_alloc);
 
-    ams_pinned_alloc = "ams-pinned";
+    ams_pinned_alloc = "ams-example-pinned";
     createUmpirePool("PINNED", ams_pinned_alloc);
     allocator_names.insert(ams_pinned_alloc);
 #endif
