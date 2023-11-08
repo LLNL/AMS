@@ -42,7 +42,7 @@ endif()
 add_test(NAME AMSInferSingleDeltaUQ::HOST COMMAND  ams_example --precision single --uqtype deltauq-mean -db ./db -S ${CMAKE_CURRENT_SOURCE_DIR}/tuple-single.torchscript -e 100)
 if(WITH_FAISS)
   BUILD_TEST(ams_hdcache_test test_hdcache.cpp)
-  ADDTEST(ams_hdcache AMSHDCacheMeanPolicyDouble ${CMAKE_CURRENT_SOURCE_DIR}/faiss_debug.pt "double" 1 10 4.0 4 5)
+  ADDTEST(ams_hdcache_test AMSHDCacheMeanPolicyDouble ${CMAKE_CURRENT_SOURCE_DIR}/faiss_debug.pt "double" 1 10 4.0 4 5)
   # The max case fails on DEVICE. We should be aware about this when adding support for CI for GPUs
   ADDTEST(ams_hdcache_test AMSHDCacheMaxPolicyDouble ${CMAKE_CURRENT_SOURCE_DIR}/faiss_debug.pt "double" 2 10 4.0 4 5)
 
