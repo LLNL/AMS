@@ -617,9 +617,11 @@ private:
   PERFFASPECT()
   inline void _evaluate(const size_t ndata, bool *is_acceptable) const
   {
-    if (cache_location == AMSResourceType::HOST) {
+    if (cache_location == AMSResourceType::DEVICE) {
 #ifdef __ENABLE_CUDA__
-      random_uq_Device<<<1, 1>>>(is_acceptable, ndata, acceptable_error);
+      random_uq_device<<<1, 1>>>(is_acceptable, ndata, acceptable_error);
+#else
+      THROW(std::runtime_error, "Random-uq is not configured to use device allocations");
 #endif
     } else {
       random_uq_host(is_acceptable, ndata, acceptable_error);
