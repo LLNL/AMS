@@ -97,23 +97,28 @@ inline uint32_t getVerbosityLevel()
 
 #define DBG(id, ...) CDEBUG(id, true, __VA_ARGS__)
 
-#define REPORT_MEM_USAGE(id, phase)                                  \
-  do {                                                               \
-    double vm, rs;                                                   \
-    size_t watermark, current_size, actual_size;                     \
-    memUsage(vm, rs);                                                \
-    ams::ResourceManager::getAllocatorStats(AMSResourceType::HOST,   \
-                                            watermark,               \
-                                            current_size,            \
-                                            actual_size);            \
-    DBG(id,                                                          \
-        "Memory usage at %s is VM:%g RS:%g HWM:%lu CS:%lu AS:%lu) ", \
-        phase,                                                       \
-        vm,                                                          \
-        rs,                                                          \
-        watermark,                                                   \
-        current_size,                                                \
-        actual_size);                                                \
+#define REPORT_MEM_USAGE(id, phase)                                                   \
+  do {                                                                                \
+    double vm, rs;                                                                    \
+    size_t watermark, current_size, actual_size;                                      \
+    memUsage(vm, rs);                                                                 \
+    DBG(id, "Memory usage at %s is VM:%g RS:%g\n", phase,                             \
+        vm,                                                                           \
+        rs);                                                                          \
+                                                                                      \
+    for (int i = 0; i < AMSResourceType::RSEND; i++){                                 \
+        if ( ams::ResourceManager::isActive((AMSResourceType) i) ){                   \
+          ams::ResourceManager::getAllocatorStats((AMSResourceType) i,                \
+                                              watermark,                              \
+                                              current_size,                           \
+                                              actual_size);                           \
+          DBG(id, "Allocator: %s HWM:%lu CS:%lu AS:%lu) ",                            \
+                  ams::ResourceManager::getAllocatorName((AMSResourceType) i).c_str(),\
+                  watermark,                                                          \
+                  current_size,                                                       \
+                  actual_size);                                                       \
+      }                                                                               \
+    }                                                                                 \
   } while (0);
 
 #define THROW(exception, msg)                                              \

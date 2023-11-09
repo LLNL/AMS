@@ -175,6 +175,10 @@ public:
         RMAllocators[resource]->getName().c_str());
   }
 
+  static bool isActive(AMSResourceType resource){
+    return RMAllocators[resource] != nullptr;
+  }
+
   /** @brief Returns the memory consumption of the given resource as measured from Umpire.
    *  @param[in] resource The memory pool to get the consumption from.
    *  @param[out] wm the highest memory allocation that umpire has performed until now.
