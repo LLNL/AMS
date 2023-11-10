@@ -46,9 +46,9 @@ for i in {1..3}; do
   #user options to use random pruner at the staging level
     --load @CMAKE_CURRENT_BINARY_DIR@/prune.py --class RandomPruneAction -f 0.001
   #Options to store the results in the candidates directory using a file format of h5
-    --policy process -m fs  --dest ${db_path}/candidates --db-type hdf5
-  #Where to pick data from
-    --src ${SRC} --pattern "*.h5"
+    --policy process -m fs  --dest ${db_path}/candidates --db-type dhdf5
+    #Where to pick data from. AMS dumps data in sparse dataset thus we pass (shdf5)
+    --src ${SRC} --src-type shdf5 --pattern "*.h5"
   #Make results public to store
   --store
   )
@@ -60,6 +60,6 @@ for i in {1..3}; do
   python @CMAKE_CURRENT_BINARY_DIR@/sub_selection.py -db ${db_path}
 
 #Train a new model and push it into the store
-CUBLAS_WORKSPACE_CONFIG=:4096:8 python @CMAKE_CURRENT_BINARY_DIR@/train.py -db ${db_path}
+CUBLAS_WORKSPACE_CONFIG=:4096:8 python @CMAKE_CURRENT_BINARY_DIR@/train.py -db ${db_path} --device @TRAIN_DEVICE@
 
 done
