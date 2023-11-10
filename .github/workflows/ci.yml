@@ -51,6 +51,7 @@ jobs:
             -DTorch_DIR=$AMS_TORCH_PATH \
             -DFAISS_DIR=$AMS_FAISS_PATH \
             -DWITH_AMS_DEBUG=On \
+            -DWITH_WORKFLOW=On \
             $GITHUB_WORKSPACE
             make
       - name: Run tests Torch=On FAISS=On HDF5=On AMS
@@ -88,6 +89,7 @@ jobs:
             -DWITH_TESTS=On \
             -DFAISS_DIR=$AMS_FAISS_PATH \
             -DWITH_AMS_DEBUG=On \
+            -DWITH_WORKFLOW=On \
             $GITHUB_WORKSPACE
             make
       - name: Run tests Torch=Off FAISS=On HDF5=On AMS
@@ -123,6 +125,7 @@ jobs:
             -DWITH_TORCH=Off \
             -DWITH_TESTS=On \
             -DWITH_AMS_DEBUG=On \
+            -DWITH_WORKFLOW=On \
             $GITHUB_WORKSPACE
             make
       - name: Run tests Torch=Off FAISS=Off HDF5=On AMS
@@ -155,6 +158,7 @@ jobs:
             -DWITH_TORCH=Off \
             -DWITH_TESTS=On \
             -DWITH_AMS_DEBUG=On \
+            -DWITH_WORKFLOW=On \
             $GITHUB_WORKSPACE
             make
       - name: Run tests Torch=Off FAISS=Off HDF5=Off AMS

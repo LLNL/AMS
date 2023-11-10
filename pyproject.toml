@@ -1,0 +1,49 @@
+# Black formatting
+[tool.black]
+line-length = 120
+include = '\.pyi?$'
+exclude = '''
+/(
+      .eggs         # exclude a few common directories in the
+    | .git          # root of the project
+    | .hg
+    | .mypy_cache
+    | .tox
+    | venv
+    | _build
+    | buck-out
+    | build
+    | dist
+  )/
+'''
+
+# iSort
+[tool.isort]
+profile = "black"
+line_length = 120
+multi_line_output = 3
+include_trailing_comma = true
+virtual_env = "venv"
+
+# flake8
+[tool.flake8]
+ignore = ["E501", "W503", "E226", "BLK100", "E203"]
+max-line-length = 120
+exclude = [
+    # No need to traverse our git directory
+    ".git",
+    # There's no value in checking cache directories
+    "__pycache__",
+    "*.egg-info",
+    "build"
+]
+# E501: Line too long
+# W503: Line break occurred before binary operator
+# E226: Missing white space around arithmetic operator
+
+[tool.ruff]
+ignore = ["E501", "W503", "E226", "BLK100", "E203"]
+show-fixes = true
+
+# change the default line length number or characters.
+line-length = 120

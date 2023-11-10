@@ -1,0 +1,8 @@
+{
+  "name" : "miniapp",
+  "ams_persistent_db" : {
+    "path" : "/p/gpfs1/koparasy/AMS/",
+    "type" : "hdf5",
+    "store" : "ams_store.sql"
+  }
+}
