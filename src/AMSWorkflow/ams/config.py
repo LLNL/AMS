@@ -52,7 +52,7 @@ class AMSInstance(metaclass=AMSSingleton):
 
     @staticmethod
     def create_config(store_path, store_name, name):
-        return {"name": name, "ams_persistent_db": {"path": str(store_path), "type": "hdf5", "store": str(name)}}
+        return {"name": name, "ams_persistent_db": {"path": str(store_path), "type": "hdf5", "store": str(store_name)}}
 
     @classmethod
     def from_dict(cls, config):

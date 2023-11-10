@@ -105,8 +105,13 @@ class TestStore(unittest.TestCase):
         for _list in [cls.h5_files, cls.model_files, cls.candidate_files]:
             for f in _list:
                 Path(f).unlink()
-        test = Path(cls.store_dir) / Path("test.sql")
-        test.unlink()
+        for child in cls.store_dir.iterdir():
+            if child.is_file():
+                child.unlink()
+            else:
+                child.rmdir()
+
+        cls.store_dir.rmdir()
 
 
 if __name__ == "__main__":

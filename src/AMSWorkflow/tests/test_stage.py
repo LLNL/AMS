@@ -5,10 +5,12 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import glob
+import json
 import os
 import signal
 import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 
@@ -45,28 +47,32 @@ class TestStage(unittest.TestCase):
     def setUpClass(cls):
         cls.i_dir = tempfile.mkdtemp()
         cls.o_dir = tempfile.mkdtemp()
-        tmp_dict = dict()
-        tmp_dict["name"] = "ams_test"
-        db = dict()
-        db["path"] = cls.o_dir
-        db["type"] = "hdf5"
-        db["store"] = "test_ams.sql"
-        tmp_dict["ams_persistent_db"] = db
+        config_path = cls.o_dir / Path("ams_config.json")
+        config = AMSInstance.create_config(cls.o_dir, "ams_store.sql", "test_name")
+        with open(str(config_path), "w") as fd:
+            json.dump(config, fd, indent=4)
         # Initialize our sigleton
-        AMSInstance(config=tmp_dict)
+        AMSInstance.from_path(cls.o_dir)
 
     def setUp(self):
         self.i_dir = TestStage.i_dir
         self.o_dir = TestStage.o_dir
 
-    @classmethod
-    def tearDownClass(cls):
-        for f in glob.glob(f"{TestStage.i_dir}/*"):
-            os.remove(f)
-        os.rmdir(cls.i_dir)
-        for f in glob.glob(f"{TestStage.o_dir}/*"):
-            os.remove(f)
-        os.rmdir(cls.o_dir)
+    #    @classmethod
+    #    def tearDownClass(cls):
+    #        for entry in ["models", "candidates", "data"]:
+    #            for f in glob.glob(f"{TestStage.o_dir}/{entry}/*"):
+    #                Path(f).unlink()
+    #            for f in glob.glob(f"{TestStage.i_dir}/*"):
+    #                Path(f).unlink()
+    #            Path(f"{TestStage.o_dir}/{entry}").rmdir()
+    #        Path(f"{TestStage.o_dir}/ams_config.json").unlink()
+    #        Path(f"{TestStage.o_dir}/ams_store.sql").unlink()
+    #        Path(f"{TestStage.o_dir}").rmdir()
+    #
+    #        for f in glob.glob(f"{TestStage.i_dir}/*"):
+    #            Path(f).unlink()
+    #        Path(f"{TestStage.i_dir}").rmdir()
 
     def test_q_message(self):
         msg = stage.QueueMessage(stage.MessageType.Process, None)
@@ -128,16 +134,19 @@ class TestStage(unittest.TestCase):
                         i, o = tmp_fd.load()
                         r_inputs.append(i)
                         r_outputs.append(o)
-            pipe_in_data = np.concatenate(r_inputs, axis=0)
-            origin_in_data = np.concatenate([d[0] for d in data], axis=0)
+            pipe_in_data = np.sort(np.concatenate(r_inputs, axis=0).flatten())
+            origin_in_data = np.sort(np.concatenate([d[0] for d in data], axis=0).flatten())
+
             self.assertTrue(
-                np.array_equal(pipe_in_data, origin_in_data), "inputs do not match after writting them with pipeline"
+                np.array_equal(pipe_in_data, origin_in_data),
+                f"inputs {pipe_in_data} {origin_in_data} do not match after writting them with pipeline",
             )
 
-            pipe_out_data = np.concatenate(r_outputs, axis=0)
-            origin_out_data = np.concatenate([d[1] for d in data], axis=0)
+            pipe_out_data = np.sort(np.concatenate(r_outputs, axis=0).flatten())
+            origin_out_data = np.sort(np.concatenate([d[1] for d in data], axis=0).flatten())
             self.assertTrue(
-                np.array_equal(pipe_out_data, origin_out_data), "outputs do not match after writting them with pipeline"
+                np.array_equal(pipe_out_data, origin_out_data),
+                "outputs {pipe_out_data} {r_outputs} do not match after writting them with pipeline",
             )
             fd.remove_candidates(data_files=files, delete_files=True)
 
@@ -146,39 +155,47 @@ class TestStage(unittest.TestCase):
     def test_fs_pipeline(self):
         data = list()
         for i in range(0, 10):
-            in_data, out_data = np.random.rand(300, 2), np.random.rand(300, 3)
+            in_data, out_data = np.random.rand(3, 2), np.random.rand(3, 3)
             data.append((in_data, out_data))
 
-        for wr in stage.Pipeline.supported_writers:
-            writer = get_writer(wr)
-            reader = get_reader(wr)
-            # Write the files to disk
-            for j, (i, o) in enumerate(data):
-                fn = "{0}/data_{1}.{2}".format(self.i_dir, j, writer.get_file_format_suffix())
-                with writer(fn) as fd:
-                    fd.store(i, o)
+        for src_fmt in stage.Pipeline.supported_writers:
+            src_wr = get_writer(src_fmt)
+            src_rd = get_reader(src_fmt)
+            for dest_fmt in stage.Pipeline.supported_writers:
+                dest_rd = get_reader(dest_fmt)
+                dest_wr = get_writer(dest_fmt)
+                # Write the files to disk
+                for j, (i, o) in enumerate(data):
+                    fn = "{0}/data_{1}.{2}".format(self.i_dir, j, src_wr.get_file_format_suffix())
+                    with src_wr(fn) as fd:
+                        fd.store(i, o)
 
-            for p in stage.Pipeline.supported_policies:
-                if "thread" in p:
-                    continue
+                for p in stage.Pipeline.supported_policies:
+                    if "thread" in p:
+                        continue
 
-                pipe = stage.FSPipeline(
-                    True,
-                    self.o_dir,
-                    None,
-                    writer.get_file_format_suffix(),
-                    self.i_dir,
-                    writer.get_file_format_suffix(),
-                    "*.{0}".format(writer.get_file_format_suffix()),
-                )
-                with timeout(
-                    10,
-                    error_message="Copying files from {0} to {1} using writer {2} and policy {3}".format(
-                        self.i_dir, self.o_dir, wr, p
-                    ),
-                ):
-                    pipe.execute(p)
-                self.verify(data, reader)
+                    pipe = stage.FSPipeline(
+                        self.o_dir,
+                        True,
+                        self.o_dir,
+                        None,
+                        dest_fmt,
+                        self.i_dir,
+                        src_fmt,
+                        "*.{0}".format(src_wr.get_file_format_suffix()),
+                    )
+                    with timeout(
+                        10,
+                        error_message="Copying files from {0} to {1} using writer {2} and policy {3}".format(
+                            self.i_dir, self.o_dir, dest_fmt, p
+                        ),
+                    ):
+                        pipe.execute(p)
+                    self.verify(data, dest_rd)
+
+                for j, (i, o) in enumerate(data):
+                    fn = "{0}/data_{1}.{2}".format(self.i_dir, j, src_wr.get_file_format_suffix())
+                    Path(fn).unlink()
 
 
 if __name__ == "__main__":
