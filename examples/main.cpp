@@ -309,37 +309,8 @@ int run(const char *device_name,
     print_tensor_array("indicators", indicators, {1, num_mats, num_elems});
   }
 
-  // -------------------------------------------------------------------------
-  // setup AMS
-  // -------------------------------------------------------------------------
-
-#ifdef USE_AMS
-  // We need a AMSExecutor for each material.
-  // This implicitly implies that we are going to
-  // have a differnt ml model for each type of material.
-  // If we have a single model for all materials then we
-  // need to make a single model here.
-  AMSExecutor *workflow = new AMSExecutor[num_mats]();
-#endif
-
   // ---------------------------------------------------------------------
-  // setup EOS models
-  // ---------------------------------------------------------------------
-  std::vector<EOS<TypeValue> *> eoses(num_mats, nullptr);
-  for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
-    if (eos_name == std::string("ideal_gas")) {
-      eoses[mat_idx] = new IdealGas<TypeValue>(1.6, 1.4);
-    } else if (eos_name == std::string("constant_host")) {
-      eoses[mat_idx] =
-          new ConstantEOSOnHost<TypeValue>(physics_host_alloc.c_str(), 1.0);
-    } else {
-      std::cerr << "unknown eos `" << eos_name << "'" << std::endl;
-      return 1;
-    }
-  }
-
-  // ---------------------------------------------------------------------
-  // setup AMS workflow (surrogate and cache)
+  // setup AMS options
   // ---------------------------------------------------------------------
 #ifdef USE_AMS
   const char *uq_path = nullptr;
@@ -361,26 +332,45 @@ int run(const char *device_name,
   if (use_device) ams_device = AMSResourceType::DEVICE;
   AMSExecPolicy ams_loadBalance = AMSExecPolicy::UBALANCED;
   if (lbalance) ams_loadBalance = AMSExecPolicy::BALANCED;
-
-  AMSConfig amsConf = {ams_loadBalance,
-                       precision,
-                       ams_device,
-                       dbType,
-                       (AMSPhysicFn)callBack<TypeValue>,
-                       (char *)surrogate_path,
-                       (char *)uq_path,
-                       (char *)db_path,
-                       threshold,
-                       uq_policy,
-                       k_nearest,
-                       rId,
-                       wS};
-
-  for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
-    AMSExecutor wf = AMSCreateExecutor(amsConf);
-    workflow[mat_idx] = wf;
-  }
 #endif
+
+  // ---------------------------------------------------------------------
+  // setup EOS models
+  // ---------------------------------------------------------------------
+  std::vector<EOS<TypeValue> *> eoses(num_mats, nullptr);
+  for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
+    EOS<TypeValue> * base;
+    if (eos_name == std::string("ideal_gas")) {
+      base = new IdealGas<TypeValue>(1.6, 1.4);
+    } else if (eos_name == std::string("constant_host")) {
+      base = new ConstantEOSOnHost<TypeValue>(physics_host_alloc.c_str(), 1.0);
+    } else {
+      std::cerr << "unknown eos `" << eos_name << "'" << std::endl;
+      return 1;
+    }
+#ifdef USE_AMS
+    if (/*use_ams*/true) {
+      eoses[mat_idx] = new AMSEOS(base,
+                                  dbType,
+                                  precision,
+                                  ams_loadBalance,
+                                  ams_device,
+                                  uq_policy,
+                                  k_nearest,
+                                  rIs,
+                                  wS,
+                                  threshold,
+                                  surrogate_path,
+                                  uq_path,
+                                  db_path);
+
+    }
+    else
+#endif
+    {
+      eoses[mat_idx] = base;
+    }
+  }
 
   // ---------------------------------------------------------------------
   // setup sparse element info
@@ -532,33 +522,6 @@ int run(const char *device_name,
                   d_dense_energy);
           CALIPER(CALI_MARK_END("SPARSE_TO_DENSE");)
           // -------------------------------------------------------------
-          std::vector<const TypeValue *> inputs = {&d_dense_density(0, 0),
-                                                   &d_dense_energy(0, 0)};
-          std::vector<TypeValue *> outputs = {&d_dense_pressure(0, 0),
-                                              &d_dense_soundspeed2(0, 0),
-                                              &d_dense_bulkmod(0, 0),
-                                              &d_dense_temperature(0, 0)};
-
-#ifdef USE_AMS
-#ifdef __ENABLE_MPI__
-          AMSDistributedExecute(workflow[mat_idx],
-                                MPI_COMM_WORLD,
-                                static_cast<void *>(eoses[mat_idx]),
-                                num_elems_for_mat * num_qpts,
-                                reinterpret_cast<const void **>(inputs.data()),
-                                reinterpret_cast<void **>(outputs.data()),
-                                inputs.size(),
-                                outputs.size());
-#else
-          AMSExecute(workflow[mat_idx],
-                     static_cast<void *>(eoses[mat_idx]),
-                     num_elems_for_mat * num_qpts,
-                     reinterpret_cast<const void **>(inputs.data()),
-                     reinterpret_cast<void **>(outputs.data()),
-                     inputs.size(),
-                     outputs.size());
-#endif
-#else
           eoses[mat_idx]->Eval(num_elems_for_mat * num_qpts,
                                &d_dense_density(0, 0),
                                &d_dense_energy(0, 0),
@@ -566,7 +529,7 @@ int run(const char *device_name,
                                &d_dense_soundspeed2(0, 0),
                                &d_dense_bulkmod(0, 0),
                                &d_dense_temperature(0, 0));
-#endif
+
           // -------------------------------------------------------------
           // dense -> sparse
           CALIPER(CALI_MARK_BEGIN("DENSE_TO_SPARSE");)
@@ -586,35 +549,9 @@ int run(const char *device_name,
           CALIPER(CALI_MARK_END("DENSE_TO_SPARSE");)
           // -------------------------------------------------------------
         } else {
-#ifdef USE_AMS
           std::cout << " material " << mat_idx << ": using dense packing for "
                     << num_elems << " elems" << std::endl;
 
-          std::vector<const TypeValue *> inputs = {&d_density(0, 0, mat_idx),
-                                                   &d_energy(0, 0, mat_idx)};
-          std::vector<TypeValue *> outputs = {&d_pressure(0, 0, mat_idx),
-                                              &d_soundspeed2(0, 0, mat_idx),
-                                              &d_bulkmod(0, 0, mat_idx),
-                                              &d_temperature(0, 0, mat_idx)};
-#ifdef __ENABLE_MPI__
-          AMSDistributedExecute(workflow[mat_idx],
-                                MPI_COMM_WORLD,
-                                static_cast<void *>(eoses[mat_idx]),
-                                num_elems_for_mat * num_qpts,
-                                reinterpret_cast<const void **>(inputs.data()),
-                                reinterpret_cast<void **>(outputs.data()),
-                                inputs.size(),
-                                outputs.size());
-#else
-          AMSExecute(workflow[mat_idx],
-                     static_cast<void *>(eoses[mat_idx]),
-                     num_elems * num_qpts,
-                     reinterpret_cast<const void **>(inputs.data()),
-                     reinterpret_cast<void **>(outputs.data()),
-                     inputs.size(),
-                     outputs.size());
-#endif
-#else
           eoses[mat_idx]->Eval(num_elems * num_qpts,
                                &d_density(0, 0, mat_idx),
                                &d_energy(0, 0, mat_idx),
@@ -622,7 +559,6 @@ int run(const char *device_name,
                                &d_soundspeed2(0, 0, mat_idx),
                                &d_bulkmod(0, 0, mat_idx),
                                &d_temperature(0, 0, mat_idx));
-#endif
         }
       }
     }
@@ -630,9 +566,6 @@ int run(const char *device_name,
     MPI_CALL(MPI_Barrier(MPI_COMM_WORLD));
     printMemory(allocator_names);
   }
-#ifdef USE_AMS
-  delete[] workflow;
-#endif
 
   // TODO: Add smart-pointers
   for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {

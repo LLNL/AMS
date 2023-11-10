@@ -48,6 +48,9 @@ public:
     });
   }
 
+#ifdef __ENABLE_PERFFLOWASPECT__
+    __attribute__((annotate("@critical_path(pointcut='around')")))
+#endif
   void Eval_with_filter(const int length,
                         const FPType *density,
                         const FPType *energy,
@@ -70,22 +73,5 @@ public:
       }
     });
   }
-
-#ifdef __ENABLE_PERFFLOWASPECT__
-   __attribute__((annotate("@critical_path(pointcut='around')")))
-#endif
-  void Eval(const int length,
-            const FPType **inputs,
-            FPType **outputs) const override
-  {
-    Eval(length,
-         inputs[0],
-         inputs[1],
-         outputs[0],
-         outputs[1],
-         outputs[2],
-         outputs[3]);
-  }
 };
-
 #endif
