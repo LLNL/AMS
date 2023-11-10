@@ -184,7 +184,6 @@ class FSLoaderTask(Task):
 
         start = time.time()
         for fn in glob.glob(self.pattern):
-            print(f"Opening file: {fn}")
             with self.loader(fn) as fd:
                 input_data, output_data = fd.load()
                 row_size = input_data[0, :].nbytes + output_data[0, :].nbytes
@@ -198,6 +197,7 @@ class FSLoaderTask(Task):
 
         end = time.time()
         print(f"Spend {end - start} at {self.__class__.__name__}")
+
 
 class RMQMessage(object):
     """
@@ -220,12 +220,12 @@ class RMQMessage(object):
         - 4 bytes are the number of elements in the message. Limit max: 2^32 - 1
         - 2 bytes are the input dimension. Limit max: 65535
         - 2 bytes are the output dimension. Limit max: 65535
-        
+
             |__Header_size__|__Datatype__|__Rank__|__#elem__|__InDim__|__OutDim__|...real data...|
-        
+
         Then the data starts at 12 and is structered as pairs of input/outputs.
         Let K be the total number of elements, then we have K pairs of inputs/outputs (either float or double):
-        
+
             |__Header_(12B)__|__Input 1__|__Output 1__|...|__Input_K__|__Output_K__|
 
         """
@@ -236,16 +236,16 @@ class RMQMessage(object):
         '=' means native endianness in standart size (system).
         See https://docs.python.org/3/library/struct.html#format-characters
         """
-        return '='
+        return "="
 
     def encode(num_elem: int, input_dim: int, output_dim: int, dtype_byte: int = 4) -> bytes:
         """
-        For debugging and testing purposes, this function encode a message identical to what AMS would send 
+        For debugging and testing purposes, this function encode a message identical to what AMS would send
         """
         header_format = self.endianness() + self.header_format()
         hsize = struct.calcsize(header_format)
         assert dtype_byte in [4, 8]
-        dt = 'f' if dtype_byte == 4 else 'd'
+        dt = "f" if dtype_byte == 4 else "d"
         mpi_rank = 0
         data = np.random.rand(num_elem * (input_dim + output_dim))
         header_content = (hsize, dtype_byte, mpi_rank, data.size, input_dim, output_dim)
@@ -265,7 +265,14 @@ class RMQMessage(object):
         hsize = struct.calcsize(fmt)
         res = {}
         # Parse header
-        res["hsize"], res["datatype"], res["mpirank"], res["num_element"], res["input_dim"], res["output_dim"] = struct.unpack(fmt, body[:hsize])
+        (
+            res["hsize"],
+            res["datatype"],
+            res["mpirank"],
+            res["num_element"],
+            res["input_dim"],
+            res["output_dim"],
+        ) = struct.unpack(fmt, body[:hsize])
         assert hsize == res["hsize"]
         assert res["datatype"] in [4, 8]
         if len(body) < hsize:
@@ -274,7 +281,7 @@ class RMQMessage(object):
 
         # Theoritical size in Bytes for the incoming message (without the header)
         # Int() is needed otherwise we might overflow here (because of uint16 / uint8)
-        res["dsize"] = int(res["datatype"])*int(res["num_element"])*(int(res["input_dim"])+int(res["output_dim"]))
+        res["dsize"] = int(res["datatype"]) * int(res["num_element"]) * (int(res["input_dim"]) + int(res["output_dim"]))
         res["msg_size"] = hsize + res["dsize"]
         res["multiple_msg"] = len(body) != res["msg_size"]
         return res
@@ -286,17 +293,17 @@ class RMQMessage(object):
         hsize = header_info["hsize"]
         dsize = header_info["dsize"]
         try:
-            if header_info["datatype"] == 4: #if datatype takes 4 bytes (float)
-                data = np.frombuffer(body[hsize:hsize+dsize], dtype = np.float32)
+            if header_info["datatype"] == 4:  # if datatype takes 4 bytes (float)
+                data = np.frombuffer(body[hsize : hsize + dsize], dtype=np.float32)
             else:
-                data = np.frombuffer(body[hsize:hsize+dsize], dtype = np.float64)
+                data = np.frombuffer(body[hsize : hsize + dsize], dtype=np.float64)
         except ValueError as e:
             print(f"Error: {e} => {header_info}")
             return np.array([])
-        
+
         idim = header_info["input_dim"]
         odim = header_info["output_dim"]
-        data = data.reshape((-1, idim+odim))
+        data = data.reshape((-1, idim + odim))
         # Return input, output
         return data[:, :idim], data[:, idim:]
 
@@ -319,6 +326,7 @@ class RMQMessage(object):
     def decode(self) -> Tuple[np.array]:
         return self._decode(self.body)
 
+
 class RMQLoaderTask(Task):
     """
     A RMQLoaderTask consumes data from RabbitMQ bundles the data of
@@ -333,7 +341,7 @@ class RMQLoaderTask(Task):
         prefetch_count: Number of messages prefected by RMQ (impact performance)
     """
 
-    def __init__(self, o_queue, credentials, cacert, rmq_queue, prefetch_count = 1):
+    def __init__(self, o_queue, credentials, cacert, rmq_queue, prefetch_count=1):
         self.o_queue = o_queue
         self.credentials = credentials
         self.cacert = cacert
@@ -348,17 +356,17 @@ class RMQLoaderTask(Task):
         self.total_time = 0
 
         self.rmq_consumer = RMQConsumer(
-            credentials = self.credentials,
-            cacert = self.cacert,
-            queue = self.rmq_queue,
-            on_message_cb = self.callback_message,
-            on_close_cb = self.callback_close,
-            prefetch_count = self.prefetch_count
+            credentials=self.credentials,
+            cacert=self.cacert,
+            queue=self.rmq_queue,
+            on_message_cb=self.callback_message,
+            on_close_cb=self.callback_close,
+            prefetch_count=self.prefetch_count,
         )
 
     def callback_close(self):
         """
-        Callback that will be called when RabbitMQ will close 
+        Callback that will be called when RabbitMQ will close
         the connection (or if a problem happened with the connection).
         """
         print(f"Sending Terminate to QueueMessage")
@@ -379,15 +387,16 @@ class RMQLoaderTask(Task):
 
         for j, (i, o) in enumerate(zip(input_batches, output_batches)):
             self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(i, o)))
-        
-        self.total_time += (time.time() - start_time)
-    
+
+        self.total_time += time.time() - start_time
+
     def signal_wrapper(self, name, pid):
         def handler(signum, frame):
             print(f"Received SIGNUM={signum} for {name}[pid={pid}]: stopping process")
             self.rmq_consumer.stop()
             self.o_queue.put(QueueMessage(MessageType.Terminate, None))
             print(f"Spend {self.total_time} at {self.__class__.__name__}")
+
         return handler
 
     def __call__(self):
@@ -397,6 +406,7 @@ class RMQLoaderTask(Task):
         the Task pushes a 'Terminate' message to the queue and returns.
         """
         self.rmq_consumer.run()
+
 
 class FSWriteTask(Task):
     """
@@ -528,7 +538,7 @@ class Pipeline(ABC):
     """
 
     supported_policies = {"sequential", "thread", "process"}
-    supported_writers = {"hdf5", "csv"}
+    supported_writers = {"shdf5", "dhdf5", "csv"}
 
     def __init__(self, db_dir, store, dest_dir=None, stage_dir=None, db_type="hdf5"):
         """
@@ -677,7 +687,7 @@ class Pipeline(ABC):
             dest="db_type",
             choices=Pipeline.supported_writers,
             help="File format to store the data to",
-            default="hdf5",
+            default="dhdf5",
         )
         # parser.add_argument("--db-dir", "-d", help="path to the AMS store directory", required=True)
         parser.add_argument("--persistent-db-path", "-db", help="The path of the AMS database", required=True)
@@ -710,7 +720,7 @@ class FSPipeline(Pipeline):
         src_type: The file format of the source data
     """
 
-    supported_readers = ("hdf5", "csv")
+    supported_readers = ("shdf5", "dhdf5", "csv")
 
     def __init__(self, db_dir, store, dest_dir, stage_dir, db_type, src, src_type, pattern):
         """
@@ -741,7 +751,7 @@ class FSPipeline(Pipeline):
         """
         Pipeline.add_cli_args(parser)
         parser.add_argument("--src", "-s", help="Where to copy the data from", required=True)
-        parser.add_argument("--src-type", "-st", choices=FSPipeline.supported_readers, default="hdf5")
+        parser.add_argument("--src-type", "-st", choices=FSPipeline.supported_readers, default="shdf5")
         parser.add_argument("--pattern", "-p", help="Glob pattern to read data from", required=True)
         return
 
@@ -760,6 +770,7 @@ class FSPipeline(Pipeline):
             args.src_type,
             args.pattern,
         )
+
 
 class RMQPipeline(Pipeline):
     """
