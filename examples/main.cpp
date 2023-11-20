@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "app/eos.hpp"
+#include "app/eos_ams.hpp"
 #include "app/eos_constant_on_host.hpp"
 #include "app/eos_idealgas.hpp"
 #include "app/utils_mfem.hpp"
@@ -350,14 +351,14 @@ int run(const char *device_name,
     }
 #ifdef USE_AMS
     if (/*use_ams*/true) {
-      eoses[mat_idx] = new AMSEOS(base,
+      eoses[mat_idx] = new AMSEOS<TypeValue>(base,
                                   dbType,
                                   precision,
                                   ams_loadBalance,
                                   ams_device,
                                   uq_policy,
                                   k_nearest,
-                                  rIs,
+                                  rId,
                                   wS,
                                   threshold,
                                   surrogate_path,

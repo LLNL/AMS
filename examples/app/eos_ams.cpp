@@ -7,6 +7,8 @@
 
 #include "eos_ams.hpp"
 
+#include <vector>
+
 template<typename FPType>
 void callBack(void *cls,
               long elements,
@@ -23,27 +25,27 @@ void callBack(void *cls,
 }
 
 
-AMSEOS::AMSEOS(EOSModel * model, 
-               const AMSDBType db_type, 
+template <typename FPType>
+AMSEOS<FPType>::AMSEOS(EOS<FPType> * model,
+               const AMSDBType db_type,
                const AMSDType dtype,
-               const AMSExecPolicy exec_policy, 
-               const AMSResourceType res_type, 
-               const AMSUQPolicy uq_policy, 
+               const AMSExecPolicy exec_policy,
+               const AMSResourceType res_type,
+               const AMSUQPolicy uq_policy,
                const int k_nearest,
                const int mpi_task,
                const int mpi_nproc,
-               const double threshold, 
-               const char * surrogate_path, 
-               const char * uq_path, 
+               const double threshold,
+               const char * surrogate_path,
+               const char * uq_path,
                const char * db_path)
 
 {
   AMSConfig conf = {exec_policy,
-                    dtype
+                    dtype,
                     res_type,
                     db_type,
-                    callBack,
-                    (AMSPhysicFn)callBack<TypeValue>,
+                    callBack<FPType>,
                     (char *)surrogate_path,
                     (char *)uq_path,
                     (char *)db_path,
@@ -57,9 +59,10 @@ AMSEOS::AMSEOS(EOSModel * model,
 }
 
 #ifdef __ENABLE_PERFFLOWASPECT__
-    __attribute__((annotate("@critical_path(pointcut='around')")))
+__attribute__((annotate("@critical_path(pointcut='around')")))
 #endif
-void AMSEOS::Eval(const int length,
+template <typename FPType>
+void AMSEOS<FPType>::Eval(const int length,
                   const FPType *density,
                   const FPType *energy,
                   FPType *pressure,
@@ -73,7 +76,7 @@ void AMSEOS::Eval(const int length,
 #ifdef __ENABLE_MPI__
     AMSDistributedExecute(wf_,
                           MPI_COMM_WORLD,
-                          (void*)model,
+                          (void*)model_,
                           length,
                           reinterpret_cast<const void **>(inputs.data()),
                           reinterpret_cast<void **>(outputs.data()),
@@ -81,7 +84,7 @@ void AMSEOS::Eval(const int length,
                           outputs.size());
 #else
     AMSExecute(wf_,
-               (void*)model,
+               (void*)model_,
                length,
                reinterpret_cast<const void **>(inputs.data()),
                reinterpret_cast<void **>(outputs.data()),
@@ -89,3 +92,6 @@ void AMSEOS::Eval(const int length,
                outputs.size());
 #endif
 }
+
+template class AMSEOS<double>;
+template class AMSEOS<float>;
