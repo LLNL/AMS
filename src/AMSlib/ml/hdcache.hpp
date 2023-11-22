@@ -415,6 +415,11 @@ public:
     } else {
       _evaluate(ndata, data, is_acceptable);
     }
+
+    if (cache_location == AMSResourceType::DEVICE) {
+      deviceCheckErrors(__FILE__, __LINE__);
+    }
+
     DBG(UQModule, "Done with evalution of uq")
   }
 
@@ -621,7 +626,8 @@ private:
 #ifdef __ENABLE_CUDA__
       random_uq_device<<<1, 1>>>(is_acceptable, ndata, acceptable_error);
 #else
-      THROW(std::runtime_error, "Random-uq is not configured to use device allocations");
+      THROW(std::runtime_error,
+            "Random-uq is not configured to use device allocations");
 #endif
     } else {
       random_uq_host(is_acceptable, ndata, acceptable_error);

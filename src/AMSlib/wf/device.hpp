@@ -144,6 +144,14 @@ void rand_init(bool *predicate, const size_t n, TypeValue threshold)
 }  // namespace Device
 }  // namespace ams
 
+void deviceCheckErrors(const char *file, const int line)
+{
+#ifdef __ENABLE_CUDA__
+  __cudaCheckError(file, line);
+#endif
+  return;
+}
+
 
 #ifdef __ENABLE_CUDA__
 
