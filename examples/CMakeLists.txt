@@ -5,7 +5,7 @@
 
 file(GLOB_RECURSE AMS_CURRENT_EXAMPLE_INCLUDES "*.hpp")
 
-set(AMS_EXAMPLE_SRC ${MINIAPP_INCLUDES} main.cpp)
+set(AMS_EXAMPLE_SRC ${MINIAPP_INCLUDES} main.cpp app/eos_ams.cpp)
 
 
 function(ADDExec binary_name definitions)

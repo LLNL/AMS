@@ -13,11 +13,21 @@
 template <typename FPType>
 class EOS
 {
-
 public:
-  virtual void Eval(const int length,
-                    const FPType **inputs,
-                    FPType **outputs) const = 0;
+#ifdef __ENABLE_PERFFLOWASPECT__
+  __attribute__((annotate("@critical_path(pointcut='around')")))
+#endif
+  virtual void
+  Eval(const int length, const FPType **inputs, FPType **outputs) const
+  {
+    Eval(length,
+         inputs[0],
+         inputs[1],
+         outputs[0],
+         outputs[1],
+         outputs[2],
+         outputs[3]);
+  }
 
   virtual void Eval(const int length,
                     const FPType *density,
@@ -36,20 +46,4 @@ public:
                                 FPType *bulkmod,
                                 FPType *temperature) const = 0;
 };
-
-template<typename FPType>
-void callBack(void *cls,
-              long elements,
-              const void *const *inputs,
-              void *const *outputs)
-{
-  static_cast<EOS<FPType> *>(cls)->Eval(elements,
-                                static_cast<const FPType *>(inputs[0]),
-                                static_cast<const FPType *>(inputs[1]),
-                                static_cast<FPType *>(outputs[0]),
-                                static_cast<FPType *>(outputs[1]),
-                                static_cast<FPType *>(outputs[2]),
-                                static_cast<FPType *>(outputs[3]));
-}
-
 #endif
