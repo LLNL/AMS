@@ -203,6 +203,10 @@ private:
       tensorToArray(output, num_elements, num_out, outputs);
     }
 
+    if (is_device()) {
+      deviceCheckErrors(__FILE__, __LINE__);
+    }
+
     DBG(Surrogate,
         "Evaluate surrogate model (%ld, %ld) -> (%ld, %ld)",
         num_elements,
@@ -357,7 +361,17 @@ public:
     if (typeid(TypeInValue) == typeid(double)) return true;
     return false;
   }
+
 #endif
+
+  inline bool is_device() const
+  {
+#ifdef __ENABLE_TORCH__
+    return model_resource == AMSResourceType::DEVICE;
+#else
+    return false;
+#endif
+  }
 
   bool is_DeltaUQ() { return _is_DeltaUQ; }
 };

@@ -335,6 +335,8 @@ int compact(bool cond,
       dims,
       d_BlocksOffset,
       isReverse);
+  cudaDeviceSynchronize();
+  CUDACHECKERROR();
 
   ams::ResourceManager::copy(d_BlocksCount, h_BlocksCount);
   ams::ResourceManager::copy(d_BlocksOffset, h_BlocksOffset);
@@ -353,6 +355,7 @@ int compact(bool cond,
   ams::ResourceManager::deregisterExternal(dense);
   ams::ResourceManager::deregisterExternal(sparse);
   cudaDeviceSynchronize();
+  CUDACHECKERROR();
 
   return compact_length;
 }
@@ -395,6 +398,7 @@ int compact(bool cond,
   assignK<<<numBlocks, blockSize>>>(
       sparse, dense, indices, sparseElements, dims, isReverse);
   cudaDeviceSynchronize();
+  CUDACHECKERROR();
 
   return sparseElements;
 }
@@ -418,6 +422,7 @@ void device_linearize(TypeOutValue* output,
 
   linearizeK<<<NB, NT>>>(output, inputs, dims, elements);
   cudaDeviceSynchronize();
+  CUDACHECKERROR();
 }
 
 template <typename T>
@@ -440,6 +445,7 @@ void cuda_rand_init(bool* predicate, const size_t length, T threshold)
       length);
   fillRandom<<<numBlocks, BS>>>(predicate, TS, dev_random, length, threshold);
   cudaDeviceSynchronize();
+  CUDACHECKERROR();
 }
 
 void device_compute_predicate(float* data,
@@ -456,6 +462,7 @@ void device_compute_predicate(float* data,
       threshold);
   compute_predicate<<<NB, NT>>>(data, predicate, nData, kneigh, threshold);
   cudaDeviceSynchronize();
+  CUDACHECKERROR();
 }
 
 #endif
