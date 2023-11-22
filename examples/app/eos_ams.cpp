@@ -39,7 +39,7 @@ AMSEOS<FPType>::AMSEOS(EOS<FPType> * model,
                const char * surrogate_path,
                const char * uq_path,
                const char * db_path)
-
+   : model_(model)
 {
   AMSConfig conf = {exec_policy,
                     dtype,
