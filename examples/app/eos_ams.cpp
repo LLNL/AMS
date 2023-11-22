@@ -9,7 +9,7 @@
 
 #include <vector>
 
-template<typename FPType>
+template <typename FPType>
 void callBack(void *cls,
               long elements,
               const void *const *inputs,
@@ -26,20 +26,20 @@ void callBack(void *cls,
 
 
 template <typename FPType>
-AMSEOS<FPType>::AMSEOS(EOS<FPType> * model,
-               const AMSDBType db_type,
-               const AMSDType dtype,
-               const AMSExecPolicy exec_policy,
-               const AMSResourceType res_type,
-               const AMSUQPolicy uq_policy,
-               const int k_nearest,
-               const int mpi_task,
-               const int mpi_nproc,
-               const double threshold,
-               const char * surrogate_path,
-               const char * uq_path,
-               const char * db_path)
-   : model_(model)
+AMSEOS<FPType>::AMSEOS(EOS<FPType> *model,
+                       const AMSDBType db_type,
+                       const AMSDType dtype,
+                       const AMSExecPolicy exec_policy,
+                       const AMSResourceType res_type,
+                       const AMSUQPolicy uq_policy,
+                       const int k_nearest,
+                       const int mpi_task,
+                       const int mpi_nproc,
+                       const double threshold,
+                       const char *surrogate_path,
+                       const char *uq_path,
+                       const char *db_path)
+    : model_(model)
 {
   AMSConfig conf = {exec_policy,
                     dtype,
@@ -63,33 +63,33 @@ __attribute__((annotate("@critical_path(pointcut='around')")))
 #endif
 template <typename FPType>
 void AMSEOS<FPType>::Eval(const int length,
-                  const FPType *density,
-                  const FPType *energy,
-                  FPType *pressure,
-                  FPType *soundspeed2,
-                  FPType *bulkmod,
-                  FPType *temperature) const
+                          const FPType *density,
+                          const FPType *energy,
+                          FPType *pressure,
+                          FPType *soundspeed2,
+                          FPType *bulkmod,
+                          FPType *temperature) const
 {
-    std::vector<const FPType *> inputs = {density, energy};
-    std::vector<FPType *> outputs      = {pressure, soundspeed2, bulkmod, temperature};
+  std::vector<const FPType *> inputs = {density, energy};
+  std::vector<FPType *> outputs = {pressure, soundspeed2, bulkmod, temperature};
 
 #ifdef __ENABLE_MPI__
-    AMSDistributedExecute(wf_,
-                          MPI_COMM_WORLD,
-                          (void*)model_,
-                          length,
-                          reinterpret_cast<const void **>(inputs.data()),
-                          reinterpret_cast<void **>(outputs.data()),
-                          inputs.size(),
-                          outputs.size());
+  AMSDistributedExecute(wf_,
+                        MPI_COMM_WORLD,
+                        (void *)model_,
+                        length,
+                        reinterpret_cast<const void **>(inputs.data()),
+                        reinterpret_cast<void **>(outputs.data()),
+                        inputs.size(),
+                        outputs.size());
 #else
-    AMSExecute(wf_,
-               (void*)model_,
-               length,
-               reinterpret_cast<const void **>(inputs.data()),
-               reinterpret_cast<void **>(outputs.data()),
-               inputs.size(),
-               outputs.size());
+  AMSExecute(wf_,
+             (void *)model_,
+             length,
+             reinterpret_cast<const void **>(inputs.data()),
+             reinterpret_cast<void **>(outputs.data()),
+             inputs.size(),
+             outputs.size());
 #endif
 }
 

@@ -15,11 +15,10 @@ class EOS
 {
 public:
 #ifdef __ENABLE_PERFFLOWASPECT__
-    __attribute__((annotate("@critical_path(pointcut='around')")))
+  __attribute__((annotate("@critical_path(pointcut='around')")))
 #endif
-  virtual void Eval(const int length,
-                    const FPType **inputs,
-                    FPType **outputs) const
+  virtual void
+  Eval(const int length, const FPType **inputs, FPType **outputs) const
   {
     Eval(length,
          inputs[0],

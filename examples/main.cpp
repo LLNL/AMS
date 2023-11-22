@@ -314,6 +314,7 @@ int run(const char *device_name,
   // setup AMS options
   // ---------------------------------------------------------------------
 #ifdef USE_AMS
+  constexpr bool use_ams = true;
   const char *uq_path = nullptr;
   const char *surrogate_path = nullptr;
   const char *db_path = nullptr;
@@ -333,6 +334,8 @@ int run(const char *device_name,
   if (use_device) ams_device = AMSResourceType::DEVICE;
   AMSExecPolicy ams_loadBalance = AMSExecPolicy::UBALANCED;
   if (lbalance) ams_loadBalance = AMSExecPolicy::BALANCED;
+#else
+  constexpr bool use_ams = false;
 #endif
 
   // ---------------------------------------------------------------------
@@ -340,7 +343,7 @@ int run(const char *device_name,
   // ---------------------------------------------------------------------
   std::vector<EOS<TypeValue> *> eoses(num_mats, nullptr);
   for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
-    EOS<TypeValue> * base;
+    EOS<TypeValue> *base;
     if (eos_name == std::string("ideal_gas")) {
       base = new IdealGas<TypeValue>(1.6, 1.4);
     } else if (eos_name == std::string("constant_host")) {
@@ -350,23 +353,22 @@ int run(const char *device_name,
       return 1;
     }
 #ifdef USE_AMS
-    if (/*use_ams*/true) {
+    if (use_ams) {
       eoses[mat_idx] = new AMSEOS<TypeValue>(base,
-                                  dbType,
-                                  precision,
-                                  ams_loadBalance,
-                                  ams_device,
-                                  uq_policy,
-                                  k_nearest,
-                                  rId,
-                                  wS,
-                                  threshold,
-                                  surrogate_path,
-                                  uq_path,
-                                  db_path);
+                                             dbType,
+                                             precision,
+                                             ams_loadBalance,
+                                             ams_device,
+                                             uq_policy,
+                                             k_nearest,
+                                             rId,
+                                             wS,
+                                             threshold,
+                                             surrogate_path,
+                                             uq_path,
+                                             db_path);
 
-    }
-    else
+    } else
 #endif
     {
       eoses[mat_idx] = base;

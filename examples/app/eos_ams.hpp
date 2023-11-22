@@ -8,32 +8,31 @@
 #ifndef _AMS_EOS_HPP_
 #define _AMS_EOS_HPP_
 
-#include "eos.hpp"
-
 #include <stdexcept>
 
 #include "AMS.h"
+#include "eos.hpp"
 
 template <typename FPType>
 class AMSEOS : public EOS<FPType>
 {
   AMSExecutor wf_;
-  EOS<FPType> * model_ = nullptr;
+  EOS<FPType> *model_ = nullptr;
 
 public:
-   AMSEOS(EOS<FPType> * model,
-          const AMSDBType db_type,
-          const AMSDType dtype,
-          const AMSExecPolicy exec_policy,
-          const AMSResourceType res_type,
-          const AMSUQPolicy uq_policy,
-          const int k_nearest,
-          const int mpi_task,
-          const int mpi_nproc,
-          const double threshold,
-          const char * surrogate_path,
-          const char * uq_path,
-          const char * db_path);
+  AMSEOS(EOS<FPType> *model,
+         const AMSDBType db_type,
+         const AMSDType dtype,
+         const AMSExecPolicy exec_policy,
+         const AMSResourceType res_type,
+         const AMSUQPolicy uq_policy,
+         const int k_nearest,
+         const int mpi_task,
+         const int mpi_nproc,
+         const double threshold,
+         const char *surrogate_path,
+         const char *uq_path,
+         const char *db_path);
 
   virtual ~AMSEOS() { delete model_; }
 
@@ -58,4 +57,4 @@ public:
   }
 };
 
-#endif // _AMS_EOS_HPP_
+#endif  // _AMS_EOS_HPP_

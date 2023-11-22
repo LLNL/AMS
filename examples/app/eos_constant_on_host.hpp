@@ -13,7 +13,7 @@
 
 #include "eos.hpp"
 
-template<typename FPType>
+template <typename FPType>
 class ConstantEOSOnHost : public EOS<FPType>
 {
   umpire::ResourceManager &rm_;
@@ -56,15 +56,16 @@ public:
   }
 
 #ifdef __ENABLE_PERFFLOWASPECT__
-    __attribute__((annotate("@critical_path(pointcut='around')")))
+  __attribute__((annotate("@critical_path(pointcut='around')")))
 #endif
-  void Eval(const int length,
-            const FPType *density,
-            const FPType *energy,
-            FPType *pressure,
-            FPType *soundspeed2,
-            FPType *bulkmod,
-            FPType *temperature) const override
+  void
+  Eval(const int length,
+       const FPType *density,
+       const FPType *energy,
+       FPType *pressure,
+       FPType *soundspeed2,
+       FPType *bulkmod,
+       FPType *temperature) const override
   {
     Eval_with_filter(length,
                      density,
@@ -77,16 +78,17 @@ public:
   }
 
 #ifdef __ENABLE_PERFFLOWASPECT__
-    __attribute__((annotate("@critical_path(pointcut='around')")))
+  __attribute__((annotate("@critical_path(pointcut='around')")))
 #endif
-  void Eval_with_filter(const int length,
-                        const FPType *density,
-                        const FPType *energy,
-                        const bool *filter,
-                        FPType *pressure,
-                        FPType *soundspeed2,
-                        FPType *bulkmod,
-                        FPType *temperature) const override
+  void
+  Eval_with_filter(const int length,
+                   const FPType *density,
+                   const FPType *energy,
+                   const bool *filter,
+                   FPType *pressure,
+                   FPType *soundspeed2,
+                   FPType *bulkmod,
+                   FPType *temperature) const override
   {
     auto plt = GetPlatform((void *)density);
     const char *res_name = GetResourceName(plt);
