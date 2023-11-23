@@ -66,7 +66,6 @@ To built AMS with [PFA](https://github.com/flux-framework/PerfFlowAspect) suppor
 
 ```
 $ cd $CODE_ROOT/setup
-$ source setup_env_with_pfa.sh
 $ mkdir build; cd build
 $  cmake \
    -DCMAKE_CXX_COMPILER=/usr/tce/packages/clang/clang-10.0.1-gcc-8.3.1/bin/clang++ \
