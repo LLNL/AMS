@@ -220,6 +220,7 @@ class RMQMessage(object):
         - 4 bytes are the number of elements in the message. Limit max: 2^32 - 1
         - 2 bytes are the input dimension. Limit max: 65535
         - 2 bytes are the output dimension. Limit max: 65535
+        - 4 bytes are for aligning memory to 8
 
             |__Header_size__|__Datatype__|__Rank__|__#elem__|__InDim__|__OutDim__|...real data...|
 
@@ -229,7 +230,7 @@ class RMQMessage(object):
             |__Header_(12B)__|__Input 1__|__Output 1__|...|__Input_K__|__Output_K__|
 
         """
-        return "BBHIHH"
+        return "BBHIHHI"
 
     def endianness(self) -> str:
         """
@@ -272,6 +273,7 @@ class RMQMessage(object):
             res["num_element"],
             res["input_dim"],
             res["output_dim"],
+            res["padding"],
         ) = struct.unpack(fmt, body[:hsize])
         assert hsize == res["hsize"]
         assert res["datatype"] in [4, 8]
@@ -314,9 +316,9 @@ class RMQMessage(object):
         while body:
             header_info = self._parse_header(body)
             temp_input, temp_output = self._parse_data(body, header_info)
+            print(f"input shape {temp_input.shape} outpute shape {temp_output.shape}")
             # total size of byte we read for that message
             chunk_size = header_info["hsize"] + header_info["dsize"]
-            print(f"Processing message #{i}")
             input.append(temp_input)
             output.append(temp_output)
             # We remove the current message and keep going
@@ -442,6 +444,7 @@ class FSWriteTask(Task):
             fn = get_unique_fn()
             fn = f"{self.out_dir}/{fn}.{self.suffix}"
             is_terminate = False
+            total_bytes_written = 0
             with self.data_writer_cls(fn) as fd:
                 bytes_written = 0
                 while True:
@@ -454,6 +457,8 @@ class FSWriteTask(Task):
                         bytes_written += data.inputs.size * data.inputs.itemsize
                         bytes_written += data.outputs.size * data.outputs.itemsize
                         fd.store(data.inputs, data.outputs)
+                        total_bytes_written += data.inputs.size * data.inputs.itemsize
+                        total_bytes_written += data.outputs.size * data.outputs.itemsize
                     # FIXME: We currently decide to chunk files to 2GB
                     # of contents. Is this a good size?
                     if is_terminate or bytes_written >= 2 * 1024 * 1024 * 1024:
@@ -465,7 +470,7 @@ class FSWriteTask(Task):
                 break
 
         end = time.time()
-        print(f"Spend {end - start} at {self.__class__.__name__}")
+        print(f"Spend {end - start} {total_bytes_written} at {self.__class__.__name__}")
 
 
 class PushToStore(Task):
@@ -545,7 +550,6 @@ class Pipeline(ABC):
         initializes the Pipeline class to write the final data in the 'dest_dir' using a file writer of type 'db_type'
         and optionally caching the data in the 'stage_dir' before making them available in the cache store.
         """
-        print("DATABASE DIR IS: ", db_dir)
         self.ams_config = AMSInstance.from_path(db_dir)
 
         if dest_dir is not None:
@@ -782,12 +786,12 @@ class RMQPipeline(Pipeline):
         rmq_queue: The RMQ queue to listen to.
     """
 
-    def __init__(self, store, dest_dir, stage_dir, db_type, credentials, cacert, rmq_queue):
+    def __init__(self, db_dir, store, dest_dir, stage_dir, db_type, credentials, cacert, rmq_queue):
         """
         Initialize a RMQPipeline that will write data to the 'dest_dir' and optionally publish
         these files to the kosh-store 'store' by using the stage_dir as an intermediate directory.
         """
-        super().__init__(store, dest_dir, stage_dir, db_type)
+        super().__init__(db_dir, store, dest_dir, stage_dir, db_type)
         self._credentials = Path(credentials)
         self._cacert = Path(cacert)
         self._rmq_queue = rmq_queue
@@ -819,7 +823,17 @@ class RMQPipeline(Pipeline):
         """
         Create RMQPipeline from the user provided CLI.
         """
-        return cls(args.store, args.dest_dir, args.stage_dir, args.db_type, args.creds, args.cert, args.queue)
+        print("Creating database from here", args.persistent_db_path)
+        return cls(
+            args.persistent_db_path,
+            args.store,
+            args.dest_dir,
+            args.stage_dir,
+            args.db_type,
+            args.creds,
+            args.cert,
+            args.queue,
+        )
 
 
 def get_pipeline(src_mechanism="fs"):

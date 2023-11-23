@@ -22,7 +22,7 @@ def main():
         "--load", "-l", dest="user_module", help="Path implementing a custom pipeline stage module", default=None
     )
     parser.add_argument(
-        "--class", "-cls", dest="user_class", help="Class implementing the 'Action' performed on data", default=None
+        "--class", dest="user_class", help="Class implementing the 'Action' performed on data", default=None
     )
     parser.add_argument(
         "--policy",
@@ -42,6 +42,7 @@ def main():
     user_class = None
     user_args = None
     user_prog = ""
+    print(f"User class is {args.user_module} {args.user_class}")
 
     if args.user_module is not None:
         user_class = load_class(args.user_module, args.user_class)
@@ -55,6 +56,7 @@ def main():
         user_args, extras = user_parser.parse_known_args(extras)
 
     pipeline_cls = get_pipeline(args.mechanism)
+    print(pipeline_cls)
     pipeline_parser = argparse.ArgumentParser(
         prog=pipeline_cls.__name__,
         description="Pipeline mechanism to load data from specified end-point",
@@ -81,5 +83,5 @@ def main():
 
 
 if __name__ == "__main__":
-    print("{0}".format(" ".join(sys.argv)))
+    main()
     main()
