@@ -68,8 +68,8 @@ To built AMS with [PFA](https://github.com/flux-framework/PerfFlowAspect) suppor
 $ cd $CODE_ROOT/setup
 $ mkdir build; cd build
 $  cmake \
-   -DCMAKE_CXX_COMPILER=/usr/tce/packages/clang/clang-10.0.1-gcc-8.3.1/bin/clang++ \
-   -DCMAKE_C_COMPILER=/usr/tce/packages/clang/clang-10.0.1-gcc-8.3.1/bin/clang \
+   -DCMAKE_CXX_COMPILER=clang++ \
+   -DCMAKE_C_COMPILER=clang \
    -DWITH_HDF5=On -DHDF5_Dir=$AMS_HDF5_PATH \
    -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
    -DWITH_DB=On \
