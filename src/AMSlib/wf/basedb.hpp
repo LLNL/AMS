@@ -643,6 +643,7 @@ public:
     return connection_info;
   }
 
+  PERFFASPECT()
   void store(size_t num_elements,
              std::vector<TypeValue*>& inputs,
              std::vector<TypeValue*>& outputs)
