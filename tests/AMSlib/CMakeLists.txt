@@ -7,7 +7,7 @@ function (BUILD_TEST exe source)
   add_executable(${exe} ${source})
   target_include_directories(${exe} PRIVATE "${PROJECT_SOURCE_DIR}/src/AMSlib/" umpire ${caliper_INCLUDE_DIR} ${MPI_INCLUDE_PATH})
   target_link_directories(${exe} PRIVATE ${AMS_APP_LIB_DIRS})
-  target_link_libraries(${exe} PRIVATE AMS umpire MPI::MPI_CXX)
+  target_link_libraries(${exe} PRIVATE AMS ${AMS_APP_LIBRARIES})
 
   target_compile_definitions(${exe} PRIVATE ${AMS_APP_DEFINES})
   if (WITH_CUDA)
