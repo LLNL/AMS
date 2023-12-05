@@ -17,7 +17,7 @@ public:
 #ifdef __ENABLE_PERFFLOWASPECT__
   __attribute__((annotate("@critical_path(pointcut='around')")))
 #endif
-  virtual void
+  void
   Eval(const int length, const FPType **inputs, FPType **outputs) const
   {
     Eval(length,
