@@ -17,11 +17,13 @@
 #include <unordered_set>
 #include <vector>
 
+// clang-format off
 #include "app/eos.hpp"
-#include "app/eos_ams.hpp"
 #include "app/eos_constant_on_host.hpp"
 #include "app/eos_idealgas.hpp"
 #include "app/utils_mfem.hpp"
+#include "app/eos_ams.hpp"
+// clang-format on
 
 // this macro completely bypasses all AMS functionality
 // this allows us to check how easy is it to test ams
@@ -114,8 +116,6 @@ std::unordered_set<std::string> createMemoryAllocators(
   }
   return std::move(allocator_names);
 }
-
-using mfem::ForallWrap;
 
 int computeNumElements(int globalNumElements, int id, int numRanks)
 {

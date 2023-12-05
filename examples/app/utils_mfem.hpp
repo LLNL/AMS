@@ -22,7 +22,6 @@
 #define mfemReshapeArray1(m, op) mfem::Reshape(m.op(), m.Size());
 
 //! -----------------------------------------------------------------------
-using mfem::ForallWrap;
 
 template <typename T>
 using dt1 = mfem::DeviceTensor<1, T>;
@@ -53,7 +52,7 @@ static inline void pack_ij(const int k,
                            const dt3<Tin> &b3,
                            const dt2<Tout> &b2)
 {
-
+  using mfem::ForallWrap;
   MFEM_FORALL(j, sz_sparse_j, {
     const int sparse_j = sparse_j_indices[offset_sparse_j + j];
     for (int i = 0; i < sz_i; ++i) {
@@ -79,6 +78,7 @@ static inline void unpack_ij(const int k,
                              const dt3<Tout> &d3)
 {
 
+  using mfem::ForallWrap;
   MFEM_FORALL(j, sz_sparse_j, {
     const int sparse_j = sparse_j_indices[offset_sparse_j + j];
     for (int i = 0; i < sz_i; ++i) {
