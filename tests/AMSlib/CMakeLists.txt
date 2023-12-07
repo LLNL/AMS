@@ -40,6 +40,10 @@ if (WITH_TORCH)
 endif()
 
 add_test(NAME AMSInferSingleDeltaUQ::HOST COMMAND  ams_example --precision single --uqtype deltauq-mean -db ./db -S ${CMAKE_CURRENT_SOURCE_DIR}/tuple-single.torchscript -e 100)
+
+add_test(NAME AMSExampleSingleRandomUQ::HOST COMMAND ams_example --precision single -S ${CMAKE_CURRENT_SOURCE_DIR}/debug_model.pt --uqtype random -e 100)
+add_test(NAME AMSExampleDoubleRandomUQ::HOST COMMAND ams_example --precision double -S ${CMAKE_CURRENT_SOURCE_DIR}/debug_model.pt --uqtype random -e 100)
+
 if(WITH_FAISS)
   BUILD_TEST(ams_hdcache_test test_hdcache.cpp)
   ADDTEST(ams_hdcache_test AMSHDCacheMeanPolicyDouble ${CMAKE_CURRENT_SOURCE_DIR}/faiss_debug.pt "double" 1 10 4.0 4 5)

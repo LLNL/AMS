@@ -13,6 +13,7 @@
 
 #include "AMS.h"
 #include "ml/hdcache.hpp"
+#include "ml/random_uq.hpp"
 #include "ml/surrogate.hpp"
 #include "wf/resource_manager.hpp"
 
@@ -20,15 +21,38 @@ template <typename FPTypeValue>
 class UQ
 {
 public:
+  UQ(AMSResourceType resourceLocation,
+     const AMSUQPolicy uqPolicy,
+     const char *uqPath,
+     const int nClusters,
+     const char *surrogatePath,
+     FPTypeValue threshold)
+      : uqPolicy(uqPolicy), threshold(threshold)
+  {
+
+    if (surrogatePath) {
+      bool is_DeltaUQ = ((uqPolicy == AMSUQPolicy::DeltaUQ_Max ||
+                          uqPolicy == AMSUQPolicy::DeltaUQ_Mean)
+                             ? true
+                             : false);
+      surrogate = SurrogateModel<FPTypeValue>::getInstance(surrogatePath,
+                                                           resourceLocation,
+                                                           is_DeltaUQ);
+    }
+
+    if (uqPath)
+      hdcache = HDCache<FPTypeValue>::getInstance(
+          uqPath, resourceLocation, uqPolicy, nClusters, threshold);
+
+    if (uqPolicy == AMSUQPolicy::RandomUQ)
+      randomUQ = std::make_unique<RandomUQ>(resourceLocation, threshold);
+  }
+
   PERFFASPECT()
-  static void evaluate(
-      AMSUQPolicy uqPolicy,
-      const int totalElements,
-      std::vector<const FPTypeValue *> &inputs,
-      std::vector<FPTypeValue *> &outputs,
-      const std::shared_ptr<HDCache<FPTypeValue>> &hdcache,
-      const std::shared_ptr<SurrogateModel<FPTypeValue>> &surrogate,
-      bool *p_ml_acceptable)
+  void evaluate(const int totalElements,
+                std::vector<const FPTypeValue *> &inputs,
+                std::vector<FPTypeValue *> &outputs,
+                bool *p_ml_acceptable)
   {
     if ((uqPolicy == AMSUQPolicy::DeltaUQ_Mean) ||
         (uqPolicy == AMSUQPolicy::DeltaUQ_Max)) {
@@ -47,20 +71,20 @@ public:
       surrogate->evaluate(totalElements, inputs, outputs, outputs_stdev);
       CALIPER(CALI_MARK_END("SURROGATE");)
 
-      if (uqPolicy == DeltaUQ_Mean) {
+      if (uqPolicy == AMSUQPolicy::DeltaUQ_Mean) {
         for (size_t i = 0; i < totalElements; ++i) {
           // Use double for increased precision, range in the calculation
           double mean = 0.0;
           for (size_t dim = 0; dim < ndims; ++dim)
             mean += outputs_stdev[dim][i];
           mean /= ndims;
-          p_ml_acceptable[i] = (mean < _threshold);
+          p_ml_acceptable[i] = (mean < threshold);
         }
-      } else if (uqPolicy == DeltaUQ_Max) {
+      } else if (uqPolicy == AMSUQPolicy::DeltaUQ_Max) {
         for (size_t i = 0; i < totalElements; ++i) {
           bool is_acceptable = true;
           for (size_t dim = 0; dim < ndims; ++dim)
-            if (outputs_stdev[dim][i] >= _threshold) {
+            if (outputs_stdev[dim][i] >= threshold) {
               is_acceptable = false;
               break;
             }
@@ -75,7 +99,8 @@ public:
         ams::ResourceManager::deallocate(outputs_stdev[dim],
                                          AMSResourceType::HOST);
       CALIPER(CALI_MARK_END("DELTAUQ");)
-    } else {
+    } else if (uqPolicy == AMSUQPolicy::FAISS_Mean ||
+               uqPolicy == AMSUQPolicy::FAISS_Max) {
       CALIPER(CALI_MARK_BEGIN("HDCACHE");)
       if (hdcache) hdcache->evaluate(totalElements, inputs, p_ml_acceptable);
       CALIPER(CALI_MARK_END("HDCACHE");)
@@ -84,17 +109,24 @@ public:
       DBG(Workflow, "Model exists, I am calling surrogate (for all data)");
       surrogate->evaluate(totalElements, inputs, outputs);
       CALIPER(CALI_MARK_END("SURROGATE");)
+    } else if (uqPolicy == AMSUQPolicy::RandomUQ) {
+      CALIPER(CALI_MARK_BEGIN("RANDOM_UQ");)
+      DBG(Workflow, "Evaluating Random UQ");
+      randomUQ->evaluate(totalElements, p_ml_acceptable);
+      CALIPER(CALI_MARK_END("RANDOM_UQ");)
+    } else {
+      THROW(std::runtime_error, "Invalid UQ policy");
     }
   }
 
-  PERFFASPECT()
-  static void setThreshold(FPTypeValue threshold) { _threshold = threshold; }
+  bool hasSurrogate() { return (surrogate ? true : false); }
 
 private:
-  static FPTypeValue _threshold;
+  AMSUQPolicy uqPolicy;
+  FPTypeValue threshold;
+  std::unique_ptr<RandomUQ> randomUQ;
+  std::shared_ptr<HDCache<FPTypeValue>> hdcache;
+  std::shared_ptr<SurrogateModel<FPTypeValue>> surrogate;
 };
-
-template <typename FPTypeValue>
-FPTypeValue UQ<FPTypeValue>::_threshold = 0.5;
 
 #endif
