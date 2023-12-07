@@ -683,6 +683,7 @@ struct AMSMsgHeader {
   uint16_t in_dim;
   /** @brief Outputs dimension */
   uint16_t out_dim;
+  const uint32_t msg_type;
 
   /**
    * @brief Constructor for AMSMsgHeader
@@ -726,7 +727,7 @@ struct AMSMsgHeader {
         domain_size(domain_size),
         num_elem(num_elem),
         in_dim(in_dim),
-        out_dim(out_dim)
+        out_dim(out_dim),
   {
   }
 
@@ -781,6 +782,8 @@ struct AMSMsgHeader {
     // Output dim (should be 2 bytes)
     std::memcpy(data_blob + current_offset, &(out_dim), sizeof(out_dim));
     current_offset += sizeof(out_dim);
+    (*reinterpret_cast<uint32_t*>(&data_blob[current_offset])) = msg_type;
+    current_offset += sizeof(msg_type);
 
     return AMSMsgHeader::size();
   }

@@ -9,6 +9,8 @@ import json
 import os
 import shutil
 import signal
+import sys
+import os
 import time
 from abc import ABC, abstractclassmethod, abstractmethod
 from enum import Enum
@@ -27,6 +29,9 @@ from ams.monitor import AMSMonitor
 from ams.rmq import AMSMessage, AsyncConsumer
 from ams.store import AMSDataStore
 from ams.util import get_unique_fn
+
+from flux.kvs import KVSDir
+import flux
 
 BATCH_SIZE = 32 * 1024 * 1024
 
@@ -150,20 +155,30 @@ class ForwardTask(Task):
         the output to the output queue. In the case of receiving a 'termination' messages informs
         the tasks waiting on the output queues about the terminations and returns from the function.
         """
-
+        received_in = [0, 0]
+        received_out = [0, 0]
+        sent_in = [0, 0]
+        sent_out = [0, 0]
         while True:
             # This is a blocking call
             item = self.i_queue.get(block=True)
+
             if item.is_terminate():
                 self.o_queue.put(QueueMessage(MessageType.Terminate, None))
                 break
             elif item.is_process():
+                received_in = [o + i for o, i in zip(received_in, item.data().inputs.shape)]
+                received_out = [o + i for o, i in zip(received_in, item.data().outputs.shape)]
+
                 inputs, outputs = self._action(item.data())
+                sent_in = [o + i for o, i in zip(sent_in, inputs.shape)]
+                sent_out = [o + i for o, i in zip(sent_out, outputs.shape)]
                 self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(inputs, outputs)))
                 self.datasize += inputs.nbytes + outputs.nbytes
             elif item.is_new_model():
                 # This is not handled yet
                 continue
+        print(f"Inputs {received_in}/{sent_in} outputs {received_out}/{sent_out}")
         return
 
 
@@ -194,10 +209,14 @@ class FSLoaderTask(Task):
         """
 
         start = time.time()
+        input_rows = 0
+        output_rows = 0
         for fn in glob.glob(self.pattern):
             with self.loader(fn) as fd:
                 input_data, output_data = fd.load()
                 row_size = input_data[0, :].nbytes + output_data[0, :].nbytes
+                input_rows += input_data.shape[0]
+                output_rows += output_data.shape[0]
                 rows_per_batch = int(np.ceil(BATCH_SIZE / row_size))
                 num_batches = int(np.ceil(input_data.shape[0] / rows_per_batch))
                 input_batches = np.array_split(input_data, num_batches)
@@ -209,6 +228,7 @@ class FSLoaderTask(Task):
 
         end = time.time()
         print(f"Spend {end - start} at {self.__class__.__name__}")
+        print(f"Read {input_rows} and {output_rows}")
 
 
 class RMQLoaderTask(Task):
@@ -391,7 +411,6 @@ class FSWriteTask(Task):
         self.datasize = total_bytes_written
         print(f"Spend {end - start} {total_bytes_written} at {self.__class__.__name__}")
 
-
 class PushToStore(Task):
     """
     PushToStore is the epilogue of the pipeline. Effectively (if instructed so) it informs the kosh store
@@ -419,12 +438,14 @@ class PushToStore(Task):
         self.total_filesize = 0
         if not self.dir.exists():
             self.dir.mkdir(parents=True, exist_ok=True)
+        print("AMS Store directories created")
 
     @AMSMonitor(record=["nb_requests"])
     def __call__(self):
         """
         A busy loop reading messages from the i_queue publishing them to the kosh store.
         """
+        print("In busy loop of AMS Store")
         start = time.time()
         if self._store:
             db_store = AMSDataStore(
@@ -530,11 +551,30 @@ class Pipeline(ABC):
             executing actions by reading data from i/o_queue(s).
         """
         executors = list()
-        for a in self._tasks:
+        for i, a in enumerate(self._tasks):
+            print(f"Instantiating Task: {i}:{a.__class__.__name__}")
             executors.append(exec_vehicle_cls(target=a))
 
-        for e in executors:
+        for i, e in enumerate(executors):
+            print(f"Start Executor: {i}")
             e.start()
+            print(f"Executor {i} started")
+
+        # This is currently is hardcoded. We need to abstract it
+        # to make this callable from the command line.
+        # Addtionally a good communication protocol with KVS of
+        # AMS-deploy can help us to gracefull shutdown connections
+        flux_handle = flux.Flux()
+        kvs_dir = KVSDir(flux_handle=flux_handle)
+        print("Instance level is ", flux_handle.attr_get("instance-level"))
+        print(f"Flux URI is {os.environ.get('FLUX_URI')}")
+        sys.stdout.flush()
+        print("KVS RESOURCE DIR IS", kvs_dir["resource.R"])
+        sys.stdout.flush()
+        kvs_dir["AMSStager"] = "Active"
+        kvs_dir.commit()
+        print("Commit to KVS Store")
+        sys.stdout.flush()
 
         for e in executors:
             e.join()
@@ -676,7 +716,7 @@ class FSPipeline(Pipeline):
         Returns: An FSLoaderTask instance reading data from the filesystem and forwarding the values to the o_queue.
         """
         loader = get_reader(self._src_type)
-        return FSLoaderTask(o_queue, loader, pattern=str(self._src) + "/" + self._pattern)
+        return FSLoaderTask(o_queue, loader, pattern=str(self._src) + "/*" + self._pattern)
 
     @staticmethod
     def add_cli_args(parser):

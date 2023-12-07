@@ -96,31 +96,34 @@ class AMSHDF5VirtualDBReader:
 
         if not files:
             return
-
+        print(f"{files}")
         for f in files:
-            print(f"Processing file: {f}")
             # Every file has both input, output data
             # Open file and pick the data types and the shapes.
             # We need those to map them correctly to a virtual file.
             with h5py.File(f, "r") as fd:
-                i_shape = fd["inputs"].shape
-                i_type = fd["inputs"].dtype
-                o_shape = fd["outputs"].shape
-                o_type = fd["outputs"].dtype
-
-                if not i_names:
-                    i_names = [f"input_{i}" for i in range(i_shape[-1])]
+                if not all([k in fd.keys() for k in ["inputs", "outputs"]]):
+                    print(b"File {f} misses keys")
+                    print(f"{fd.keys()}")
                 else:
-                    if len(i_names) != i_shape[-1]:
-                        raise RuntimeError(f"Input name description {i_names} differs in size with {i_shape[-1]}")
+                    i_shape = fd["inputs"].shape
+                    i_type = fd["inputs"].dtype
+                    o_shape = fd["outputs"].shape
+                    o_type = fd["outputs"].dtype
 
-                if not o_names:
-                    o_names = [f"output_{i}" for i in range(o_shape[-1])]
-                else:
-                    if len(o_names) != o_shape[-1]:
-                        raise RuntimeError(f"Ouput name description {o_names} differs in size with {o_shape[-1]}")
+                    if not i_names:
+                        i_names = [f"input_{i}" for i in range(i_shape[-1])]
+                    else:
+                        if len(i_names) != i_shape[-1]:
+                            raise RuntimeError(f"Input name description {i_names} differs in size with {i_shape[-1]}")
 
-                dsets_descr[f] = AMSHDF5VirtualDBReader.DataDescr(i_shape, i_type, o_shape, o_type)
+                    if not o_names:
+                        o_names = [f"output_{i}" for i in range(o_shape[-1])]
+                    else:
+                        if len(o_names) != o_shape[-1]:
+                            raise RuntimeError(f"Ouput name description {o_names} differs in size with {o_shape[-1]}")
+
+                    dsets_descr[f] = AMSHDF5VirtualDBReader.DataDescr(i_shape, i_type, o_shape, o_type)
 
         self.verify_dsets(dsets_descr)
         i_vds, o_vds = self.create_vds_layout(dsets_descr)
