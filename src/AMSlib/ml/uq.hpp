@@ -17,6 +17,10 @@
 #include "ml/surrogate.hpp"
 #include "wf/resource_manager.hpp"
 
+static inline bool isNullOrEmpty(const char *p) {
+  return (!p || p[0] =='\0');
+}
+
 template <typename FPTypeValue>
 class UQ
 {
@@ -29,20 +33,30 @@ public:
      FPTypeValue threshold)
       : uqPolicy(uqPolicy), threshold(threshold)
   {
+    if (!(AMSUQPolicy::AMSUQPolicy_BEGIN <= uqPolicy &&
+          uqPolicy <= AMSUQPolicy::AMSUQPolicy_END))
+      THROW(std::runtime_error, "Invalid UQ policy, value is out-of-bounds");
 
-    if (surrogatePath) {
-      bool is_DeltaUQ = ((uqPolicy == AMSUQPolicy::DeltaUQ_Max ||
-                          uqPolicy == AMSUQPolicy::DeltaUQ_Mean)
-                             ? true
-                             : false);
-      surrogate = SurrogateModel<FPTypeValue>::getInstance(surrogatePath,
-                                                           resourceLocation,
-                                                           is_DeltaUQ);
-    }
+    if (isNullOrEmpty(surrogatePath))
+      THROW(std::runtime_error, "Missing file path to surrogate model");
 
-    if (uqPath)
+    bool is_DeltaUQ = ((uqPolicy == AMSUQPolicy::DeltaUQ_Max ||
+                        uqPolicy == AMSUQPolicy::DeltaUQ_Mean)
+                           ? true
+                           : false);
+
+    surrogate = SurrogateModel<FPTypeValue>::getInstance(surrogatePath,
+                                                         resourceLocation,
+                                                         is_DeltaUQ);
+
+    if (uqPolicy == AMSUQPolicy::FAISS_Max ||
+        uqPolicy == AMSUQPolicy::FAISS_Mean) {
+      if (isNullOrEmpty(uqPath))
+        THROW(std::runtime_error, "Missing file path to a FAISS UQ model");
+
       hdcache = HDCache<FPTypeValue>::getInstance(
           uqPath, resourceLocation, uqPolicy, nClusters, threshold);
+    }
 
     if (uqPolicy == AMSUQPolicy::RandomUQ)
       randomUQ = std::make_unique<RandomUQ>(resourceLocation, threshold);
@@ -102,7 +116,7 @@ public:
     } else if (uqPolicy == AMSUQPolicy::FAISS_Mean ||
                uqPolicy == AMSUQPolicy::FAISS_Max) {
       CALIPER(CALI_MARK_BEGIN("HDCACHE");)
-      if (hdcache) hdcache->evaluate(totalElements, inputs, p_ml_acceptable);
+      hdcache->evaluate(totalElements, inputs, p_ml_acceptable);
       CALIPER(CALI_MARK_END("HDCACHE");)
 
       CALIPER(CALI_MARK_BEGIN("SURROGATE");)

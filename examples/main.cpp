@@ -615,7 +615,7 @@ int main(int argc, char **argv)
   const char *precision_opt = "double";
   AMSDType precision = AMSDType::Double;
 
-  const char *uq_policy_opt = "faiss-mean";
+  const char *uq_policy_opt = "";
   int k_nearest = 5;
 
   int seed = 0;
@@ -746,7 +746,8 @@ int main(int argc, char **argv)
                  "the "
                  "k'st cluster \n"
                  "\t 'deltauq-mean': Uncertainty through DUQ using mean\n"
-                 "\t 'deltauq-max': Uncertainty through DUQ using max\n");
+                 "\t 'deltauq-max': Uncertainty through DUQ using max\n"
+                 "\t 'random': Uncertainty throug a random model\n");
 
   args.AddOption(
       &verbose, "-v", "--verbose", "-qu", "--quiet", "Print extra stuff");

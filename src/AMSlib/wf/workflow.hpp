@@ -52,7 +52,7 @@ class AMSWorkflow
   std::unique_ptr<UQ<FPTypeValue>> UQModel;
 
   /** The metric/type of UQ we will use to select between physics and ml computations **/
-  const AMSUQPolicy uqPolicy = AMSUQPolicy::FAISS_Mean;
+  const AMSUQPolicy uqPolicy = AMSUQPolicy::AMSUQPolicy_END;
 
   /** @brief The database to store data for which we cannot apply the current
    * model */
