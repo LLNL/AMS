@@ -67,7 +67,6 @@ class HDCache
   Index *m_index = nullptr;
   const uint8_t m_dim;
 
-  const bool m_use_random;
   const int m_knbrs = 0;
   const AMSUQPolicy m_policy = AMSUQPolicy::FAISS_Mean;
 
@@ -96,17 +95,6 @@ protected:
   //! ------------------------------------------------------------------------
   //! constructors
   //! ------------------------------------------------------------------------
-  HDCache(AMSResourceType resource, TypeInValue threshold = 0.5)
-      : m_index(nullptr),
-        m_dim(0),
-        m_use_random(true),
-        m_knbrs(-1),
-        cache_location(resource),
-        acceptable_error(threshold)
-  {
-    print();
-  }
-
 #ifdef __ENABLE_FAISS__
   HDCache(const std::string &cache_path,
           AMSResourceType resource,
@@ -115,7 +103,6 @@ protected:
           TypeInValue threshold = 0.5)
       : m_index(load_cache(cache_path)),
         m_dim(m_index->d),
-        m_use_random(false),
         m_knbrs(knbrs),
         m_policy(uqPolicy),
         cache_location(resource),
@@ -139,7 +126,6 @@ protected:
           TypeInValue threshold = 0.5)
       : m_index(load_cache(cache_path)),
         m_dim(0),
-        m_use_random(false),
         m_knbrs(knbrs),
         m_policy(uqPolicy),
         cache_location(resource),
@@ -212,7 +198,8 @@ public:
     if (uqPolicy != AMSUQPolicy::FAISS_Mean &&
         uqPolicy != AMSUQPolicy::FAISS_Max)
       THROW(std::invalid_argument,
-            "Invalid UQ policy for hdcache" + std::to_string(uqPolicy));
+            "Invalid UQ policy for hdcache" +
+                std::to_string(static_cast<unsigned int>(uqPolicy)));
 
     DBG(UQModule, "Generating new cache under (%s)", cache_path.c_str())
     std::shared_ptr<HDCache<TypeInValue>> new_cache =
@@ -220,30 +207,6 @@ public:
             cache_path, resource, uqPolicy, knbrs, threshold));
 
     instances.insert(std::make_pair(cache_path, new_cache));
-    return new_cache;
-  }
-
-  static std::shared_ptr<HDCache<TypeInValue>> getInstance(
-      AMSResourceType resource,
-      float threshold = 0.5)
-  {
-    static std::string random_path("random");
-    std::shared_ptr<HDCache<TypeInValue>> cache = find_cache(
-        random_path, resource, AMSUQPolicy::FAISS_Mean, -1, threshold);
-    if (cache) {
-      DBG(UQModule, "Returning existing cache under (%s)", random_path.c_str())
-      return cache;
-    }
-
-    DBG(UQModule,
-        "Generating new cache under (%s, threshold:%f)",
-        random_path.c_str(),
-        threshold)
-    std::shared_ptr<HDCache<TypeInValue>> new_cache =
-        std::shared_ptr<HDCache<TypeInValue>>(
-            new HDCache<TypeInValue>(resource, threshold));
-
-    instances.insert(std::make_pair(random_path, new_cache));
     return new_cache;
   }
 
@@ -272,17 +235,13 @@ public:
     if (has_index()) {
       info = "npoints = " + std::to_string(count());
     }
-    DBG(UQModule,
-        "HDCache (on_device = %d random = %d %s)",
-        cache_location,
-        m_use_random,
-        info.c_str());
+    DBG(UQModule, "HDCache (on_device = %d %s)", cache_location, info.c_str());
   }
 
   inline bool has_index() const
   {
 #ifdef __ENABLE_FAISS__
-    if (!m_use_random) return m_index != nullptr && m_index->is_trained;
+    return m_index != nullptr && m_index->is_trained;
 #endif
     return true;
   }
@@ -290,7 +249,7 @@ public:
   inline size_t count() const
   {
 #ifdef __ENABLE_FAISS__
-    if (!m_use_random) return m_index->ntotal;
+    return m_index->ntotal;
 #endif
     return 0;
   }
@@ -326,8 +285,6 @@ public:
   PERFFASPECT()
   void add(const size_t ndata, const size_t d, TypeInValue *data)
   {
-    if (m_use_random) return;
-
     DBG(UQModule, "Add %ld %ld points to HDCache", ndata, d);
     CFATAL(UQModule, d != m_dim, "Mismatch in data dimensionality!")
     CFATAL(UQModule,
@@ -341,8 +298,6 @@ public:
   PERFFASPECT()
   void add(const size_t ndata, const std::vector<TypeInValue *> &inputs)
   {
-    if (m_use_random) return;
-
     if (inputs.size() != m_dim)
       CFATAL(UQModule,
              inputs.size() != m_dim,
@@ -364,7 +319,6 @@ public:
   PERFFASPECT()
   void train(const size_t ndata, const size_t d, TypeInValue *data)
   {
-    if (m_use_random) return;
     DBG(UQModule, "Add %ld %ld points to HDCache", ndata, d);
     CFATAL(UQModule, d != m_dim, "Mismatch in data dimensionality!")
     CFATAL(UQModule,
@@ -379,7 +333,6 @@ public:
   PERFFASPECT()
   void train(const size_t ndata, const std::vector<TypeInValue *> &inputs)
   {
-    if (m_use_random) return;
     TypeValue *lin_data =
         data_handler::linearize_features(cache_location, ndata, inputs);
     _train(ndata, lin_data);
@@ -406,15 +359,9 @@ public:
            "HDCache does not have a valid and trained index!")
     DBG(UQModule, "Evaluating %ld %ld points using HDCache", ndata, d);
 
-    CFATAL(UQModule,
-           (!m_use_random) && (d != m_dim),
-           "Mismatch in data dimensionality!")
+    CFATAL(UQModule, (d != m_dim), "Mismatch in data dimensionality!")
 
-    if (m_use_random) {
-      _evaluate(ndata, is_acceptable);
-    } else {
-      _evaluate(ndata, data, is_acceptable);
-    }
+    _evaluate(ndata, data, is_acceptable);
 
     if (cache_location == AMSResourceType::DEVICE) {
       deviceCheckErrors(__FILE__, __LINE__);
@@ -442,17 +389,13 @@ public:
         acceptable_error,
         m_policy);
     CFATAL(UQModule,
-           ((!m_use_random) && inputs.size() != m_dim),
+           (inputs.size() != m_dim),
            "Mismatch in data dimensionality!")
 
-    if (m_use_random) {
-      _evaluate(ndata, is_acceptable);
-    } else {
-      TypeValue *lin_data =
-          data_handler::linearize_features(cache_location, ndata, inputs);
-      _evaluate(ndata, lin_data, is_acceptable);
-      ams::ResourceManager::deallocate(lin_data, cache_location);
-    }
+    TypeValue *lin_data =
+        data_handler::linearize_features(cache_location, ndata, inputs);
+    _evaluate(ndata, lin_data, is_acceptable);
+    ams::ResourceManager::deallocate(lin_data, cache_location);
     DBG(UQModule, "Done with evalution of uq");
   }
 
@@ -619,20 +562,6 @@ private:
   {
   }
 #endif
-  PERFFASPECT()
-  inline void _evaluate(const size_t ndata, bool *is_acceptable) const
-  {
-    if (cache_location == AMSResourceType::DEVICE) {
-#ifdef __ENABLE_CUDA__
-      random_uq_device<<<1, 1>>>(is_acceptable, ndata, acceptable_error);
-#else
-      THROW(std::runtime_error,
-            "Random-uq is not configured to use device allocations");
-#endif
-    } else {
-      random_uq_host(is_acceptable, ndata, acceptable_error);
-    }
-  }
   // -------------------------------------------------------------------------
 };
 

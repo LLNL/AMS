@@ -16,8 +16,6 @@
 #include <vector>
 
 #include "AMS.h"
-#include "ml/hdcache.hpp"
-#include "ml/surrogate.hpp"
 #include "ml/uq.hpp"
 #include "resource_manager.hpp"
 #include "wf/basedb.hpp"
@@ -51,17 +49,10 @@ class AMSWorkflow
   AMSPhysicFn AppCall;
 
   /** @brief The module that performs uncertainty quantification (UQ) */
-  std::shared_ptr<HDCache<FPTypeValue>> hdcache;
+  std::unique_ptr<UQ<FPTypeValue>> UQModel;
 
   /** The metric/type of UQ we will use to select between physics and ml computations **/
-  const AMSUQPolicy uqPolicy = AMSUQPolicy::FAISS_Mean;
-
-  /** The Number of clusters we will use to compute FAISS UQ  **/
-  const int nClusters = 10;
-
-  /** @brief The torch surrogate model to replace the original physics function
-   */
-  std::shared_ptr<SurrogateModel<FPTypeValue>> surrogate;
+  const AMSUQPolicy uqPolicy = AMSUQPolicy::AMSUQPolicy_END;
 
   /** @brief The database to store data for which we cannot apply the current
    * model */
@@ -157,8 +148,6 @@ class AMSWorkflow
 public:
   AMSWorkflow()
       : AppCall(nullptr),
-        hdcache(nullptr),
-        surrogate(nullptr),
         DB(nullptr),
         dbType(AMSDBType::None),
         appDataLoc(AMSResourceType::HOST),
@@ -191,43 +180,17 @@ public:
         uqPolicy(uqPolicy),
         ePolicy(policy)
   {
-
-    surrogate = nullptr;
-    if (surrogate_path) {
-      bool is_DeltaUQ = ((uqPolicy == AMSUQPolicy::DeltaUQ_Max ||
-                          uqPolicy == AMSUQPolicy::DeltaUQ_Mean)
-                             ? true
-                             : false);
-      surrogate = SurrogateModel<FPTypeValue>::getInstance(surrogate_path,
-                                                           appDataLoc,
-                                                           is_DeltaUQ);
-    }
-
-    UQ<FPTypeValue>::setThreshold(threshold);
-    // TODO: Fix magic number. 10 represents the number of neighbours I am
-    // looking at.
-    if (uq_path)
-      hdcache = HDCache<FPTypeValue>::getInstance(
-          uq_path, appDataLoc, uqPolicy, nClusters, threshold);
-    else
-      // This is a random hdcache returning true %threshold queries
-      hdcache = HDCache<FPTypeValue>::getInstance(appDataLoc, threshold);
-
     DB = nullptr;
     if (db_path) {
       DBG(Workflow, "Creating Database");
       DB = getDB<FPTypeValue>(db_path, dbType, rId);
     }
+
+    UQModel = std::make_unique<UQ<FPTypeValue>>(
+        appDataLoc, uqPolicy, uq_path, nClusters, surrogate_path, threshold);
   }
 
   void set_physics(AMSPhysicFn _AppCall) { AppCall = _AppCall; }
-
-  void set_surrogate(SurrogateModel<FPTypeValue> *_surrogate)
-  {
-    surrogate = _surrogate;
-  }
-
-  void set_hdcache(HDCache<FPTypeValue> *_hdcache) { hdcache = _hdcache; }
 
   ~AMSWorkflow() { DBG(Workflow, "Destroying Workflow Handler"); }
 
@@ -300,7 +263,7 @@ public:
 
     REPORT_MEM_USAGE(Workflow, "Start")
 
-    if (!surrogate) {
+    if (!UQModel->hasSurrogate()) {
       FPTypeValue **tmpInputs = const_cast<FPTypeValue **>(inputs);
 
       std::vector<FPTypeValue *> tmpIn(tmpInputs, tmpInputs + inputDim);
@@ -321,17 +284,11 @@ public:
         ams::ResourceManager::allocate<bool>(totalElements, appDataLoc);
 
     // -------------------------------------------------------------
-    // STEP 1: call the hdcache to look at input uncertainties
+    // STEP 1: call the UQ module to look at input uncertainties
     //         to decide if making a ML inference makes sense
     // -------------------------------------------------------------
     CALIPER(CALI_MARK_BEGIN("UQ_MODULE");)
-    UQ<FPTypeValue>::evaluate(uqPolicy,
-                              totalElements,
-                              origInputs,
-                              origOutputs,
-                              hdcache,
-                              surrogate,
-                              p_ml_acceptable);
+    UQModel->evaluate(totalElements, origInputs, origOutputs, p_ml_acceptable);
     CALIPER(CALI_MARK_END("UQ_MODULE");)
 
     DBG(Workflow, "Computed Predicates")

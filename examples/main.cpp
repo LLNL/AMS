@@ -195,6 +195,8 @@ int run(const char *device_name,
     uq_policy = AMSUQPolicy::DeltaUQ_Max;
   else if (strcmp(uq_policy_opt, "deltauq-mean") == 0)
     uq_policy = AMSUQPolicy::DeltaUQ_Mean;
+  else if (strcmp(uq_policy_opt, "random") == 0)
+    uq_policy = AMSUQPolicy::RandomUQ;
   else
     throw std::runtime_error("Invalid UQ policy");
 
@@ -613,7 +615,7 @@ int main(int argc, char **argv)
   const char *precision_opt = "double";
   AMSDType precision = AMSDType::Double;
 
-  const char *uq_policy_opt = "faiss-mean";
+  const char *uq_policy_opt = "";
   int k_nearest = 5;
 
   int seed = 0;
@@ -744,7 +746,8 @@ int main(int argc, char **argv)
                  "the "
                  "k'st cluster \n"
                  "\t 'deltauq-mean': Uncertainty through DUQ using mean\n"
-                 "\t 'deltauq-max': Uncertainty through DUQ using max\n");
+                 "\t 'deltauq-max': Uncertainty through DUQ using max\n"
+                 "\t 'random': Uncertainty throug a random model\n");
 
   args.AddOption(
       &verbose, "-v", "--verbose", "-qu", "--quiet", "Print extra stuff");
