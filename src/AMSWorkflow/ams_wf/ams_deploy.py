@@ -6,6 +6,13 @@ from enum import Enum
 import logging
 import subprocess as sp
 import json
+import flux
+from flux.job import JobspecV1
+import flux.job as fjob
+
+from ams.store import CreateStore, AMSDataStore
+
+logger = logging.getLogger(__name__)
 
 
 class RootSched(Enum):
@@ -13,11 +20,156 @@ class RootSched(Enum):
     LSF = 2
 
 
+class JobSpec:
+    def __init__(self, name, job_descr, exclusive=True):
+        self._name = name
+        self._executable = job_descr["executable"]
+        self._arguments = " ".join([v for v in job_descr["arguments"]])
+        self._command = [job_descr["executable"]] + job_descr["arguments"]
+        self._environ = os.environ.copy()
+        if "env_variables" in job_descr:
+            for k, v in job_descr["env_variables"].items():
+                self._environ[k] = str(v)
+                print(f"{k} {self._environ[k]}")
+
+        logger.info(f"Creating Job Description: {self._executable} {self._arguments}")
+
+        self._resources = job_descr["resources"]
+        jobspec = JobspecV1.from_command(
+            command=self._command,
+            num_tasks=job_descr["resources"]["num_tasks"],
+            num_nodes=job_descr["resources"]["num_nodes"],
+            cores_per_task=job_descr["resources"]["cores_per_task"],
+            gpus_per_task=job_descr["resources"]["gpus_per_task"],
+            exclusive=exclusive,
+        )
+
+        stdout = job_descr.get("stdout", None)
+        stderr = job_descr.get("stderr", None)
+        if stdout is None:
+            stdout = Path(f"{self._name}.out")
+        if stderr is None:
+            stderr = Path(f"{self._name}.err")
+
+        jobspec.environment = self._environ
+        jobspec.stdout = stdout
+        jobspec.stderr = stderr
+        self._spec = jobspec
+
+    def start(self, flux_handle):
+        logger.info(f"Submitting Job {self._name}")
+        job_id = flux.job.submit(flux_handle, self._spec, pre_signed=False, waitable=True)
+        return job_id
+
+    @property
+    def stdout(self):
+        return self._spec.stdout
+
+    @property
+    def stderr(self):
+        return self._spec.stderr
+
+    @property
+    def name(self):
+        return self._name
+
+
+class SequentialExecutor:
+    def __init__(self, config):
+        def create_fs_stager_job_descr(user_descr):
+            config = dict()
+            config["executable"] = sys.executable
+            # TODO : Handle the case of sequential case that users RMQ
+            config["arguments"] = [
+                "-m",
+                "ams_wf.AMSDBStage",
+                "-db",
+                user_descr["db"]["path"],
+                "--policy",
+                "process",
+                "--dest",
+                str(Path(user_descr["db"]["path"]) / Path("candidates")),
+                "--db-type",
+                "dhdf5",
+                "--store",
+                "-m",
+                "fs",
+                "--class",
+                user_descr["stager"]["pruner_class"],
+                "--load",
+                "./build_borax/examples/prune.py",
+            ] + user_descr["stager"]["pruner_args"]
+
+            config["resources"] = {
+                "num_nodes": 1,
+                "num_processes_per_node": 1,
+                "num_tasks": 1,
+                "cores_per_task": 5,
+                "gpus_per_task": 0,
+            }
+
+            return config
+
+        self._flux_handle = flux.Flux()
+        logger.debug("Preparing user app job specification")
+        self._user_app = JobSpec("user_app", config["user_app"], exclusive=True)
+        self._ml_train = JobSpec("ml_training", config["ml_training"], exclusive=True)
+        self._ml_pruner = JobSpec("ml_pruner", config["ml_pruner"], exclusive=True)
+        self._stager = JobSpec("ams_stager", create_fs_stager_job_descr(config), exclusive=True)
+
+    #        logger.debug("Preparing ml sub selection specification")
+    #        self._ml_subselect = JobSpec("ml_subselect", config["ml_subselect"])
+    # Build the pruning module
+    # TODO Add pruner stage here
+
+    def execute(self):
+        def execute_and_wait(job_descr, handle):
+            jid = job_descr.start(handle)
+            result = fjob.wait(handle, jobid=jid)
+            if not result.success:
+                logger.critical(f"Unsuccessfull Job Execution: {job_descr.name}")
+                logger.debug(f"Error code of failed job {result.jobid} is {result.errstr}")
+                logger.debug(f"stdout is redirected to: {job_descr.stdout}")
+                logger.debug(f"stderr is redirected to: {job_descr.stderr}")
+                return False
+            return True
+
+        if not execute_and_wait(self._user_app, self._flux_handle):
+            return False
+
+        if not execute_and_wait(self._stager, self._flux_handle):
+            return False
+        if not execute_and_wait(self._ml_pruner, self._flux_handle):
+            return False
+
+        if not execute_and_wait(self._ml_train, self._flux_handle):
+            return False
+        return True
+
+
+def deploy(config):
+    # Before starting we need to make sure configbase files exist and
+    # kosh store is up and running
+    st = CreateStore(config["db"]["path"], config["db"]["store_name"], config["db"]["name"])
+    logger.info(f"Generating AMS Store at {st.ams_config.db_path}")
+    with AMSDataStore(st.ams_config.db_path, st.ams_config.db_store, st.ams_config.name, False) as store:
+        st(store)
+    # TODO: In case of RMQ configbase we need to make sure
+    # the server is up and running
+    logger.info(f"")
+    if config["execution_mode"] == "concurrent":
+        # TODO Launch concurrent execution
+        pass
+    elif config["execution_mode"] == "sequential":
+        executor = SequentialExecutor(config)
+        return executor.execute()
+
+
 def bootstrap(cmd, scheduler, flux_log):
     def slurm_bootstrap(cmd, flux_log_file):
         nnodes = os.environ.get("SLURM_NNODES", None)
         if nnodes == None:
-            logging.critical("Environemnt variable 'SLURM_NNODES' is not set, cannot deduce flux number of nodes")
+            logger.critical("Environemnt variable 'SLURM_NNODES' is not set, cannot deduce flux number of nodes")
             sys.exit()
 
         bootstrap_cmd = f"srun -N {nnodes} -n {nnodes} --pty --mpi=none --mpibind=off flux start"
@@ -25,19 +177,19 @@ def bootstrap(cmd, scheduler, flux_log):
         if flux_log_file is not None:
             bootstrap_cmd = f"{bootstrap_cmd} -o,S,log-filename=${flux_log_file}"
         bootstrap_cmd = f"{bootstrap_cmd} {cmd}"
-        logging.debug(f"Executing command {bootstrap_cmd}")
+        logger.debug(f"Executing command {bootstrap_cmd}")
         logging.shutdown()
         result = sp.run(bootstrap_cmd, shell=True)
         return result.returncode
-        # NOTE: From this point on we should definetely not use the logging mechanism. We manually shut it donw
-        # to allo the bootstrapped script to use the same logger (this is important in the case of logging into a file)
+        # NOTE: From this point on we should definetely not use the logger mechanism. We manually shut it donw
+        # to allo the bootstrapped script to use the same logger (this is important in the case of logger into a file)
 
-    logging.info(f"Bootstrapping using {scheduler.name}")
+    logger.info(f"Bootstrapping using {scheduler.name}")
 
     if scheduler == RootSched.SLURM:
         slurm_bootstrap(cmd, flux_log)
     else:
-        logging.critical("Unknown scheduler, cannot bootstrap")
+        logger.critical("Unknown scheduler, cannot bootstrap")
         sys.exit()
     return 0
 
@@ -48,27 +200,24 @@ class AMSConfig:
         def validate_keys(level, config, mandatory_fields):
             if not all(field in config.keys() for field in mandatory_fields):
                 missing_fields = " ".join([v for v in mandatory_fields if v not in config.keys()])
-                logging.critical(f"The following fields are missing : {missing_fields} from entry {level}")
+                logger.critical(f"The following fields are missing : {missing_fields} from entry {level}")
                 return False
             return True
 
         def validate_step_field(level, config):
             if not validate_keys(level, config, ["executable", "resources"]):
-                logging.critical(f"Mising fields in {level}")
-                return False
-
-            exec_path = Path(config["executable"])
-            if not exec_path.exists():
-                logging.critical("Executable {exec_path} does not exist")
+                logger.critical(f"Mising fields in {level}")
                 return False
 
             if not validate_keys(level, config["resources"], ["num_nodes", "num_processes_per_node"]):
-                logging.critical(f"Missing fields in resources of {level}")
+                logger.critical(f"Missing fields in resources of {level}")
                 return False
 
             return True
 
-        if not validate_keys("root", config, ["user_app", "ml_training", "ml_pruning", "execution_mode", "db", "stager"]):
+        if not validate_keys(
+            "root", config, ["user_app", "ml_training", "ml_pruning", "execution_mode", "db", "stager"]
+        ):
             return False
 
         if not validate_step_field("user_app", config["user_app"]):
@@ -80,38 +229,43 @@ class AMSConfig:
         if not validate_step_field("ml_pruning", config["ml_pruning"]):
             return False
 
-        if not validate_keys("ml_training|resources", config["ml_training"]["resources"], ["num_nodes", "num_processes_per_node"]):
+        if not validate_keys(
+            "ml_training|resources", config["ml_training"]["resources"], ["num_nodes", "num_processes_per_node"]
+        ):
             return False
 
-        if not validate_keys("ml_pruning|resources", config["ml_training"]["resources"], ["num_nodes", "num_processes_per_node"]):
+        if not validate_keys(
+            "ml_pruning|resources", config["ml_training"]["resources"], ["num_nodes", "num_processes_per_node"]
+        ):
             return False
 
         if config["execution_mode"] not in ["sequential", "concurrent"]:
-            logging.critical("Unknown 'execution_mode', please select from 'sequential', 'concurrent'")
+            logger.critical("Unknown 'execution_mode', please select from 'sequential', 'concurrent'")
             return False
 
         if config["execution_mode"] == "concurrent":
             if config["stager"]["mode"] == "filesystem":
-                logging.critical("Database is concurrent but the stager polls data from filesystem")
+                logger.critical("Database is concurrent but the stager polls data from filesystem")
                 return False
             elif config["stager"]["mode"] == "rmq":
                 if "num_clients" not in config["stager"]:
-                    logging.critical("When stager set in mode 'rmq' you need to define the number of rmq clients")
+                    logger.critical("When stager set in mode 'rmq' you need to define the number of rmq clients")
                     return False
-        if config["stager"]["mode"]:
-            rmq_config = config["rmq"]
+
+        if config["stager"]["mode"] == "rmq":
+            rmq_config = config["stager"]["rmq"]
             if not isinstance(rmq_config["service-port"], int):
-                print(isinstance(int, type(rmq_config["service-port"])))
-                print(rmq_config["service-port"], type(rmq_config["service-port"]), int)
-                logging.critical("The RMQ service-port must be an integer type {0}".format(type(rmq_config["service-port"])))
+                logger.critical(
+                    "The RMQ service-port must be an integer type {0}".format(type(rmq_config["service-port"]))
+                )
                 return False
             if not Path(rmq_config["rabbitmq-cert"]).exists():
-                logging.critical("The RMQ certificate file does not exist (or is not not accessible)")
+                logger.critical("The RMQ certificate file does not exist (or is not not accessible)")
                 return False
 
             rmq_keys = AMSConfig.to_descr()["rmq"].keys()
 
-            if not validate_keys("rmq", config["rmq"], rmq_keys):
+            if not validate_keys("rmq", rmq_config, rmq_keys):
                 return False
 
         return True
@@ -138,9 +292,9 @@ class AMSConfig:
                 "resources": {"num_nodes": "XX", "num_processes_per_node": "YY", "num_gpus_per_node": "ZZ"},
             },
             "execution_mode": "sequential",
-            "db": {"path": "path/to/db"},
+            "db": {"path": "path/to/db", "name": "Application name of this store", "store_name": "ams_store.sql"},
             "stager": {"mode": "filesystem", "num_clients": "number of rmq clients (mandatory only when mode is rmq)"},
-            "rmq" : {
+            "rmq": {
                 "service-port": "Port",
                 "service-host": "server address",
                 "rabbitmq-erlang-cookie": "magic cookie",
@@ -150,8 +304,8 @@ class AMSConfig:
                 "rabbitmq-vhost": "virtual host",
                 "rabbitmq-cert": "path to certificate to establish connection",
                 "rabbitmq-inbound-queue": "Queue name to send data from outside in the simulation",
-                "rabbitmq-outbound-queue": "Queue name to send data from the simulation to outside"
-            }
+                "rabbitmq-outbound-queue": "Queue name to send data from the simulation to outside",
+            },
         }
 
 
@@ -164,23 +318,23 @@ def generate_cli(parser):
 
 
 def generate_config(args):
-    logging.info(f"Generating configuration file {args.config}")
+    logger.info(f"Generating configuration file {args.config}")
     with open(args.config, "w") as fd:
         json.dump(AMSConfig.to_descr(), fd, indent=6)
     editor = os.environ.get("EDITOR", None)
     if editor is None:
-        logging.critical(f"Environemnt variable EDITOR is not set, example configuration is stored in {args.config}")
+        logger.critical(f"Environemnt variable EDITOR is not set, example configuration is stored in {args.config}")
         sys.exit()
     cmd = f"{editor} {args.config}"
     result = sp.run(cmd, shell=True)
     if result.returncode != 0:
-        logging.warning(f"{editor} {args.config} returned non zero code")
+        logger.warning(f"{editor} {args.config} returned non zero code")
 
     with open(args.config, "r") as fd:
         data = json.load(fd)
 
     if not AMSConfig.validate(data):
-        logging.critical("Generated configuration file is not valid")
+        logger.critical("Generated configuration file is not valid")
 
 
 def validate_cli(parser):
@@ -194,9 +348,10 @@ def validate_config(args):
         data = json.load(fd)
 
     if not AMSConfig.validate(data):
-        logging.info("Generated configuration file is NOT valid")
+        logger.info("Generated configuration file is NOT valid")
         return False
-    logging.info("Generated configuration file IS valid")
+
+    logger.info("Generated configuration file IS valid")
     return True
 
 
@@ -227,20 +382,20 @@ def start_execute(args):
         cmd = "python " + " ".join(sys.argv)
         return cmd
 
-    if is_bootstrapped():
-        logging.info("Execution is bootstrapped")
-        return False
-
     with open(args.config, "r") as fd:
         data = json.load(fd)
 
-    if not validate_config(data):
-        logging.info("Configuration file is not valid, exiting early...")
+    if not AMSConfig.validate(data):
+        logger.info("Configuration file is not valid, exiting early...")
         return False
 
-    logging.info("Execution is NOT bootstrapped")
+    if is_bootstrapped():
+        logger.info("Execution is bootstrapped")
+        return deploy(data)
+
+    logger.info("Execution is NOT bootstrapped")
     cmd = get_cmd()
-    return (bootstrap(cmd, RootSched[args.scheduler], args.flux_log) == 0)
+    return bootstrap(cmd, RootSched[args.scheduler], args.flux_log) == 0
 
 
 def main():
@@ -263,22 +418,27 @@ def main():
     validate_cli(sub_parsers)
 
     args = parser.parse_args()
+    logger_fmt = logging.Formatter(
+        "%(asctime)s,%(msecs)03d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s",
+        datefmt="%Y-%m-%d:%H:%M:%S",
+    )
     if args.log_file is not None:
-        logging.basicConfig(
-            format="%(asctime)s,%(msecs)03d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s",
-            datefmt="%Y-%m-%d:%H:%M:%S",
-            level=args.verbose,
-            filename=args.log_file,
-            filemode="a",
+        log_handler = logging.FileHandler(
+            args.log_file,
+            mode="a",
         )
     else:
-        logging.basicConfig(
-            format="%(asctime)s,%(msecs)03d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s",
-            datefmt="%Y-%m-%d:%H:%M:%S",
-            level=args.verbose,
-        )
+        log_handler = logging.StreamHandler(sys.stdout)
 
-    return not args.func(args)
+    log_handler.setFormatter(logger_fmt)
+    logger.addHandler(log_handler)
+    logger.setLevel(logging._nameToLevel[args.verbose])
+    logger.propagate = False
+
+    ret = not args.func(args)
+    return ret
+
+    sys.exit(main())
 
 
 if __name__ == "__main__":
