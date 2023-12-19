@@ -9,7 +9,7 @@ import json
 import flux
 from flux.job import JobspecV1
 import flux.job as fjob
-
+import signal
 from ams.store import CreateStore, AMSDataStore
 
 logger = logging.getLogger(__name__)
@@ -84,6 +84,91 @@ class AMSJobScheduler:
         self._stager = JobSpec("ams_stager", stager_job_generator(config), exclusive=True)
 
 
+class AMSConcurrentJobScheduler(AMSJobScheduler):
+    def __init__(self, config):
+        def create_rmq_stager_job_descr(user_descr):
+            config = dict()
+
+            # TODO: This is SUPER ugly and not to mention
+            # potenitally buggy. We will need to clean this up
+            # once we have all pieces in places (including AMSlib json initialization)
+            with open("rmq_config.json", "w") as fd:
+                json.dump(user_descr["stager"]["rmq"], fd, indent=6)
+
+            rmq_config_path = Path("rmq_config.json").resolve()
+
+            config["executable"] = sys.executable
+            config["arguments"] = [
+                "-m",
+                "ams_wf.AMSDBStage",
+                "-db",
+                user_descr["db"]["path"],
+                "--policy",
+                "process",
+                "--dest",
+                str(Path(user_descr["db"]["path"]) / Path("candidates")),
+                "--db-type",
+                "dhdf5",
+                "--store",
+                "--mechanism",
+                "network",
+                "--class",
+                user_descr["stager"]["pruner_class"],
+                "--cert",
+                user_descr["stager"]["rmq"]["rabbitmq-cert"],
+                "--creds",
+                str(rmq_config_path),
+                "--queue",
+                user_descr["stager"]["rmq"]["rabbitmq-outbound-queue"],
+                "--load",
+                user_descr["stager"]["pruner_path"],
+            ] + user_descr["stager"]["pruner_args"]
+
+            config["resources"] = {
+                "num_nodes": 1,
+                "num_processes_per_node": 1,
+                "num_tasks": 1,
+                "cores_per_task": 5,
+                "gpus_per_task": 0,
+            }
+
+            return config
+
+        super().__init__(create_rmq_stager_job_descr, config)
+
+    def execute(self):
+        def execute_and_wait(job_descr, handle):
+            jid = job_descr.start(handle)
+            if not result.success:
+                logger.critical(f"Unsuccessfull Job Execution: {job_descr.name}")
+                logger.debug(f"Error code of failed job {result.jobid} is {result.errstr}")
+                logger.debug(f"stdout is redirected to: {job_descr.stdout}")
+                logger.debug(f"stderr is redirected to: {job_descr.stderr}")
+                return False
+            return True
+
+        # We start stager first
+        logger.debug("Start stager")
+        stager_id = self._stager.start(self._flux_handle)
+        logger.debug(f"Stager job id is {stager_id}")
+
+        logger.debug("Start user app")
+        user_app_id = self._user_app.start(self._flux_handle)
+        logger.debug(f"User App job id is {user_app_id}")
+
+        # We are actively waiting for main application to terminate
+        logger.debug("Wait for user application")
+        result = fjob.wait(self._flux_handle, jobid=user_app_id)
+
+        # stager handles SIGTERM, kill it
+        kill_status = fjob.kill_async(self._flux_handle, jobid=stager_id, signum=signal.SIGTERM)
+        logger.debug("Waiting for job to be killed")
+        print(kill_status.get())
+        fjob.wait(self._flux_handle, jobid=stager_id)
+
+        return True
+
+
 class AMSSequentialJobScheduler(AMSJobScheduler):
     def __init__(self, config):
         def create_fs_stager_job_descr(user_descr):
@@ -120,7 +205,7 @@ class AMSSequentialJobScheduler(AMSJobScheduler):
 
             return config
 
-        super().__init__(config, create_fs_stager_job_descr)
+        super().__init__(create_fs_stager_job_descr, config)
 
     def execute(self):
         def execute_and_wait(job_descr, handle):
@@ -152,11 +237,10 @@ def deploy(config):
     # the server is up and running
     logger.info(f"")
     if config["execution_mode"] == "concurrent":
-        # TODO Launch concurrent execution
-        pass
+        executor = AMSConcurrentJobScheduler(config)
     elif config["execution_mode"] == "sequential":
         executor = AMSSequentialJobScheduler(config)
-        return executor.execute()
+    return executor.execute()
 
 
 def bootstrap(cmd, scheduler, flux_log):
@@ -241,10 +325,6 @@ class AMSConfig:
             if config["stager"]["mode"] == "filesystem":
                 logger.critical("Database is concurrent but the stager polls data from filesystem")
                 return False
-            elif config["stager"]["mode"] == "rmq":
-                if "num_clients" not in config["stager"]:
-                    logger.critical("When stager set in mode 'rmq' you need to define the number of rmq clients")
-                    return False
 
         if config["stager"]["mode"] == "rmq":
             rmq_config = config["stager"]["rmq"]
@@ -431,8 +511,6 @@ def main():
 
     ret = not args.func(args)
     return ret
-
-    sys.exit(main())
 
 
 if __name__ == "__main__":
