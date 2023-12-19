@@ -130,6 +130,7 @@ double unitrand() { return (double)rand() / RAND_MAX; }
 
 // TODO: we could to this on the device but need something more than `rand'
 template <typename T>
+PERFFASPECT()
 void random_init(mfem::Array<T> &arr)
 {
   T *h_arr = arr.HostWrite();
