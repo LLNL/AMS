@@ -142,19 +142,29 @@ class ForwardTask(Task):
         the output to the output queue. In the case of receiving a 'termination' messages informs
         the tasks waiting on the output queues about the terminations and returns from the function.
         """
-
+        received_in = [0, 0]
+        received_out = [0, 0]
+        sent_in = [0, 0]
+        sent_out = [0, 0]
         while True:
             # This is a blocking call
             item = self.i_queue.get(block=True)
+
             if item.is_terminate():
                 self.o_queue.put(QueueMessage(MessageType.Terminate, None))
                 break
             elif item.is_process():
+                received_in = [o + i for o, i in zip(received_in, item.data().inputs.shape)]
+                received_out = [o + i for o, i in zip(received_in, item.data().outputs.shape)]
+
                 inputs, outputs = self._action(item.data())
+                sent_in = [o + i for o, i in zip(sent_in, inputs.shape)]
+                sent_out = [o + i for o, i in zip(sent_out, outputs.shape)]
                 self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(inputs, outputs)))
             elif item.is_new_model():
                 # This is not handled yet
                 continue
+        print(f"Inputs {received_in}/{sent_in} outputs {received_out}/{sent_out}")
         return
 
 
@@ -183,10 +193,14 @@ class FSLoaderTask(Task):
         """
 
         start = time.time()
+        input_rows = 0
+        output_rows = 0
         for fn in glob.glob(self.pattern):
             with self.loader(fn) as fd:
                 input_data, output_data = fd.load()
                 row_size = input_data[0, :].nbytes + output_data[0, :].nbytes
+                input_rows += input_data.shape[0]
+                output_rows += output_data.shape[0]
                 rows_per_batch = int(np.ceil(BATCH_SIZE / row_size))
                 num_batches = int(np.ceil(input_data.shape[0] / rows_per_batch))
                 input_batches = np.array_split(input_data, num_batches)
@@ -197,6 +211,7 @@ class FSLoaderTask(Task):
 
         end = time.time()
         print(f"Spend {end - start} at {self.__class__.__name__}")
+        print(f"Read {input_rows} and {output_rows}")
 
 
 class RMQMessage(object):
@@ -445,6 +460,8 @@ class FSWriteTask(Task):
             fn = f"{self.out_dir}/{fn}.{self.suffix}"
             is_terminate = False
             total_bytes_written = 0
+            output_data = 0
+            input_data = 0
             with self.data_writer_cls(fn) as fd:
                 bytes_written = 0
                 while True:
@@ -459,6 +476,8 @@ class FSWriteTask(Task):
                         fd.store(data.inputs, data.outputs)
                         total_bytes_written += data.inputs.size * data.inputs.itemsize
                         total_bytes_written += data.outputs.size * data.outputs.itemsize
+                        output_data += data.outputs.shape[0]
+                        input_data += data.inputs.shape[0]
                     # FIXME: We currently decide to chunk files to 2GB
                     # of contents. Is this a good size?
                     if is_terminate or bytes_written >= 2 * 1024 * 1024 * 1024:
@@ -470,7 +489,8 @@ class FSWriteTask(Task):
                 break
 
         end = time.time()
-        print(f"Spend {end - start} {total_bytes_written} at {self.__class__.__name__}")
+        print(f"Spend {end - start} at {self.__class__.__name__}")
+        print(f"Data written to file {output_data} {input_data}")
 
 
 class PushToStore(Task):
@@ -521,6 +541,7 @@ class PushToStore(Task):
 
                 if self._store:
                     db_store.add_candidates([str(dest_file)])
+                    print(f"Adding candidate {dest_file}")
 
         end = time.time()
         print(f"Spend {end - start} at {self.__class__.__name__}")
@@ -746,7 +767,7 @@ class FSPipeline(Pipeline):
         Returns: An FSLoaderTask instance reading data from the filesystem and forwarding the values to the o_queue.
         """
         loader = get_reader(self._src_type)
-        return FSLoaderTask(o_queue, loader, pattern=str(self._src) + "/" + self._pattern)
+        return FSLoaderTask(o_queue, loader, pattern=str(self._src) + "/*" + self._pattern)
 
     @staticmethod
     def add_cli_args(parser):
@@ -848,5 +869,5 @@ def get_pipeline(src_mechanism="fs"):
     PipeMechanisms = {"fs": FSPipeline, "network": RMQPipeline}
     if src_mechanism not in PipeMechanisms.keys():
         raise RuntimeError(f"Pipeline {src_mechanism} storing mechanism does not exist")
-
+    return PipeMechanisms[src_mechanism]
     return PipeMechanisms[src_mechanism]
