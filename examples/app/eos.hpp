@@ -29,6 +29,8 @@ public:
          outputs[3]);
   }
 
+  virtual ~EOS() = default;
+
   virtual void Eval(const int length,
                     const FPType *density,
                     const FPType *energy,

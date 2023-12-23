@@ -34,10 +34,7 @@ namespace fs = std::experimental::filesystem;
 #include <sw/redis++/redis++.h>
 
 #include <iomanip>
-// TODO: We should comment out "using" in header files as
-// it propagates to every other file including this file
 #warning Redis is currently not supported/tested
-using namespace sw::redis;
 #endif
 
 
@@ -70,7 +67,6 @@ using namespace sw::redis;
 #include <future>
 #include <thread>
 #include <tuple>
-#include <unordered_map>
 
 #endif  // __ENABLE_RMQ__
 
@@ -89,6 +85,9 @@ public:
   BaseDB& operator=(const BaseDB&) = delete;
 
   BaseDB(uint64_t id) : id(id) {}
+
+  virtual void close() {}
+
   virtual ~BaseDB() {}
 
   /**
@@ -539,7 +538,7 @@ class RedisDB : public BaseDB<TypeValue>
 {
   const std::string _fn;  // path to the file storing the DB access config
   uint64_t _dbid;
-  Redis* _redis;
+  sw::redis::Redis* _redis;
   uint64_t keyId;
 
 public:
@@ -558,8 +557,8 @@ public:
     _dbid = reinterpret_cast<uint64_t>(this);
     auto connection_info = read_json(fn);
 
-    ConnectionOptions connection_options;
-    connection_options.type = ConnectionType::TCP;
+    sw::redis::ConnectionOptions connection_options;
+    connection_options.type = sw::redis::ConnectionType::TCP;
     connection_options.host = connection_info["host"];
     connection_options.port = std::stoi(connection_info["service-port"]);
     connection_options.password = connection_info["database-password"];
@@ -568,10 +567,10 @@ public:
         true;  // Required to connect to PDS within LC
     connection_options.tls.cacert = connection_info["cert"];
 
-    ConnectionPoolOptions pool_options;
+    sw::redis::ConnectionPoolOptions pool_options;
     pool_options.size = 100;  // Pool size, i.e. max number of connections.
 
-    _redis = new Redis(connection_options, pool_options);
+    _redis = new sw::redis::Redis(connection_options, pool_options);
   }
 
   ~RedisDB()
@@ -693,28 +692,29 @@ public:
 
 /**
   * @brief AMS represents the header as follows:
-  * The header is 12 bytes long:
-  *   - 1 byte is the size of the header (here 12). Limit max: 255
+  * The header is 16 bytes long:
+  *   - 1 byte is the size of the header (here 16). Limit max: 255
   *   - 1 byte is the precision (4 for float, 8 for double). Limit max: 255
   *   - 2 bytes are the MPI rank (0 if AMS is not running with MPI). Limit max: 65535
   *   - 4 bytes are the number of elements in the message. Limit max: 2^32 - 1
   *   - 2 bytes are the input dimension. Limit max: 65535
   *   - 2 bytes are the output dimension. Limit max: 65535
-  * 
-  * |__Header__|__Datatype__|___Rank___|__#elems__|___InDim___|___OutDim___|...real data...|
-  * ^          ^            ^          ^          ^           ^            ^               ^
-  * |  Byte 1  |   Byte 2   | Byte 3-4 | Byte 4-8 | Byte 8-10 | Byte 10-12 |   Byte 12-X   |
+  *   - 4 bytes for padding. Limit max: 2^32 - 1
   *
-  * where X = datatype * num_element * (InDim + OutDim). Total message size is 12+X. 
+  * |_Header_|_Datatype_|___Rank___|__#elems__|___InDim___|___OutDim___|_Pad_|.real data.|
+  * ^        ^          ^          ^          ^           ^            ^     ^           ^
+  * | Byte 1 |  Byte 2  | Byte 3-4 | Byte 4-8 | Byte 8-10 | Byte 10-12 |-----| Byte 16-k |
   *
-  * The data starts at byte 12, ends at byte X.
+  * where X = datatype * num_element * (InDim + OutDim). Total message size is 16+k. 
+  *
+  * The data starts at byte 16, ends at byte k.
   * The data is structured as pairs of input/outputs. Let K be the total number of 
   * elements, then we have K pairs of inputs/outputs (either float or double):
   *
-  *  |__Header_(12B)__|__Input 1__|__Output 1__|...|__Input_K__|__Output_K__|
+  *  |__Header_(16B)__|__Input 1__|__Output 1__|...|__Input_K__|__Output_K__|
   */
 struct AMSMsgHeader {
-  /** @brief Heaader size (bytes) */
+  /** @brief Header size (bytes) */
   uint8_t hsize;
   /** @brief Data type size (bytes) */
   uint8_t dtype;
@@ -745,6 +745,27 @@ struct AMSMsgHeader {
         num_elem(static_cast<uint32_t>(num_elem)),
         in_dim(static_cast<uint16_t>(in_dim)),
         out_dim(static_cast<uint16_t>(out_dim))
+  {
+  }
+
+  /**
+   * @brief Constructor for AMSMsgHeader
+   * @param[in]  mpi_rank     MPI rank
+   * @param[in]  num_elem     Number of elements (input/outputs)
+   * @param[in]  in_dim       Inputs dimension
+   * @param[in]  out_dim      Outputs dimension
+   */
+  AMSMsgHeader(uint16_t mpi_rank,
+               uint32_t num_elem,
+               uint16_t in_dim,
+               uint16_t out_dim,
+               uint8_t type_size)
+      : hsize(static_cast<uint8_t>(AMSMsgHeader::size())),
+        dtype(type_size),
+        mpi_rank(mpi_rank),
+        num_elem(num_elem),
+        in_dim(in_dim),
+        out_dim(out_dim)
   {
   }
 
@@ -792,6 +813,46 @@ struct AMSMsgHeader {
 
     return AMSMsgHeader::size();
   }
+
+  /**
+   * @brief Return a valid header based on a pre-existing data buffer
+   * @param[in] data_blob The buffer to fill
+   * @return An AMSMsgHeader with the correct attributes
+   */
+  static AMSMsgHeader decode(uint8_t* data_blob)
+  {
+    size_t current_offset = 0;
+    // Header size (should be 1 bytes)
+    uint8_t new_hsize = data_blob[current_offset];
+    CWARNING(AMSMsgHeader,
+             new_hsize != AMSMsgHeader::size(),
+             "buffer is likely not a valid AMSMessage (%d / %d)",
+             new_hsize,
+             current_offset)
+
+    current_offset += sizeof(uint8_t);
+    // Data type (should be 1 bytes)
+    uint8_t new_dtype = data_blob[current_offset];
+    current_offset += sizeof(uint8_t);
+    // MPI rank (should be 2 bytes)
+    uint16_t new_mpirank;
+    std::memcpy(&new_mpirank, data_blob + current_offset, sizeof(uint16_t));
+    current_offset += sizeof(uint16_t);
+    // Num elem (should be 4 bytes)
+    uint32_t new_num_elem;
+    std::memcpy(&new_num_elem, data_blob + current_offset, sizeof(uint32_t));
+    current_offset += sizeof(uint32_t);
+    // Input dim (should be 2 bytes)
+    uint16_t new_in_dim;
+    std::memcpy(&new_in_dim, data_blob + current_offset, sizeof(uint16_t));
+    current_offset += sizeof(uint16_t);
+    // Output dim (should be 2 bytes)
+    uint16_t new_out_dim;
+    std::memcpy(&new_out_dim, data_blob + current_offset, sizeof(uint16_t));
+
+    return AMSMsgHeader(
+        new_mpirank, new_num_elem, new_in_dim, new_out_dim, new_dtype);
+  }
 };
 
 
@@ -816,9 +877,37 @@ private:
   /** @brief The dimensions of outputs */
   size_t _output_dim;
 
+  /**
+   * @brief Empty constructor
+   */
+  AMSMessage()
+      : _id(0),
+        _num_elements(0),
+        _input_dim(0),
+        _output_dim(0),
+        _data(nullptr),
+        _total_size(0)
+  {
+  }
+
+  /**
+   * @brief Internal Method swapping for AMSMessage
+   * @param[in]  other         Message to swap
+   */
+  void swap(const AMSMessage& other)
+  {
+    _id = other._id;
+    _num_elements = other._num_elements;
+    _input_dim = other._input_dim;
+    _output_dim = other._output_dim;
+    _total_size = other._total_size;
+    _data = other._data;
+  }
+
 public:
   /**
    * @brief Constructor
+   * @param[in]  id                  ID of the message
    * @param[in]  num_elements        Number of elements
    * @param[in]  inputs              Inputs
    * @param[in]  outputs             Outputs
@@ -842,32 +931,68 @@ public:
         _rank, _num_elements, _input_dim, _output_dim, sizeof(TypeValue));
 
     _total_size = AMSMsgHeader::size() + getTotalElements() * sizeof(TypeValue);
-    _data = ams::ResourceManager::allocate<uint8_t>(_total_size,
-                                                    AMSResourceType::HOST);
+    auto& rm = ams::ResourceManager::getInstance();
+    _data = rm.allocate<uint8_t>(_total_size, AMSResourceType::HOST);
 
     size_t current_offset = header.encode(_data);
     current_offset +=
         encode_data(reinterpret_cast<TypeValue*>(_data + current_offset),
                     inputs,
                     outputs);
-    DBG(AMSMessage, "Allocated message: %p", _data);
+    DBG(AMSMessage, "Allocated message %d: %p", _id, _data);
   }
 
-  AMSMessage(const AMSMessage&) = delete;
+  /**
+   * @brief Constructor
+   * @param[in]  id                  ID of the message
+   * @param[in]  data                Pointer containing data
+   */
+  AMSMessage(int id, uint8_t* data)
+      : _id(id),
+        _num_elements(0),
+        _input_dim(0),
+        _output_dim(0),
+        _data(data),
+        _total_size(0)
+  {
+    auto header = AMSMsgHeader::decode(data);
+
+    int current_rank = 0;
+#ifdef __ENABLE_MPI__
+    MPI_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &current_rank));
+#endif
+    _rank = header.mpi_rank;
+    CWARNING(AMSMessage,
+             _rank != current_rank,
+             "MPI rank are not matching (using %d)",
+             _rank)
+
+    _num_elements = header.num_elem;
+    _input_dim = header.in_dim;
+    _output_dim = header.out_dim;
+    _data = data;
+    auto type_value = header.dtype;
+
+    _total_size = AMSMsgHeader::size() + getTotalElements() * type_value;
+
+    DBG(AMSMessage, "Allocated message %d: %p", _id, _data);
+  }
+
+  AMSMessage(const AMSMessage& other)
+  {
+    DBG(AMSMessage, "Copy AMSMessage : %p -- %d", other._data, other._id);
+    swap(other);
+  };
+
   AMSMessage& operator=(const AMSMessage&) = delete;
 
   AMSMessage(AMSMessage&& other) noexcept { *this = std::move(other); }
 
   AMSMessage& operator=(AMSMessage&& other) noexcept
   {
-    DBG(AMSMessage, "Move AMSMessage : %p -- %d", other._data, other._id);
+    // DBG(AMSMessage, "Move AMSMessage : %p -- %d", other._data, other._id);
     if (this != &other) {
-      _id = other._id;
-      _num_elements = other._num_elements;
-      _input_dim = other._input_dim;
-      _output_dim = other._output_dim;
-      _total_size = other._total_size;
-      _data = other._data;
+      swap(other);
       other._data = nullptr;
     }
     return *this;
@@ -886,7 +1011,6 @@ public:
                      const std::vector<TypeValue*>& inputs,
                      const std::vector<TypeValue*>& outputs)
   {
-    size_t offset = 0;
     size_t x_dim = _input_dim + _output_dim;
     if (!data_blob) return 0;
     // Creating the body part of the messages
@@ -926,6 +1050,10 @@ public:
    */
   int id() const { return _id; }
 
+  /**
+   * @brief Return MPI rank
+   * @return MPI rank
+   */
   int rank() const { return _rank; }
 
   /**
@@ -936,7 +1064,10 @@ public:
 
   ~AMSMessage()
   {
-    DBG(AMSMessage, "Destroying message with address %p %d", _data, _id)
+    DBG(AMSMessage,
+        "Destroying message  %d: %p (underlying memory NOT freed)",
+        _id,
+        _data)
   }
 };  // class AMSMessage
 
@@ -1017,8 +1148,8 @@ private:
 #else
     int ret = SSL_use_certificate_chain_file(ssl, _cacert.c_str());
 #endif
-    // TODO: with openssl 3.0
-    // SSL_set_options(ssl, SSL_OP_IGNORE_UNEXPECTED_EOF);
+    // FIXME: with openssl 3.0
+    // Set => SSL_set_options(ssl, SSL_OP_IGNORE_UNEXPECTED_EOF);
 
     if (ret != 1) {
       std::string error("openssl: error loading ca-chain (" + _cacert +
@@ -1064,7 +1195,7 @@ private:
   virtual void onReady(AMQP::TcpConnection* connection) override
   {
     DBG(RMQConsumerHandler,
-        "[rank=%d] Sucessfuly logged in. Connection ready to use.\n",
+        "[rank=%d] Sucessfuly logged in. Connection ready to use.",
         _rank)
 
     _channel = std::make_shared<AMQP::TcpChannel>(connection);
@@ -1315,13 +1446,14 @@ public:
   }
 };  // class RMQConsumer
 
+enum RMQConnectionStatus { FAILED, CONNECTED, CLOSED, ERROR };
+
 /**
  * @brief Specific handler for RabbitMQ connections based on libevent.
  */
 class RMQPublisherHandler : public AMQP::LibEventHandler
 {
 private:
-  enum ConnectionStatus { FAILED, CONNECTED, CLOSED };
   /** @brief Path to TLS certificate */
   std::string _cacert;
   /** @brief The MPI rank (0 if MPI is not used) */
@@ -1339,15 +1471,18 @@ private:
   /** @brief Number of messages successfully acknowledged */
   int _nb_msg_ack;
 
-  std::promise<ConnectionStatus> establish_connection;
-  std::future<ConnectionStatus> established;
+  std::promise<RMQConnectionStatus> establish_connection;
+  std::future<RMQConnectionStatus> established;
 
-  std::promise<ConnectionStatus> close_connection;
-  std::future<ConnectionStatus> closed;
+  std::promise<RMQConnectionStatus> close_connection;
+  std::future<RMQConnectionStatus> closed;
+
+  std::promise<RMQConnectionStatus> _error_connection;
+  std::future<RMQConnectionStatus> _ftr_error;
 
 public:
   std::mutex ptr_mutex;
-  std::vector<uint8_t*> data_ptrs;
+  std::vector<AMSMessage> data_ptrs;
 
   /**
    *  @brief Constructor
@@ -1373,91 +1508,76 @@ public:
 #endif
     established = establish_connection.get_future();
     closed = close_connection.get_future();
+    _ftr_error = _error_connection.get_future();
   }
+
+  ~RMQPublisherHandler() = default;
 
   /**
    *  @brief  Publish data on RMQ queue.
-   *  @param[in]  data            The data pointer
-   *  @param[in]  data_size       The number of bytes in the data pointer
+   *  @param[in]  msg            The AMSMessage to publish
    */
   void publish(AMSMessage&& msg)
   {
+    data_ptrs.push_back(msg);
     if (_rchannel) {
       // publish a message via the reliable-channel
+      //    onAck   : message has been explicitly ack'ed by RabbitMQ
+      //    onNack  : message has been explicitly nack'ed by RabbitMQ
+      //    onError : error occurred before any ack or nack was received
+      //    onLost  : messages that have either been nack'ed, or lost
       _rchannel
           ->publish("", _queue, reinterpret_cast<char*>(msg.data()), msg.size())
-          .onAck([_msg_ptr = msg.data(),
+          .onAck([this,
                   &_nb_msg_ack = _nb_msg_ack,
-                  rank = msg.rank(),
                   id = msg.id(),
-                  &ptr_mutex = ptr_mutex,
+                  data = msg.data(),
                   &data_ptrs = this->data_ptrs]() mutable {
-            const std::lock_guard<std::mutex> lock(ptr_mutex);
             DBG(RMQPublisherHandler,
                 "[rank=%d] message #%d (Addr:%p) got acknowledged successfully "
                 "by "
                 "RMQ "
                 "server",
-                rank,
+                _rank,
                 id,
-                _msg_ptr)
+                data)
+            this->free_ams_message(id, data_ptrs);
             _nb_msg_ack++;
-            data_ptrs.push_back(_msg_ptr);
           })
-          .onNack([_msg_ptr = msg.data(),
-                   &_nb_msg_ack = _nb_msg_ack,
-                   rank = msg.rank(),
-                   id = msg.id(),
-                   &ptr_mutex = ptr_mutex,
-                   &data_ptrs = this->data_ptrs]() mutable {
-            const std::lock_guard<std::mutex> lock(ptr_mutex);
+          .onNack([this, id = msg.id(), data = msg.data()]() mutable {
             WARNING(RMQPublisherHandler,
-                    "[rank=%d] message #%d received negative acknowledged by "
+                    "[rank=%d] message #%d (%p) received negative acknowledged "
+                    "by "
                     "RMQ "
                     "server",
-                    rank,
-                    id)
-            data_ptrs.push_back(_msg_ptr);
+                    _rank,
+                    id,
+                    data)
           })
-          .onLost([_msg_ptr = msg.data(),
-                   &_nb_msg_ack = _nb_msg_ack,
-                   rank = msg.rank(),
-                   id = msg.id(),
-                   &ptr_mutex = ptr_mutex,
-                   &data_ptrs = this->data_ptrs]() mutable {
-            const std::lock_guard<std::mutex> lock(ptr_mutex);
-            CFATAL(RMQPublisherHandler,
-                   false,
-                   "[rank=%d] message #%d likely got lost by RMQ server",
-                   rank,
-                   id)
-            data_ptrs.push_back(_msg_ptr);
-          })
-          .onError(
-              [_msg_ptr = msg.data(),
-               &_nb_msg_ack = _nb_msg_ack,
-               rank = msg.rank(),
-               id = msg.id(),
-               &ptr_mutex = ptr_mutex,
-               &data_ptrs = this->data_ptrs](const char* err_message) mutable {
-                const std::lock_guard<std::mutex> lock(ptr_mutex);
-                CFATAL(RMQPublisherHandler,
-                       false,
-                       "[rank=%d] message #%d did not get send: %s",
-                       rank,
-                       id,
-                       err_message)
-                data_ptrs.push_back(_msg_ptr);
-              });
+          .onError([this, id = msg.id(), data = msg.data()](
+                       const char* err_message) mutable {
+            WARNING(RMQPublisherHandler,
+                    "[rank=%d] message #%d (%p) did not get send: %s",
+                    _rank,
+                    id,
+                    data,
+                    err_message)
+          });
     } else {
       WARNING(RMQPublisherHandler,
               "[rank=%d] The reliable channel was not ready for message #%d.",
               _rank,
-              _nb_msg)
+              msg.id())
     }
     _nb_msg++;
   }
 
+  /**
+   *  @brief  Wait (blocking call) until connection has been established or that ms * repeat is over.
+   *  @param[in]  ms            Number of milliseconds the function will wait on the future
+   *  @param[in]  repeat        Number of times the function will wait
+   *  @return     True if connection has been established
+   */
   bool waitToEstablish(unsigned ms, int repeat = 1)
   {
     if (waitFuture(established, ms, repeat)) {
@@ -1468,6 +1588,12 @@ public:
     return false;
   }
 
+  /**
+   *  @brief  Wait (blocking call) until connection has been closed or that ms * repeat is over.
+   *  @param[in]  ms            Number of milliseconds the function will wait on the future
+   *  @param[in]  repeat        Number of times the function will wait
+   *  @return     True if connection has been closed
+   */
   bool waitToClose(unsigned ms, int repeat = 1)
   {
     if (waitFuture(closed, ms, repeat)) {
@@ -1476,24 +1602,45 @@ public:
     return false;
   }
 
-  ~RMQPublisherHandler() = default;
-
-  void release_message_buffers()
+  /**
+   *  @brief  Check if the connection can be used to send messages.
+   *  @return     True if connection is valid (i.e., can send messages)
+   */
+  bool connection_valid()
   {
-    const std::lock_guard<std::mutex> lock(ptr_mutex);
-    for (auto& dp : data_ptrs) {
-      DBG(RMQPublisherHandler, "deallocate address %p", dp)
-      ams::ResourceManager::deallocate(dp, AMSResourceType::HOST);
-    }
-    data_ptrs.erase(data_ptrs.begin(), data_ptrs.end());
+    std::chrono::milliseconds span(1);
+    return _ftr_error.wait_for(span) != std::future_status::ready;
   }
+
+  /**
+   *  @brief  Return the messages that have NOT been acknowledged by the RabbitMQ server. 
+   *  @return     A vector of AMSMessage
+   */
+  std::vector<AMSMessage>& internal_msg_buffer() { return data_ptrs; }
+
+  /**
+   *  @brief    Free AMSMessages held by the handler
+   */
+  void cleanup() { free_all_messages(data_ptrs); }
+
+  /**
+   *  @brief    Total number of messages sent
+   *  @return   Number of messages
+   */
+  int msg_sent() const { return _nb_msg; }
+
+  /**
+   *  @brief    Total number of messages successfully acknowledged
+   *  @return   Number of messages
+   */
+  int msg_acknowledged() const { return _nb_msg_ack; }
 
   unsigned unacknowledged() const { return _rchannel->unacknowledged(); }
 
   void flush()
   {
     uint32_t tries = 0;
-    while (auto unAck = _rchannel->unacknowledged()) {
+    while (auto unAck = unacknowledged()) {
       DBG(RMQPublisherHandler,
           "Waiting for %lu messages to be acknowledged",
           unAck);
@@ -1501,40 +1648,8 @@ public:
       if (++tries > 10) break;
       std::this_thread::sleep_for(std::chrono::milliseconds(50 * tries));
     }
+    free_all_messages(data_ptrs);
   }
-
-  //  void purge()
-  //  {
-  //    std::promise<bool> purge_queue;
-  //    std::future<bool> purged;
-  //    purged = purge_queue.get_future();
-  //
-  //    _channel->purgeQueue(_queue)
-  //        .onSuccess([&](uint32_t messageCount) {
-  //          DBG(RMQPublisherHandler,
-  //              "Sucessfuly purged queue with (%u) remaining messages",
-  //              messageCount);
-  //          purge_queue.set_value(true);
-  //        })
-  //        .onError([&](const char* message) {
-  //          DBG(RMQPublisherHandler,
-  //              "Error '%s' when purging queue %s",
-  //              message,
-  //              _queue.c_str());
-  //          purge_queue.set_value(false);
-  //        })
-  //        .onFinalize([&]() {
-  //          DBG(RMQPublisherHandler, "Finalizing queue %s", _queue.c_str())
-  //        });
-  //
-  //    if (purged.get()) {
-  //      DBG(RMQPublisherHandler, "Successfull destruction of RMQ queue");
-  //      return;
-  //    }
-  //
-  //    DBG(RMQPublisherHandler, "Non-successfull destruction of RMQ queue");
-  //  }
-
 
 private:
   /**
@@ -1602,8 +1717,10 @@ private:
   virtual void onReady(AMQP::TcpConnection* connection) override
   {
     DBG(RMQPublisherHandler,
-        "[rank=%d] Sucessfuly logged in. Connection ready to use.\n",
-        _rank)
+        "[rank=%d] Sucessfuly logged in (connection %p). Connection ready to "
+        "use.",
+        _rank,
+        connection)
 
     _channel = std::make_shared<AMQP::TcpChannel>(connection);
     _channel->onError([&](const char* message) {
@@ -1658,7 +1775,7 @@ private:
     */
   virtual void onClosed(AMQP::TcpConnection* connection) override
   {
-    DBG(RMQPublisherHandler, "[rank=%d] Connection is closed.\n", _rank)
+    DBG(RMQPublisherHandler, "[rank=%d] Connection is closed.", _rank)
   }
 
   /**
@@ -1673,25 +1790,30 @@ private:
   virtual void onError(AMQP::TcpConnection* connection,
                        const char* message) override
   {
-    FATAL(RMQPublisherHandler,
-          "[rank=%d] fatal error on TCP connection: %s\n",
-          _rank,
-          message)
+    WARNING(RMQPublisherHandler,
+            "[rank=%d] fatal error on TCP connection: %s",
+            _rank,
+            message)
+    try {
+      _error_connection.set_value(ERROR);
+    } catch (const std::future_error& e) {
+      DBG(RMQPublisherHandler, "[rank=%d] future already set.", _rank)
+    }
   }
 
   /**
-    *  Final method that is called. This signals that no further calls to your
+    *  @brief Final method that is called. This signals that no further calls to your
     *  handler will be made about the connection.
     *  @param  connection      The connection that can be destructed
     */
   virtual void onDetached(AMQP::TcpConnection* connection) override
   {
     //  add your own implementation, like cleanup resources or exit the application
-    DBG(RMQPublisherHandler, "[rank=%d] Connection is detached.\n", _rank)
+    DBG(RMQPublisherHandler, "[rank=%d] Connection is detached.", _rank)
     close_connection.set_value(CLOSED);
   }
 
-  bool waitFuture(std::future<ConnectionStatus>& future,
+  bool waitFuture(std::future<RMQConnectionStatus>& future,
                   unsigned ms,
                   int repeat)
   {
@@ -1700,9 +1822,74 @@ private:
     std::future_status status;
     while ((status = future.wait_for(span)) == std::future_status::timeout &&
            (iters++ < repeat))
-      std::future<ConnectionStatus> established;
+      std::future<RMQConnectionStatus> established;
     return status == std::future_status::ready;
   }
+
+  /**
+   *  @brief  Free the data pointed pointer in a vector and update vector.
+   *  @param[in]  addr            Address of memory to free.
+   *  @param[in]  buffer          The vector containing memory buffers
+   */
+  void free_ams_message(int msg_id, std::vector<AMSMessage>& buf)
+  {
+    const std::lock_guard<std::mutex> lock(ptr_mutex);
+    auto it =
+        std::find_if(buf.begin(), buf.end(), [&msg_id](const AMSMessage& obj) {
+          return obj.id() == msg_id;
+        });
+    if (it == buf.end()) {
+      WARNING(RMQPublisherHandler,
+              "Failed to deallocate msg #%d: not found",
+              msg_id)
+      return;
+    }
+    auto& msg = *it;
+    auto& rm = ams::ResourceManager::getInstance();
+    try {
+      rm.deallocate(msg.data(), AMSResourceType::HOST);
+    } catch (const umpire::util::Exception& e) {
+      WARNING(RMQPublisherHandler,
+              "Failed to deallocate #%d (%p)",
+              msg.id(),
+              msg.data());
+    }
+    DBG(RMQPublisherHandler, "Deallocated msg #%d (%p)", msg.id(), msg.data())
+    it = std::remove_if(buf.begin(),
+                        buf.end(),
+                        [&msg_id](const AMSMessage& obj) {
+                          return obj.id() == msg_id;
+                        });
+    CWARNING(RMQPublisherHandler,
+             it == buf.end(),
+             "Failed to erase %p from buffer",
+             msg.data());
+    buf.erase(it, buf.end());
+  }
+
+  /**
+   *  @brief  Free the data pointed by each pointer in a vector.
+   *  @param[in]  buffer            The vector containing memory buffers
+   */
+  void free_all_messages(std::vector<AMSMessage>& buffer)
+  {
+    const std::lock_guard<std::mutex> lock(ptr_mutex);
+    // auto& urm = umpire::ResourceManager::getInstance();
+    auto& rm = ams::ResourceManager::getInstance();
+    for (auto& dp : buffer) {
+      DBG(RMQPublisherHandler, "deallocate msg #%d (%p)", dp.id(), dp.data())
+      try {
+        rm.deallocate(dp.data(), AMSResourceType::HOST);
+      } catch (const umpire::util::Exception& e) {
+        WARNING(RMQPublisherHandler,
+                "Failed to deallocate msg #%d (%p)",
+                dp.id(),
+                dp.data());
+      }
+    }
+    buffer.erase(buffer.begin(), buffer.end());
+  }
+
 };  // class RMQPublisherHandler
 
 
@@ -1725,15 +1912,23 @@ private:
   std::shared_ptr<struct event_base> _loop;
   /** @brief The handler which contains various callbacks for the sender */
   std::shared_ptr<RMQPublisherHandler> _handler;
+  /** @brief Buffer holding unacknowledged messages in case of crash */
+  std::vector<AMSMessage> _buffer_msg;
 
 public:
   RMQPublisher(const RMQPublisher&) = delete;
   RMQPublisher& operator=(const RMQPublisher&) = delete;
 
-  RMQPublisher(const AMQP::Address& address,
-               std::string cacert,
-               std::string queue)
-      : _rank(0), _queue(queue), _cacert(cacert), _handler(nullptr)
+  RMQPublisher(
+      const AMQP::Address& address,
+      std::string cacert,
+      std::string queue,
+      std::vector<AMSMessage>&& msgs_to_send = std::vector<AMSMessage>())
+      : _rank(0),
+        _queue(queue),
+        _cacert(cacert),
+        _handler(nullptr),
+        _buffer_msg(std::move(msgs_to_send))
   {
 #ifdef __ENABLE_MPI__
     MPI_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &_rank));
@@ -1788,8 +1983,11 @@ public:
     return _handler->waitToEstablish(ms, repeat);
   }
 
+  /**
+   * @brief Return the number of unacknowledged messages
+   * @return Number of unacknowledged messages
+   */
   unsigned unacknowledged() const { return _handler->unacknowledged(); }
-
 
   /**
    * @brief Start the underlying I/O loop (blocking call)
@@ -1801,10 +1999,63 @@ public:
    */
   void stop() { event_base_loopexit(_loop.get(), NULL); }
 
-  void release_messages() { _handler->release_message_buffers(); }
+  /**
+   * @brief Check if the underlying connection has no errors
+   * @return True if no errors
+   */
+  bool connection_valid() { return _handler->connection_valid(); }
 
-  void publish(AMSMessage&& message) { _handler->publish(std::move(message)); }
+  /**
+   * @brief Return the messages that have not been acknolwged.
+   * It does not mean they have not been delivered but the
+   * acknowledgements have not arrived yet.
+   * @return A map of messages (ID, data)
+   */
+  std::vector<AMSMessage> get_buffer_msgs()
+  {
+    return std::move(_handler->internal_msg_buffer());
+  }
 
+  /**
+   *  @brief    Total number of messages successfully acknowledged
+   *  @return   Number of messages
+   */
+  void cleanup() { _handler->cleanup(); }
+
+  void publish(AMSMessage&& message)
+  {
+    // We have some messages to send first (from a potential restart)
+    if (_buffer_msg.size() > 0) {
+      for (auto& msg : _buffer_msg) {
+        DBG(RMQPublisher,
+            "Publishing backed up message %d: %p",
+            msg.id(),
+            msg.data())
+        _handler->publish(std::move(msg));
+      }
+      _buffer_msg.clear();
+    }
+
+    DBG(RMQPublisher, "Publishing message %d: %p", message.id(), message.data())
+    _handler->publish(std::move(message));
+  }
+
+  /**
+   *  @brief    Total number of messages sent
+   *  @return   Number of messages
+   */
+  int msg_sent() const { return _handler->msg_sent(); }
+
+  /**
+   *  @brief    Total number of messages successfully acknowledged
+   *  @return   Number of messages
+   */
+  int msg_acknowledged() const { return _handler->msg_acknowledged(); }
+
+  /**
+   *  @brief    Total number of messages successfully acknowledged
+   *  @return   Number of messages
+   */
   bool close(unsigned ms, int repeat = 1)
   {
     _handler->flush();
@@ -1812,14 +2063,14 @@ public:
     return _handler->waitToClose(ms, repeat);
   }
 
-  ~RMQPublisher() {}
+  ~RMQPublisher() = default;
 
 };  // class RMQPublisher
 
 /**
  * @brief Class that manages a RabbitMQ broker and handles connection, event
  * loop and set up various handlers.
- * @details This class manages a specific type of database backend in AMSLib.
+ * @details This class handles a specific type of database backend in AMSLib.
  * Instead of writing inputs/outputs directly to files (CSV or HDF5), we
  * send these elements (a collection of inputs and their corresponding outputs)
  * to a service called RabbitMQ which is listening on a given IP and port.
@@ -1865,7 +2116,7 @@ public:
  * updates to rank regarding the ML surrrogate model. RMQConsumer will automatically populate a std::vector with all
  * messages received since the execution of AMS started.
  *
- * Glabal note: Most calls dealing with RabbitMQ (to establish a RMQ connection, opening a channel, publish data etc)
+ * Global note: Most calls dealing with RabbitMQ (to establish a RMQ connection, opening a channel, publish data etc)
  * are asynchronous callbacks (similar to asyncio in Python or future in C++).
  * So, the simulation can have already started and the RMQ connection might not be valid which is why most part
  * of the code that deals with RMQ are wrapped into callbacks that will get run only in case of success.
@@ -1882,6 +2133,10 @@ private:
   std::string _queue_sender;
   /** @brief name of the queue to receive data */
   std::string _queue_receiver;
+  /** @brief Address of the RabbitMQ server */
+  std::shared_ptr<AMQP::Address> _address;
+  /** @brief TLS certificate path */
+  std::string _cacert;
   /** @brief MPI rank (if MPI is used, otherwise 0) */
   int _rank;
   /** @brief Represent the ID of the last message sent */
@@ -1985,17 +2240,18 @@ public:
              "sure rabbitmq-inbound-queue and rabbitmq-outbound-queue exist")
       return;
     }
+    _cacert = rmq_config["rabbitmq-cert"];
 
     AMQP::Login login(rmq_config["rabbitmq-user"],
                       rmq_config["rabbitmq-password"]);
-    AMQP::Address address(rmq_config["service-host"],
-                          port,
-                          login,
-                          rmq_config["rabbitmq-vhost"],
-                          is_secure);
+    _address = std::make_shared<AMQP::Address>(rmq_config["service-host"],
+                                               port,
+                                               login,
+                                               rmq_config["rabbitmq-vhost"],
+                                               is_secure);
 
-    std::string cacert = rmq_config["rabbitmq-cert"];
-    _publisher = std::make_shared<RMQPublisher>(address, cacert, _queue_sender);
+    _publisher =
+        std::make_shared<RMQPublisher>(*_address, _cacert, _queue_sender);
 
     _publisher_thread = std::thread([&]() { _publisher->start(); });
 
@@ -2014,7 +2270,8 @@ public:
 
   /**
    * @brief Takes an input and an output vector each holding 1-D vectors data, and push
-   * it onto the libevent buffer.
+   * it onto the libevent buffer. If the underlying connection is not valid anymore, a
+   new connection will be set up and unacknowledged messages will be (re) sent.
    * @param[in] num_elements Number of elements of each 1-D vector
    * @param[in] inputs Vector of 1-D vectors containing the inputs to be sent
    * @param[in] outputs Vector of 1-D vectors, each 1-D vectors contains
@@ -2033,10 +2290,47 @@ public:
         num_elements,
         inputs.size(),
         outputs.size())
-
-    _publisher->release_messages();
+    if (!_publisher->connection_valid()) {
+      restart();
+      bool status = _publisher->waitToEstablish(100, 10);
+      if (!status) {
+        _publisher->stop();
+        _publisher_thread.join();
+        FATAL(RabbitMQDB, "Could not establish connection");
+      }
+    }
     _publisher->publish(AMSMessage(_msg_tag, num_elements, inputs, outputs));
     _msg_tag++;
+  }
+
+  void restart()
+  {
+    std::vector<AMSMessage> messages = _publisher->get_buffer_msgs();
+
+    AMSMessage& msg_min =
+        *(std::min_element(messages.begin(),
+                           messages.end(),
+                           [](const AMSMessage& a, const AMSMessage& b) {
+                             return a.id() < b.id();
+                           }));
+
+    WARNING(RMQPublisher,
+            "[rank=%d] we have %d buffered messages that will get re-send "
+            "(starting from msg #%d).",
+            _rank,
+            messages.size(),
+            msg_min.id())
+
+    // Stop the faulty publisher
+    _publisher->stop();
+    _publisher_thread.join();
+    _publisher.reset();
+
+    _publisher = std::make_shared<RMQPublisher>(*_address,
+                                                _cacert,
+                                                _queue_sender,
+                                                std::move(messages));
+    _publisher_thread = std::thread([&]() { _publisher->start(); });
   }
 
   /**
@@ -2050,119 +2344,158 @@ public:
    */
   AMSDBType dbType() { return AMSDBType::RMQ; };
 
-  ~RabbitMQDB()
+  void close()
   {
-
+    if (!_publisher_thread.joinable()) {
+      return;
+    }
     bool status = _publisher->close(100, 10);
     CWARNING(RabbitMQDB, !status, "Could not gracefully close TCP connection")
+    DBG(RabbitMQDB, "Number of messages sent: %d", _msg_tag)
     DBG(RabbitMQDB,
         "Number of unacknowledged messages are %d",
         _publisher->unacknowledged())
     _publisher->stop();
-    //_publisher->release_messages();
     //_consumer->stop();
     _publisher_thread.join();
     //_consumer_thread.join();
   }
+
+  ~RabbitMQDB() { close(); }
 };  // class RabbitMQDB
 
 #endif  // __ENABLE_RMQ__
 
+namespace ams
+{
 
 /**
- * @brief Create an object of the respective database.
- * This should never be used for large scale simulations as txt/csv format will
- * be extremely slow.
- * @param[in] dbPath path to the directory storing the data
- * @param[in] dbType Type of the database to create
- * @param[in] rId a unique Id for each process taking part in a distributed
- * execution (rank-id)
+ * @brief Class that manages all DB attached to AMS workflows.
+ * Each DB can overload its method close() that will get called by 
+ * the DB manager when the last workflow using a DB will be destructed.
  */
 template <typename TypeValue>
-BaseDB<TypeValue>* createDB(char* dbPath, AMSDBType dbType, uint64_t rId = 0)
+class DBManager
 {
-  DBG(DB, "Instantiating data base");
-#ifdef __ENABLE_DB__
-  if (dbPath == nullptr) {
-    std::cerr << " [WARNING] Path of DB is NULL, Please provide a valid path "
-                 "to enable db\n";
-    std::cerr << " [WARNING] Continueing\n";
-    return nullptr;
+public:
+  static auto& getInstance()
+  {
+    static DBManager<TypeValue> instance;
+    return instance;
   }
 
-  switch (dbType) {
-    case AMSDBType::CSV:
-      return new csvDB<TypeValue>(dbPath, rId);
+private:
+  std::unordered_map<std::string, std::shared_ptr<BaseDB<TypeValue>>>
+      db_instances;
+  DBManager() = default;
+
+public:
+  ~DBManager()
+  {
+    for (auto& e : db_instances) {
+      DBG(DBManager,
+          "Closing DB %s (%p) (#client=%d)",
+          e.first.c_str(),
+          e.second.get(),
+          e.second.use_count() - 1);
+      if (e.second.use_count() > 0) e.second->close();
+    }
+  }
+  DBManager(const DBManager&) = delete;
+  DBManager(DBManager&&) = delete;
+  DBManager& operator=(const DBManager&) = delete;
+  DBManager& operator=(DBManager&&) = delete;
+
+  /**
+  * @brief Create an object of the respective database.
+  * This should never be used for large scale simulations as txt/csv format will
+  * be extremely slow.
+  * @param[in] dbPath path to the directory storing the data
+  * @param[in] dbType Type of the database to create
+  * @param[in] rId a unique Id for each process taking part in a distributed
+  * execution (rank-id)
+  */
+  std::shared_ptr<BaseDB<TypeValue>> createDB(char* dbPath,
+                                              AMSDBType dbType,
+                                              uint64_t rId = 0)
+  {
+#ifdef __ENABLE_DB__
+    DBG(DBManager, "Instantiating data base");
+    if (dbPath == nullptr) {
+      WARNING(DBManager,
+              "Path of DB is NULL, Please provide a valid path to enable DB.")
+      return nullptr;
+    }
+
+    switch (dbType) {
+      case AMSDBType::CSV:
+        return std::make_shared<csvDB<TypeValue>>(dbPath, rId);
 #ifdef __ENABLE_REDIS__
-    case AMSDBType::REDIS:
-      return new RedisDB<TypeValue>(dbPath, rId);
+      case AMSDBType::REDIS:
+        return std::make_shared<RedisDB<TypeValue>>(dbPath, rId);
 #endif
 #ifdef __ENABLE_HDF5__
-    case AMSDBType::HDF5:
-      return new hdf5DB<TypeValue>(dbPath, rId);
+      case AMSDBType::HDF5:
+        return std::make_shared<hdf5DB<TypeValue>>(dbPath, rId);
 #endif
 #ifdef __ENABLE_RMQ__
-    case AMSDBType::RMQ:
-      return new RabbitMQDB<TypeValue>(dbPath, rId);
+      case AMSDBType::RMQ:
+        return std::make_shared<RabbitMQDB<TypeValue>>(dbPath, rId);
 #endif
-    default:
-      return nullptr;
-  }
-#else
-  return nullptr;
+      default:
+        return nullptr;
+    }
 #endif
-}
-
-
-/**
- * @brief get a data base object referred by this string.
- * This should never be used for large scale simulations as txt/csv format will
- * be extremely slow.
- * @param[in] dbPath path to the directory storing the data
- * @param[in] dbType Type of the database to create
- * @param[in] rId a unique Id for each process taking part in a distributed
- * execution (rank-id)
- */
-template <typename TypeValue>
-std::shared_ptr<BaseDB<TypeValue>> getDB(char* dbPath,
-                                         AMSDBType dbType,
-                                         uint64_t rId = 0)
-{
-  static std::unordered_map<std::string, std::shared_ptr<BaseDB<TypeValue>>>
-      instances;
-  if (dbPath == nullptr) {
-    std::cerr << " [WARNING] Path of DB is NULL, Please provide a valid path "
-                 "to enable db\n";
-    std::cerr << " [WARNING] Continueing\n";
     return nullptr;
   }
 
-  auto db_iter = instances.find(std::string(dbPath));
-  if (db_iter == instances.end()) {
-    DBG(DB, "Creating new Database writting to file: %s", dbPath);
-    std::shared_ptr<BaseDB<TypeValue>> db = std::shared_ptr<BaseDB<TypeValue>>(
-        createDB<TypeValue>(dbPath, dbType, rId));
-    instances.insert(std::make_pair(std::string(dbPath), db));
+  /**
+  * @brief get a data base object referred by this string.
+  * This should never be used for large scale simulations as txt/csv format will
+  * be extremely slow.
+  * @param[in] dbPath path to the directory storing the data
+  * @param[in] dbType Type of the database to create
+  * @param[in] rId a unique Id for each process taking part in a distributed
+  * execution (rank-id)
+  */
+  std::shared_ptr<BaseDB<TypeValue>> getDB(char* dbPath,
+                                           AMSDBType dbType,
+                                           uint64_t rId = 0)
+  {
+    if (dbPath == nullptr) {
+      WARNING(DBManager,
+              "Path of DB is NULL, Please provide a valid path to enable DB.")
+      return nullptr;
+    }
+
+    auto db_iter = db_instances.find(std::string(dbPath));
+    if (db_iter == db_instances.end()) {
+      auto db = createDB(dbPath, dbType, rId);
+      db_instances.insert(std::make_pair(std::string(dbPath), db));
+      DBG(DBManager, "Creating new Database writting to file: %s", dbPath);
+      return db;
+    }
+
+    auto db = db_iter->second;
+    // Corner case where creation of the db failed and someone is requesting
+    // the same entry point
+    if (db == nullptr) {
+      return db;
+    }
+
+    if (db->dbType() != dbType) {
+      throw std::runtime_error("Requesting databases of different types");
+    }
+
+    if (db->getId() != rId) {
+      throw std::runtime_error("Requesting databases from different ranks");
+    }
+    DBG(DBManager, "Using existing Database writting to file: %s", dbPath);
+
     return db;
   }
+};
 
-  auto db = db_iter->second;
-  // Corner case where creation of the db failed and someone is requesting
-  // the same entry point
-  if (db == nullptr) {
-    return db;
-  }
-
-  if (db->dbType() != dbType) {
-    throw std::runtime_error("Requesting databases of different types");
-  }
-
-  if (db->getId() != rId) {
-    throw std::runtime_error("Requesting databases from different ranks");
-  }
-  DBG(DB, "Using existing Database writting to file: %s", dbPath);
-
-  return db;
-}
+}  // namespace ams
 
 #endif  // __AMS_BASE_DB__

@@ -101,18 +101,19 @@ inline uint32_t getVerbosityLevel()
   do {                                                                 \
     double vm, rs;                                                     \
     size_t watermark, current_size, actual_size;                       \
+    auto& rm = ams::ResourceManager::getInstance();                    \
     memUsage(vm, rs);                                                  \
-    DBG(id, "Memory usage at %s is VM:%g RS:%g\n", phase, vm, rs);     \
+    DBG(id, "Memory usage at %s is VM:%g RS:%g", phase, vm, rs);       \
                                                                        \
     for (int i = 0; i < AMSResourceType::RSEND; i++) {                 \
-      if (ams::ResourceManager::isActive((AMSResourceType)i)) {        \
-        ams::ResourceManager::getAllocatorStats((AMSResourceType)i,    \
+      if (rm.isActive((AMSResourceType)i)) {                           \
+        rm.getAllocatorStats((AMSResourceType)i,                       \
                                                 watermark,             \
                                                 current_size,          \
                                                 actual_size);          \
         DBG(id,                                                        \
             "Allocator: %s HWM:%lu CS:%lu AS:%lu) ",                   \
-            ams::ResourceManager::getAllocatorName((AMSResourceType)i) \
+            rm.getAllocatorName((AMSResourceType)i)                    \
                 .c_str(),                                              \
             watermark,                                                 \
             current_size,                                              \

@@ -24,28 +24,30 @@ void inference(SurrogateModel<T> &model, AMSResourceType resource)
 
   std::vector<const T *> inputs;
   std::vector<T *> outputs;
+  auto& ams_rm = ams::ResourceManager::getInstance();
 
   for (int i = 0; i < 2; i++)
-    inputs.push_back(ams::ResourceManager::allocate<T>(SIZE, resource));
+    inputs.push_back(ams_rm.allocate<T>(SIZE, resource));
 
   for (int i = 0; i < 4; i++)
-    outputs.push_back(ams::ResourceManager::allocate<T>(SIZE, resource));
+    outputs.push_back(ams_rm.allocate<T>(SIZE, resource));
 
   model.evaluate(
       SIZE, inputs.size(), outputs.size(), inputs.data(), outputs.data());
 
 
   for (int i = 0; i < 2; i++)
-    ResourceManager::deallocate(const_cast<T *>(inputs[i]), resource);
+    ams_rm.deallocate(const_cast<T *>(inputs[i]), resource);
 
   for (int i = 0; i < 4; i++)
-    ResourceManager::deallocate(outputs[i], resource);
+    ams_rm.deallocate(outputs[i], resource);
 }
 
 int main(int argc, char *argv[])
 {
   using namespace ams;
   auto &rm = umpire::ResourceManager::getInstance();
+  auto& ams_rm = ams::ResourceManager::getInstance();
   int use_device = std::atoi(argv[1]);
   char *model_path = argv[2];
   char *data_type = argv[3];
@@ -55,7 +57,7 @@ int main(int argc, char *argv[])
     resource = AMSResourceType::DEVICE;
   }
 
-  ams::ResourceManager::init();
+  ams_rm.init();
 
   if (std::strcmp("double", data_type) == 0) {
     std::shared_ptr<SurrogateModel<double>> model =
