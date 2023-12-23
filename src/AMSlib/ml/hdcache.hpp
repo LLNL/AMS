@@ -309,7 +309,8 @@ public:
     TypeValue *lin_data =
         data_handler::linearize_features(cache_location, ndata, inputs);
     _add(ndata, lin_data);
-    ams::ResourceManager::deallocate(lin_data, cache_location);
+    auto& rm = ams::ResourceManager::getInstance();
+    rm.deallocate(lin_data, cache_location);
   }
 
   //! -----------------------------------------------------------------------
@@ -336,7 +337,8 @@ public:
     TypeValue *lin_data =
         data_handler::linearize_features(cache_location, ndata, inputs);
     _train(ndata, lin_data);
-    ams::ResourceManager::deallocate(lin_data, cache_location);
+    auto& rm = ams::ResourceManager::getInstance();
+    rm.deallocate(lin_data, cache_location);
   }
 
   //! ------------------------------------------------------------------------
@@ -395,7 +397,8 @@ public:
     TypeValue *lin_data =
         data_handler::linearize_features(cache_location, ndata, inputs);
     _evaluate(ndata, lin_data, is_acceptable);
-    ams::ResourceManager::deallocate(lin_data, cache_location);
+    auto& rm = ams::ResourceManager::getInstance();
+    rm.deallocate(lin_data, cache_location);
     DBG(UQModule, "Done with evalution of uq");
   }
 
@@ -471,12 +474,12 @@ private:
 
     const size_t knbrs = static_cast<size_t>(m_knbrs);
     static const TypeValue ook = 1.0 / TypeValue(knbrs);
-
+    auto& rm = ams::ResourceManager::getInstance();
     TypeValue *kdists =
-        ams::ResourceManager::allocate<TypeValue>(ndata * knbrs,
+        rm.allocate<TypeValue>(ndata * knbrs,
                                                   cache_location);
     TypeIndex *kidxs =
-        ams::ResourceManager::allocate<TypeIndex>(ndata * knbrs,
+        rm.allocate<TypeIndex>(ndata * knbrs,
                                                   cache_location);
 
     // query faiss
@@ -523,8 +526,8 @@ private:
           kdists, is_acceptable, ndata, knbrs, acceptable_error);
     }
 
-    ams::ResourceManager::deallocate(kdists, cache_location);
-    ams::ResourceManager::deallocate(kidxs, cache_location);
+    rm.deallocate(kdists, cache_location);
+    rm.deallocate(kidxs, cache_location);
   }
 
   //! evaluate cache uncertainty when (data type != TypeValue)

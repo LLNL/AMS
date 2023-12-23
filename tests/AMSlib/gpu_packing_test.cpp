@@ -49,25 +49,26 @@ int main(int argc, char* argv[])
   using namespace ams;
   using data_handler = DataHandler<double>;
   auto& rm = umpire::ResourceManager::getInstance();
+  auto& ams_rm = ams::ResourceManager::getInstance();
   const size_t size = SIZE;
 
   bool* h_predicate =
-      ams::ResourceManager::allocate<bool>(SIZE,
+      ams_rm.allocate<bool>(SIZE,
                                            ResourceManager::ResourceType::HOST);
-  double* h_dense = ams::ResourceManager::allocate<double>(
+  double* h_dense = ams_rm.allocate<double>(
       SIZE, ResourceManager::ResourceType::HOST);
-  double* h_sparse = ams::ResourceManager::allocate<double>(
+  double* h_sparse = ams_rm.allocate<double>(
       SIZE, ResourceManager::ResourceType::HOST);
-  double* h_rsparse = ams::ResourceManager::allocate<double>(
+  double* h_rsparse = ams_rm.allocate<double>(
       SIZE, ResourceManager::ResourceType::HOST);
 
   initPredicate(h_predicate, h_sparse, SIZE);
 
-  bool* predicate = ams::ResourceManager::allocate<bool>(SIZE);
-  double* dense = ams::ResourceManager::allocate<double>(SIZE);
-  double* sparse = ams::ResourceManager::allocate<double>(SIZE);
-  double* rsparse = ams::ResourceManager::allocate<double>(SIZE);
-  int* reindex = ams::ResourceManager::allocate<int>(SIZE);
+  bool* predicate = ams_rm.allocate<bool>(SIZE);
+  double* dense = ams_rm.allocate<double>(SIZE);
+  double* sparse = ams_rm.allocate<double>(SIZE);
+  double* rsparse = ams_rm.allocate<double>(SIZE);
+  int* reindex = ams_rm.allocate<int>(SIZE);
 
   rm.copy(predicate, h_predicate);
   rm.copy(sparse, h_sparse);
@@ -104,19 +105,19 @@ int main(int argc, char* argv[])
     return 1;
   }
 
-  ams::ResourceManager::deallocate(predicate);
-  ams::ResourceManager::deallocate(h_predicate,
+  ams_rm.deallocate(predicate);
+  ams_rm.deallocate(h_predicate,
                                    ResourceManager::ResourceType::HOST);
-  ams::ResourceManager::deallocate(dense);
-  ams::ResourceManager::deallocate(h_dense,
+  ams_rm.deallocate(dense);
+  ams_rm.deallocate(h_dense,
                                    ResourceManager::ResourceType::HOST);
-  ams::ResourceManager::deallocate(sparse);
-  ams::ResourceManager::deallocate(h_sparse,
+  ams_rm.deallocate(sparse);
+  ams_rm.deallocate(h_sparse,
                                    ResourceManager::ResourceType::HOST);
-  ams::ResourceManager::deallocate(rsparse);
-  ams::ResourceManager::deallocate(h_rsparse,
+  ams_rm.deallocate(rsparse);
+  ams_rm.deallocate(h_rsparse,
                                    ResourceManager::ResourceType::HOST);
-  ams::ResourceManager::deallocate(reindex);
+  ams_rm.deallocate(reindex);
 
   return 0;
 }

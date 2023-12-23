@@ -18,34 +18,35 @@ int test_allocation(AMSResourceType resource, std::string pool_name)
 {
   std::cout << "Testing Pool: " << pool_name << "\n";
   auto& rm = umpire::ResourceManager::getInstance();
-  double* data = ams::ResourceManager::allocate<double>(1, resource);
+  auto& ams_rm = ams::ResourceManager::getInstance();
+  double* data = ams_rm.allocate<double>(1, resource);
   auto found_allocator = rm.getAllocator(data);
-  if (ams::ResourceManager::getAllocatorName(resource) !=
+  if (ams_rm.getAllocatorName(resource) !=
       found_allocator.getName()) {
     std::cout << "Allocator Name"
-              << ams::ResourceManager::getAllocatorName(resource)
+              << ams_rm.getAllocatorName(resource)
               << "Actual Allocation " << found_allocator.getName() << "\n";
     return 1;
   }
 
 
-  if (ams::ResourceManager::getAllocatorName(resource) != pool_name) {
+  if (ams_rm.getAllocatorName(resource) != pool_name) {
     std::cout << "Allocator Name"
-              << ams::ResourceManager::getAllocatorName(resource)
+              << ams_rm.getAllocatorName(resource)
               << "is not equal to pool name " << pool_name << "\n";
     return 1;
   }
 
   found_allocator = rm.getAllocator(data);
-  if (ams::ResourceManager::getAllocatorName(resource) !=
+  if (ams_rm.getAllocatorName(resource) !=
       found_allocator.getName().data()) {
     std::cout << "Device Allocator Name"
-              << ams::ResourceManager::getAllocatorName(resource)
+              << ams_rm.getAllocatorName(resource)
               << "Actual Allocation " << found_allocator.getName() << "\n";
     return 3;
   }
 
-  ams::ResourceManager::deallocate(data, resource);
+  ams_rm.deallocate(data, resource);
   return 0;
 }
 
@@ -54,7 +55,8 @@ int main(int argc, char* argv[])
   int device = std::atoi(argv[1]);
 
   // Testing with global umpire allocators
-  ams::ResourceManager::init();
+  auto& ams_rm = ams::ResourceManager::getInstance();
+  ams_rm.init();
   if (device == 1) {
     if (test_allocation(AMSResourceType::DEVICE, "DEVICE") != 0) return 1;
   } else if (device == 0) {
@@ -67,13 +69,13 @@ int main(int argc, char* argv[])
     auto& rm = umpire::ResourceManager::getInstance();
     auto alloc_resource = rm.makeAllocator<umpire::strategy::QuickPool, true>(
         "test-device", rm.getAllocator("DEVICE"));
-    ams::ResourceManager::setAllocator("test-device", AMSResourceType::DEVICE);
+    ams_rm.setAllocator("test-device", AMSResourceType::DEVICE);
     if (test_allocation(AMSResourceType::DEVICE, "test-device") != 0) return 1;
   } else if (device == 0) {
     auto& rm = umpire::ResourceManager::getInstance();
     auto alloc_resource = rm.makeAllocator<umpire::strategy::QuickPool, true>(
         "test-host", rm.getAllocator("HOST"));
-    ams::ResourceManager::setAllocator("test-host", AMSResourceType::HOST);
+    ams_rm.setAllocator("test-host", AMSResourceType::HOST);
     if (test_allocation(AMSResourceType::HOST, "test-host") != 0) return 1;
   }
 

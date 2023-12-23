@@ -287,29 +287,30 @@ int compact(bool cond,
             bool isReverse = false)
 {
   int numBlocks = divup(length, blockSize);
+  auto& rm = ams::ResourceManager::getInstance();
   int* d_BlocksCount =
-      ams::ResourceManager::allocate<int>(numBlocks, AMSResourceType::DEVICE);
+      rm.allocate<int>(numBlocks, AMSResourceType::DEVICE);
   int* d_BlocksOffset =
-      ams::ResourceManager::allocate<int>(numBlocks, AMSResourceType::DEVICE);
+      rm.allocate<int>(numBlocks, AMSResourceType::DEVICE);
   // determine number of elements in the compacted list
   int* h_BlocksCount =
-      ams::ResourceManager::allocate<int>(numBlocks, AMSResourceType::HOST);
+      rm.allocate<int>(numBlocks, AMSResourceType::HOST);
   int* h_BlocksOffset =
-      ams::ResourceManager::allocate<int>(numBlocks, AMSResourceType::HOST);
+      rm.allocate<int>(numBlocks, AMSResourceType::HOST);
 
   T** d_dense =
-      ams::ResourceManager::allocate<T*>(dims, AMSResourceType::DEVICE);
+      rm.allocate<T*>(dims, AMSResourceType::DEVICE);
   T** d_sparse =
-      ams::ResourceManager::allocate<T*>(dims, AMSResourceType::DEVICE);
+      rm.allocate<T*>(dims, AMSResourceType::DEVICE);
 
-  ams::ResourceManager::registerExternal(dense,
+  rm.registerExternal(dense,
                                          sizeof(T*) * dims,
                                          AMSResourceType::HOST);
-  ams::ResourceManager::registerExternal(sparse,
+  rm.registerExternal(sparse,
                                          sizeof(T*) * dims,
                                          AMSResourceType::HOST);
-  ams::ResourceManager::copy(dense, d_dense);
-  ams::ResourceManager::copy(const_cast<T**>(sparse), d_sparse);
+  rm.copy(dense, d_dense);
+  rm.copy(const_cast<T**>(sparse), d_sparse);
   thrust::device_ptr<int> thrustPrt_bCount(d_BlocksCount);
   thrust::device_ptr<int> thrustPrt_bOffset(d_BlocksOffset);
 
@@ -338,22 +339,22 @@ int compact(bool cond,
   cudaDeviceSynchronize();
   CUDACHECKERROR();
 
-  ams::ResourceManager::copy(d_BlocksCount, h_BlocksCount);
-  ams::ResourceManager::copy(d_BlocksOffset, h_BlocksOffset);
+  rm.copy(d_BlocksCount, h_BlocksCount);
+  rm.copy(d_BlocksOffset, h_BlocksOffset);
   int compact_length =
       h_BlocksOffset[numBlocks - 1] + thrustPrt_bCount[numBlocks - 1];
 
-  ams::ResourceManager::deallocate(d_BlocksCount, AMSResourceType::DEVICE);
-  ams::ResourceManager::deallocate(d_BlocksOffset, AMSResourceType::DEVICE);
+  rm.deallocate(d_BlocksCount, AMSResourceType::DEVICE);
+  rm.deallocate(d_BlocksOffset, AMSResourceType::DEVICE);
 
-  ams::ResourceManager::deallocate(h_BlocksCount, AMSResourceType::HOST);
-  ams::ResourceManager::deallocate(h_BlocksOffset, AMSResourceType::HOST);
+  rm.deallocate(h_BlocksCount, AMSResourceType::HOST);
+  rm.deallocate(h_BlocksOffset, AMSResourceType::HOST);
 
-  ams::ResourceManager::deallocate(d_dense, AMSResourceType::DEVICE);
-  ams::ResourceManager::deallocate(d_sparse, AMSResourceType::DEVICE);
+  rm.deallocate(d_dense, AMSResourceType::DEVICE);
+  rm.deallocate(d_sparse, AMSResourceType::DEVICE);
 
-  ams::ResourceManager::deregisterExternal(dense);
-  ams::ResourceManager::deregisterExternal(sparse);
+  rm.deregisterExternal(dense);
+  rm.deregisterExternal(sparse);
   cudaDeviceSynchronize();
   CUDACHECKERROR();
 
@@ -432,8 +433,9 @@ void cuda_rand_init(bool* predicate, const size_t length, T threshold)
   const int TS = 4096;
   const int BS = 128;
   int numBlocks = divup(TS, BS);
+  auto& rm = ams::ResourceManager::getInstance();
   if (!dev_random) {
-    dev_random = ams::ResourceManager::allocate<curandState>(4096, AMSResourceType::DEVICE);
+    dev_random = rm.allocate<curandState>(4096, AMSResourceType::DEVICE);
     srand_dev<<<numBlocks, BS>>>(dev_random, TS);
   }
 

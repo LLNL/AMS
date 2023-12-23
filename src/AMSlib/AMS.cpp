@@ -10,7 +10,9 @@
 #include <vector>
 
 #include "wf/resource_manager.hpp"
+#include "wf/basedb.hpp"
 #include "wf/workflow.hpp"
+#include "wf/debug.h"
 
 struct AMSWrap {
   std::vector<std::pair<AMSDType, void *>> executors;
@@ -39,15 +41,11 @@ void _AMSExecute(AMSExecutor executor,
                  int outputDim,
                  MPI_Comm Comm = 0)
 {
-  static std::once_flag flag;
-  std::call_once(flag, [&]() { ams::ResourceManager::init(); });
-
   uint64_t index = reinterpret_cast<uint64_t>(executor);
-
   if (index >= _amsWrap.executors.size())
     throw std::runtime_error("AMS Executor identifier does not exist\n");
-
   auto currExec = _amsWrap.executors[index];
+
   if (currExec.first == AMSDType::Double) {
     ams::AMSWorkflow<double> *dWF =
         reinterpret_cast<ams::AMSWorkflow<double> *>(currExec.second);
@@ -80,6 +78,12 @@ extern "C" {
 
 AMSExecutor AMSCreateExecutor(const AMSConfig config)
 {
+  static std::once_flag flag;
+  std::call_once(flag, [&]() {
+    auto& rm = ams::ResourceManager::getInstance();
+    rm.init();
+  });
+
   if (config.dType == Double) {
     ams::AMSWorkflow<double> *dWF =
         new ams::AMSWorkflow<double>(config.cBack,
@@ -94,7 +98,6 @@ AMSExecutor AMSCreateExecutor(const AMSConfig config)
                                      config.pId,
                                      config.wSize,
                                      config.ePolicy);
-
     _amsWrap.executors.push_back(
         std::make_pair(config.dType, static_cast<void *>(dWF)));
     return reinterpret_cast<AMSExecutor>(_amsWrap.executors.size() - 1L);
@@ -114,7 +117,6 @@ AMSExecutor AMSCreateExecutor(const AMSConfig config)
                                     config.ePolicy);
     _amsWrap.executors.push_back(
         std::make_pair(config.dType, static_cast<void *>(sWF)));
-
     return reinterpret_cast<AMSExecutor>(_amsWrap.executors.size() - 1L);
   } else {
     throw std::invalid_argument("Data type is not supported by AMSLib!");
@@ -139,6 +141,22 @@ void AMSExecute(AMSExecutor executor,
               outputDim);
 }
 
+void AMSDestroyExecutor(AMSExecutor executor) {
+  uint64_t index = reinterpret_cast<uint64_t>(executor);
+  if (index >= _amsWrap.executors.size())
+    throw std::runtime_error("AMS Executor identifier does not exist\n");
+  auto currExec = _amsWrap.executors[index];
+
+  if (currExec.first == AMSDType::Double) {
+    delete reinterpret_cast<ams::AMSWorkflow<double> *>(currExec.second);
+  } else if (currExec.first == AMSDType::Single) {
+    delete reinterpret_cast<ams::AMSWorkflow<float> *>(currExec.second);
+  } else {
+    throw std::invalid_argument("Data type is not supported by AMSLib!");
+    return;
+  }
+}
+
 #ifdef __ENABLE_MPI__
 void AMSDistributedExecute(AMSExecutor executor,
                            MPI_Comm Comm,
@@ -160,15 +178,16 @@ void AMSDistributedExecute(AMSExecutor executor,
 }
 #endif
 
-
 const char *AMSGetAllocatorName(AMSResourceType device)
 {
-  return std::move(ams::ResourceManager::getAllocatorName(device)).c_str();
+  auto& rm = ams::ResourceManager::getInstance();
+  return std::move(rm.getAllocatorName(device)).c_str();
 }
 
 void AMSSetAllocator(AMSResourceType resource, const char *alloc_name)
 {
-  ams::ResourceManager::setAllocator(std::string(alloc_name), resource);
+  auto& rm = ams::ResourceManager::getInstance();
+  rm.setAllocator(std::string(alloc_name), resource);
 }
 
 #ifdef __cplusplus

@@ -74,9 +74,10 @@ public:
       const size_t ndims = outputs.size();
       std::vector<FPTypeValue *> outputs_stdev(ndims);
       // TODO: Enable device-side allocation and predicate calculation.
+      auto& rm = ams::ResourceManager::getInstance();
       for (int dim = 0; dim < ndims; ++dim)
         outputs_stdev[dim] =
-            ams::ResourceManager::allocate<FPTypeValue>(totalElements,
+            rm.allocate<FPTypeValue>(totalElements,
                                                         AMSResourceType::HOST);
 
       CALIPER(CALI_MARK_BEGIN("SURROGATE");)
@@ -110,7 +111,7 @@ public:
       }
 
       for (int dim = 0; dim < ndims; ++dim)
-        ams::ResourceManager::deallocate(outputs_stdev[dim],
+        rm.deallocate(outputs_stdev[dim],
                                          AMSResourceType::HOST);
       CALIPER(CALI_MARK_END("DELTAUQ");)
     } else if (uqPolicy == AMSUQPolicy::FAISS_Mean ||

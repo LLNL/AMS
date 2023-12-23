@@ -33,6 +33,11 @@ struct AMSAllocator {
   {
     auto& rm = umpire::ResourceManager::getInstance();
     allocator = rm.getAllocator(alloc_name);
+    DBG(AMSAllocator, "in AMSAllocator(%d, %s, %p)", id, alloc_name.c_str(), this)
+  }
+
+  ~AMSAllocator() {
+    DBG(AMSAllocator, "in ~AMSAllocator(%d, %p)", id, this)
   }
 
   void* allocate(size_t num_bytes);
@@ -54,21 +59,25 @@ struct AMSAllocator {
 
 class ResourceManager
 {
-public:
 private:
   /** @brief  Used internally to map resource types (Device, host, pinned memory) to
    * umpire allocator ids. */
-  static std::vector<AMSAllocator*> RMAllocators;
-
+  std::vector<AMSAllocator*> RMAllocators;
+  ResourceManager() : RMAllocators({nullptr,nullptr,nullptr}) {};
 public:
-  ResourceManager() = delete;
+  ~ResourceManager() = default;
   ResourceManager(const ResourceManager&) = delete;
   ResourceManager(ResourceManager&&) = delete;
   ResourceManager& operator=(const ResourceManager&) = delete;
   ResourceManager& operator=(ResourceManager&&) = delete;
 
+  static ResourceManager& getInstance() {
+    static ResourceManager instance;
+    return instance;
+  }
+
   /** @brief return the name of an allocator */
-  static std::string getAllocatorName(AMSResourceType resource)
+  std::string getAllocatorName(AMSResourceType resource)
   {
     return RMAllocators[resource]->getName();
   }
@@ -81,7 +90,7 @@ public:
    */
   template <typename TypeInValue>
   PERFFASPECT()
-  static TypeInValue* allocate(size_t nvalues, AMSResourceType dev)
+  TypeInValue* allocate(size_t nvalues, AMSResourceType dev)
   {
     return static_cast<TypeInValue*>(
         RMAllocators[dev]->allocate(nvalues * sizeof(TypeInValue)));
@@ -95,7 +104,7 @@ public:
    */
   template <typename TypeInValue>
   PERFFASPECT()
-  static void deallocate(TypeInValue* data, AMSResourceType dev)
+  void deallocate(TypeInValue* data, AMSResourceType dev)
   {
     RMAllocators[dev]->deallocate(data);
   }
@@ -107,7 +116,7 @@ public:
    *  @return void.
    */
   PERFFASPECT()
-  static void registerExternal(void* ptr, size_t nBytes, AMSResourceType dev)
+  void registerExternal(void* ptr, size_t nBytes, AMSResourceType dev)
   {
     RMAllocators[dev]->registerPtr(ptr, nBytes);
   }
@@ -116,7 +125,7 @@ public:
    *  @param[in] ptr pointer to memory to de-register.
    *  @return void.
    */
-  static void deregisterExternal(void* ptr)
+  void deregisterExternal(void* ptr)
   {
     AMSAllocator::deregisterPtr(ptr);
   }
@@ -130,7 +139,7 @@ public:
    */
   template <typename TypeInValue>
   PERFFASPECT()
-  static void copy(TypeInValue* src, TypeInValue* dest, size_t size = 0)
+  void copy(TypeInValue* src, TypeInValue* dest, size_t size = 0)
   {
     static auto& rm = umpire::ResourceManager::getInstance();
     rm.copy(dest, src, size);
@@ -142,13 +151,13 @@ public:
    *  @return void.
    */
   template <typename T>
-  static void deallocate(std::vector<T*>& dPtr, AMSResourceType resource)
+  void deallocate(std::vector<T*>& dPtr, AMSResourceType resource)
   {
     for (auto* I : dPtr)
       RMAllocators[resource]->deallocate(I);
   }
 
-  static void init()
+  void init()
   {
     DBG(ResourceManager, "Default initialization of allocators");
     if (!RMAllocators[AMSResourceType::HOST])
@@ -162,7 +171,7 @@ public:
 #endif
   }
 
-  static void setAllocator(std::string alloc_name, AMSResourceType resource)
+  void setAllocator(std::string alloc_name, AMSResourceType resource)
   {
     if (RMAllocators[resource]) {
       delete RMAllocators[resource];
@@ -175,7 +184,7 @@ public:
         RMAllocators[resource]->getName().c_str());
   }
 
-  static bool isActive(AMSResourceType resource){
+  bool isActive(AMSResourceType resource){
     return RMAllocators[resource] != nullptr;
   }
 
@@ -186,7 +195,7 @@ public:
    *  @param[out] as The actual size of the pool..
    *  @return void.
    */
-  static void getAllocatorStats(AMSResourceType resource,
+  void getAllocatorStats(AMSResourceType resource,
                                 size_t& wm,
                                 size_t& cs,
                                 size_t& as)

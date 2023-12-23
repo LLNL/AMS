@@ -68,7 +68,8 @@ public:
       std::enable_if_t<!std::is_same<TypeValue, TypeInValue>::value>* = nullptr>
   static inline TypeValue* cast_to_typevalue(AMSResourceType resource, const size_t n, TypeInValue* data)
   {
-    TypeValue* fdata = ams::ResourceManager::allocate<TypeValue>(resource, n);
+    auto& rm = ams::ResourceManager::getInstance();
+    TypeValue* fdata = rm.allocate<TypeValue>(resource, n);
     std::transform(data, data + n, fdata, [&](const TypeInValue& v) {
       return static_cast<TypeValue>(v);
     });
@@ -143,7 +144,8 @@ PERFFASPECT()
     const size_t nfeatures = features.size();
     const size_t nvalues = n * nfeatures;
 
-    TypeValue* data = ams::ResourceManager::allocate<TypeValue>(nvalues, resource);
+    auto& rm = ams::ResourceManager::getInstance();
+    TypeValue* data = rm.allocate<TypeValue>(nvalues, resource);
 
     if (resource == AMSResourceType::HOST) {
       for (size_t d = 0; d < nfeatures; d++) {

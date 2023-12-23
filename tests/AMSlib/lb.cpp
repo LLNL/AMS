@@ -21,7 +21,8 @@ void init(double *data, int elements, double value)
 
 void evaluate(double *data, double *src, int elements)
 {
-  ams::ResourceManager::copy(src, data, elements * sizeof(double));
+  auto& rm = ams::ResourceManager::getInstance();
+  rm.copy(src, data, elements * sizeof(double));
 }
 
 int verify(double *data, double *src, int elements, int rId)

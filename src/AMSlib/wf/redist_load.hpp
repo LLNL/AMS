@@ -116,11 +116,12 @@ private:
   */
   void init(int numIn, int numOut, AMSResourceType resource)
   {
+    auto& rm = ams::ResourceManager::getInstance();
     // We need to store information
     if (rId == root) {
       dataElements =
-          ams::ResourceManager::allocate<int>(worldSize, AMSResourceType::HOST);
-      displs = ams::ResourceManager::allocate<int>(worldSize + 1,
+          rm.allocate<int>(worldSize, AMSResourceType::HOST);
+      displs = rm.allocate<int>(worldSize + 1,
                                                    AMSResourceType::HOST);
     }
 
@@ -149,9 +150,9 @@ private:
 
     if (rId == root) {
       balancedElements =
-          ResourceManager::allocate<int>(worldSize, AMSResourceType::HOST);
+          rm.ResourceManager::allocate<int>(worldSize, AMSResourceType::HOST);
       balancedDispls =
-          ResourceManager::allocate<int>(worldSize, AMSResourceType::HOST);
+          rm.ResourceManager::allocate<int>(worldSize, AMSResourceType::HOST);
       for (int i = 0; i < worldSize; i++) {
         balancedElements[i] = (globalLoad / worldSize) +
                               static_cast<int>(i < (globalLoad % worldSize));
@@ -164,12 +165,12 @@ private:
 
     for (int i = 0; i < numIn; i++) {
       distInputs.push_back(
-          ams::ResourceManager::allocate<FPTypeValue>(balancedLoad, resource));
+          rm.allocate<FPTypeValue>(balancedLoad, resource));
     }
 
     for (int i = 0; i < numOut; i++) {
       distOutputs.push_back(
-          ams::ResourceManager::allocate<FPTypeValue>(balancedLoad, resource));
+          rm.allocate<FPTypeValue>(balancedLoad, resource));
     }
   }
 
@@ -265,9 +266,10 @@ private:
                    AMSResourceType resource)
   {
     FPTypeValue *temp_data;
+    auto& rm = ams::ResourceManager::getInstance();
 
     if (rId == root) {
-      temp_data = ResourceManager::allocate<FPTypeValue>(globalLoad, resource);
+      temp_data = rm.ResourceManager::allocate<FPTypeValue>(globalLoad, resource);
     }
 
     for (int i = 0; i < src.size(); i++) {
@@ -284,7 +286,7 @@ private:
     }
 
     if (rId == root) {
-      ResourceManager::deallocate<FPTypeValue>(temp_data, resource);
+      rm.ResourceManager::deallocate<FPTypeValue>(temp_data, resource);
     }
 
     return;
@@ -330,20 +332,21 @@ public:
   /** @brief deallocates all objects of this load balancing transcation */
   ~AMSLoadBalancer()
   {
+    auto& rm = ams::ResourceManager::getInstance();
     CINFO(LoadBalance, root==rId, "Total data %d Data per rank %d", globalLoad, balancedLoad);
-    if (displs) ams::ResourceManager::deallocate(displs, AMSResourceType::HOST);
+    if (displs) rm.deallocate(displs, AMSResourceType::HOST);
     if (dataElements)
-      ams::ResourceManager::deallocate(dataElements, AMSResourceType::HOST);
+      rm.deallocate(dataElements, AMSResourceType::HOST);
     if (balancedElements)
-      ams::ResourceManager::deallocate(balancedElements, AMSResourceType::HOST);
+      rm.deallocate(balancedElements, AMSResourceType::HOST);
     if (balancedDispls)
-      ams::ResourceManager::deallocate(balancedDispls, AMSResourceType::HOST);
+      rm.deallocate(balancedDispls, AMSResourceType::HOST);
 
     for (int i = 0; i < distOutputs.size(); i++)
-      ams::ResourceManager::deallocate(distOutputs[i], resource);
+      rm.deallocate(distOutputs[i], resource);
 
     for (int i = 0; i < distInputs.size(); i++) {
-      ams::ResourceManager::deallocate(distInputs[i], resource);
+      rm.deallocate(distInputs[i], resource);
     }
   };
 

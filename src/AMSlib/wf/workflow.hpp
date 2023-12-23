@@ -95,6 +95,7 @@ class AMSWorkflow
     static const long bSize = 1 * 1024 * 1024;
     const int numIn = inputs.size();
     const int numOut = outputs.size();
+    auto &rm = ams::ResourceManager::getInstance();
 
     // No database, so just de-allocate and return
     if (!DB) return;
@@ -107,8 +108,7 @@ class AMSWorkflow
     // Compute number of elements that fit inside the buffer
     size_t bElements = bSize / sizeof(FPTypeValue);
     FPTypeValue *pPtr =
-        ams::ResourceManager::allocate<FPTypeValue>(bElements,
-                                                    AMSResourceType::PINNED);
+        rm.allocate<FPTypeValue>(bElements, AMSResourceType::PINNED);
     // Total inner vector dimensions (inputs and outputs)
     size_t totalDims = inputs.size() + outputs.size();
     // Compute number of elements of each outer dimension that fit in buffer
@@ -125,22 +125,18 @@ class AMSWorkflow
       size_t actualElems = std::min(elPerDim, num_elements - i);
       // Copy input data to host
       for (int k = 0; k < numIn; k++) {
-        ams::ResourceManager::copy(&inputs[k][i],
-                                   hInputs[k],
-                                   actualElems * sizeof(FPTypeValue));
+        rm.copy(&inputs[k][i], hInputs[k], actualElems * sizeof(FPTypeValue));
       }
 
       // Copy output data to host
       for (int k = 0; k < numIn; k++) {
-        ams::ResourceManager::copy(&outputs[k][i],
-                                   hOutputs[k],
-                                   actualElems * sizeof(FPTypeValue));
+        rm.copy(&outputs[k][i], hOutputs[k], actualElems * sizeof(FPTypeValue));
       }
 
       // Store to database
       DB->store(actualElems, hInputs, hOutputs);
     }
-    ams::ResourceManager::deallocate(pPtr, AMSResourceType::PINNED);
+    rm.deallocate(pPtr, AMSResourceType::PINNED);
 
     return;
   }
@@ -153,9 +149,9 @@ public:
         appDataLoc(AMSResourceType::HOST),
         ePolicy(AMSExecPolicy::UBALANCED)
   {
-
 #ifdef __ENABLE_DB__
-    DB = createDB<FPTypeValue>("miniApp_data.txt", dbType, 0);
+    auto &dbm = ams::DBManager<FPTypeValue>::getInstance();
+    DB = dbm.createDB("miniApp_data.txt", dbType, 0);
     CFATAL(WORKFLOW, !DB, "Cannot create database");
 #endif
   }
@@ -183,7 +179,8 @@ public:
     DB = nullptr;
     if (db_path) {
       DBG(Workflow, "Creating Database");
-      DB = getDB<FPTypeValue>(db_path, dbType, rId);
+      auto &dbm = ams::DBManager<FPTypeValue>::getInstance();
+      DB = dbm.getDB(db_path, dbType, rId);
     }
 
     UQModel = std::make_unique<UQ<FPTypeValue>>(
@@ -193,7 +190,6 @@ public:
   void set_physics(AMSPhysicFn _AppCall) { AppCall = _AppCall; }
 
   ~AMSWorkflow() { DBG(Workflow, "Destroying Workflow Handler"); }
-
 
   /** @brief This is the main entry point of AMSLib and replaces the original
    * execution path of the application.
@@ -260,6 +256,7 @@ public:
     // To move around the inputs, outputs we bundle them as std::vectors
     std::vector<const FPTypeValue *> origInputs(inputs, inputs + inputDim);
     std::vector<FPTypeValue *> origOutputs(outputs, outputs + outputDim);
+    auto &rm = ams::ResourceManager::getInstance();
 
     REPORT_MEM_USAGE(Workflow, "Start")
 
@@ -280,8 +277,7 @@ public:
       return;
     }
     // The predicate with which we will split the data on a later step
-    bool *p_ml_acceptable =
-        ams::ResourceManager::allocate<bool>(totalElements, appDataLoc);
+    bool *p_ml_acceptable = rm.allocate<bool>(totalElements, appDataLoc);
 
     // -------------------------------------------------------------
     // STEP 1: call the UQ module to look at input uncertainties
@@ -299,8 +295,7 @@ public:
 
     for (int i = 0; i < inputDim; i++) {
       packedInputs.emplace_back(
-          ams::ResourceManager::allocate<FPTypeValue>(totalElements,
-                                                      appDataLoc));
+          rm.allocate<FPTypeValue>(totalElements, appDataLoc));
     }
 
     DBG(Workflow, "Allocated input resources")
@@ -319,8 +314,7 @@ public:
     std::vector<FPTypeValue *> packedOutputs;
     for (int i = 0; i < outputDim; i++) {
       packedOutputs.emplace_back(
-          ams::ResourceManager::allocate<FPTypeValue>(packedElements,
-                                                      appDataLoc));
+          rm.allocate<FPTypeValue>(packedElements, appDataLoc));
     }
 
     {
@@ -376,11 +370,11 @@ public:
     // Deallocate temporal data
     // -----------------------------------------------------------------
     for (int i = 0; i < inputDim; i++)
-      ams::ResourceManager::deallocate(packedInputs[i], appDataLoc);
+      rm.deallocate(packedInputs[i], appDataLoc);
     for (int i = 0; i < outputDim; i++)
-      ams::ResourceManager::deallocate(packedOutputs[i], appDataLoc);
+      rm.deallocate(packedOutputs[i], appDataLoc);
 
-    ams::ResourceManager::deallocate(p_ml_acceptable, appDataLoc);
+    rm.deallocate(p_ml_acceptable, appDataLoc);
 
     DBG(Workflow, "Finished AMSExecution")
     CINFO(Workflow,

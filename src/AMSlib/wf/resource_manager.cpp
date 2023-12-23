@@ -46,10 +46,6 @@ void AMSAllocator::getAllocatorStats(size_t &wm, size_t &cs, size_t &as)
   as = allocator.getActualSize();
 }
 
-
-std::vector<AMSAllocator *> ResourceManager::RMAllocators = {nullptr,
-                                                             nullptr,
-                                                             nullptr};
 // -----------------------------------------------------------------------------
 // set up the resource manager
 // -----------------------------------------------------------------------------
