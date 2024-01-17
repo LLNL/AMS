@@ -701,7 +701,7 @@ public:
   *   - 4 bytes are the number of elements in the message. Limit max: 2^32 - 1
   *   - 2 bytes are the input dimension. Limit max: 65535
   *   - 2 bytes are the output dimension. Limit max: 65535
-  *   - 4 bytes for padding. Limit max: 2^32 - 1
+  *   - 4 bytes are for padding / message type (DATA|TERM)
   *
   * |_Header_|_Datatype_|___Rank___|__#elems__|___InDim___|___OutDim___|_Pad_|.real data.|
   * ^        ^          ^          ^          ^           ^            ^     ^           ^
@@ -728,6 +728,7 @@ struct AMSMsgHeader {
   uint16_t in_dim;
   /** @brief Outputs dimension */
   uint16_t out_dim;
+  const uint32_t msg_type;
 
   /**
    * @brief Constructor for AMSMsgHeader
@@ -746,7 +747,8 @@ struct AMSMsgHeader {
         mpi_rank(static_cast<uint16_t>(mpi_rank)),
         num_elem(static_cast<uint32_t>(num_elem)),
         in_dim(static_cast<uint16_t>(in_dim)),
-        out_dim(static_cast<uint16_t>(out_dim))
+        out_dim(static_cast<uint16_t>(out_dim)),
+        msg_type(1)
   {
   }
 
@@ -812,6 +814,8 @@ struct AMSMsgHeader {
     // Output dim (should be 2 bytes)
     std::memcpy(data_blob + current_offset, &(out_dim), sizeof(out_dim));
     current_offset += sizeof(out_dim);
+    (*reinterpret_cast<uint32_t*>(&data_blob[current_offset])) = msg_type;
+    current_offset += sizeof(msg_type);
 
     return AMSMsgHeader::size();
   }

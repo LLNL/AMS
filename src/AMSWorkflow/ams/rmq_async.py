@@ -16,6 +16,7 @@ from pika.exchange_type import ExchangeType
 from typing import Callable
 import numpy as np
 
+
 class RMQConsumer(object):
     """
     Asynchronous RMQ consumer.
@@ -23,13 +24,15 @@ class RMQConsumer(object):
     with RabbitMQ such as channel and connection closures.
     """
 
-    def __init__(self,
+    def __init__(
+        self,
         credentials: str,
         cacert: str,
         queue: str,
         on_message_cb: Callable = None,
         on_close_cb: Callable = None,
-        prefetch_count: int = 1):
+        prefetch_count: int = 1,
+    ):
         """Create a new instance of the consumer class, passing in the AMQP
         URL used to connect to RabbitMQ.
 
@@ -38,13 +41,13 @@ class RMQConsumer(object):
         :param str queue: The queue to listen to
         :param Callable: on_message_cb this function will be called each time Pika receive a message
         :param Callable: on_message_cb this function will be called when Pika will close the connection
-        :param int: prefetch_count Define consumer throughput, should be relative to resource and number of messages expected 
+        :param int: prefetch_count Define consumer throughput, should be relative to resource and number of messages expected
 
         """
         self.should_reconnect = False
         # Holds the latest error/reason to reconnect
         # Could be a Tuple like (200, 'Normal shutdown') or an exception from pika.AMQPError
-        self.reconnect_reason = None 
+        self.reconnect_reason = None
         self.was_consuming = False
 
         self._connection = None
@@ -54,12 +57,12 @@ class RMQConsumer(object):
         self._consumer_tag = None
         self._consuming = False
         self._prefetch_count = prefetch_count
-        self._on_message_cb = on_message_cb 
-        self._on_close_cb = on_close_cb 
+        self._on_message_cb = on_message_cb
+        self._on_close_cb = on_close_cb
 
         self._credentials = self._parse_credentials(credentials)
         self._cacert = cacert
-        self._queue = queue 
+        self._queue = queue
 
     def __enter__(self):
         self.run()
@@ -69,9 +72,9 @@ class RMQConsumer(object):
         self.stop()
 
     def _parse_credentials(self, json_file: str) -> dict:
-        """ Internal method to parse the credentials file"""
+        """Internal method to parse the credentials file"""
         data = {}
-        with open(json_file, 'r') as f:
+        with open(json_file, "r") as f:
             data = json.load(f)
         return data
 
@@ -86,13 +89,15 @@ class RMQConsumer(object):
         ssl_context.verify_mode = ssl.CERT_REQUIRED
         ssl_context.load_verify_locations(self._cacert)
 
-        pika_credentials = pika.PlainCredentials(self._credentials["rabbitmq-user"], self._credentials["rabbitmq-password"])
+        pika_credentials = pika.PlainCredentials(
+            self._credentials["rabbitmq-user"], self._credentials["rabbitmq-password"]
+        )
         return pika.ConnectionParameters(
             host=self._credentials["service-host"],
             port=self._credentials["service-port"],
             virtual_host=self._credentials["rabbitmq-vhost"],
             credentials=pika_credentials,
-            ssl_options=pika.SSLOptions(ssl_context)
+            ssl_options=pika.SSLOptions(ssl_context),
         )
 
     def connect(self):
@@ -107,10 +112,11 @@ class RMQConsumer(object):
         print(f"Connecting to {self._credentials['service-host']}")
 
         return pika.SelectConnection(
-            parameters = self._connection_parameters,
-            on_open_callback = self.on_connection_open,
-            on_open_error_callback = self.on_connection_open_error,
-            on_close_callback = self.on_connection_closed)
+            parameters=self._connection_parameters,
+            on_open_callback=self.on_connection_open,
+            on_open_error_callback=self.on_connection_open_error,
+            on_close_callback=self.on_connection_closed,
+        )
 
     def close_connection(self):
         self._consuming = False
@@ -177,7 +183,7 @@ class RMQConsumer(object):
 
         """
         print("Creating a new channel")
-        self._connection.channel(on_open_callback = self.on_channel_open)
+        self._connection.channel(on_open_callback=self.on_channel_open)
 
     def on_channel_open(self, channel):
         """This method is invoked by pika when the channel has been opened.
@@ -215,7 +221,7 @@ class RMQConsumer(object):
         """
         print(f"warning: Channel {channel} was closed: {reason}")
         if isinstance(self._on_close_cb, Callable):
-            self._on_close_cb() # running user callback
+            self._on_close_cb()  # running user callback
         self.close_connection()
 
     def setup_queue(self, queue_name):
@@ -226,9 +232,9 @@ class RMQConsumer(object):
         :param str|unicode queue_name: The name of the queue to declare.
 
         """
-        print(f"Declaring queue \"{queue_name}\"")
-        cb = functools.partial(self.on_queue_declareok, userdata = queue_name)
-        self._channel.queue_declare(queue = queue_name, exclusive=False, callback = cb)
+        print(f'Declaring queue "{queue_name}"')
+        cb = functools.partial(self.on_queue_declareok, userdata=queue_name)
+        self._channel.queue_declare(queue=queue_name, exclusive=False, callback=cb)
 
     def on_queue_declareok(self, _unused_frame, userdata):
         """Method invoked by pika when the Queue.Declare RPC call made in
@@ -242,7 +248,7 @@ class RMQConsumer(object):
 
         """
         queue_name = userdata
-        print(f"Queue \"{queue_name}\" declared")
+        print(f'Queue "{queue_name}" declared')
         self.set_qos()
 
     def set_qos(self):
@@ -252,10 +258,7 @@ class RMQConsumer(object):
         with different prefetch values to achieve desired performance.
 
         """
-        self._channel.basic_qos(
-            prefetch_count = self._prefetch_count,
-            callback = self.on_basic_qos_ok
-        )
+        self._channel.basic_qos(prefetch_count=self._prefetch_count, callback=self.on_basic_qos_ok)
 
     def on_basic_qos_ok(self, _unused_frame):
         """Invoked by pika when the Basic.QoS method has completed. At this
@@ -280,8 +283,7 @@ class RMQConsumer(object):
         """
         print("Issuing consumer related RPC commands")
         self.add_on_cancel_callback()
-        self._consumer_tag = self._channel.basic_consume(
-            self._queue, self.on_message, auto_ack=False)
+        self._consumer_tag = self._channel.basic_consume(self._queue, self.on_message, auto_ack=False)
         self.was_consuming = True
         self._consuming = True
         print(" [*] Waiting for messages. To exit press CTRL+C")
@@ -342,8 +344,7 @@ class RMQConsumer(object):
         """
         if self._channel:
             print(f"Sending a Basic.Cancel RPC command to RabbitMQ")
-            cb = functools.partial(
-                self.on_cancelok, userdata = self._consumer_tag)
+            cb = functools.partial(self.on_cancelok, userdata=self._consumer_tag)
             self._channel.basic_cancel(self._consumer_tag, cb)
 
     def on_cancelok(self, _unused_frame, userdata):

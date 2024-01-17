@@ -32,7 +32,7 @@ def main():
         default="process",
     )
 
-    parser.add_argument("--mechansism", "-m", dest="mechanism", choices=["fs", "network"], default="fs")
+    parser.add_argument("--mechanism", "-m", dest="mechanism", choices=["fs", "network"], default="fs")
 
     args, extras = parser.parse_known_args()
 
@@ -83,4 +83,5 @@ def main():
 
 
 if __name__ == "__main__":
+    print(" ".join(sys.argv))
     main()

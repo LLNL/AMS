@@ -288,7 +288,7 @@ class RMQMessage(object):
             res["num_element"],
             res["input_dim"],
             res["output_dim"],
-            res["padding"],
+            res["msg_type"],
         ) = struct.unpack(fmt, body[:hsize])
         assert hsize == res["hsize"]
         assert res["datatype"] in [4, 8]
@@ -325,20 +325,22 @@ class RMQMessage(object):
         return data[:, :idim], data[:, idim:]
 
     def _decode(self, body: str) -> Tuple[np.array]:
-        input = []
-        output = []
+        inputs = []
+        outputs = []
+        types = []
         # Multiple AMS messages could be packed in one RMQ message
         while body:
             header_info = self._parse_header(body)
             temp_input, temp_output = self._parse_data(body, header_info)
-            print(f"input shape {temp_input.shape} outpute shape {temp_output.shape}")
+            print(f"input shape {temp_input.shape} outpute shape {temp_output.shape} {header_info['msg_type']}")
             # total size of byte we read for that message
             chunk_size = header_info["hsize"] + header_info["dsize"]
-            input.append(temp_input)
-            output.append(temp_output)
+            inputs.append(temp_input)
+            outputs.append(temp_output)
+            types.append(header_info["msg_type"])
             # We remove the current message and keep going
             body = body[chunk_size:]
-        return np.concatenate(input), np.concatenate(output)
+        return types, inputs, outputs
 
     def decode(self) -> Tuple[np.array]:
         return self._decode(self.body)
@@ -395,15 +397,21 @@ class RMQLoaderTask(Task):
         the connection (or if a problem happened with the connection).
         """
         start_time = time.time()
-        input_data, output_data = RMQMessage(body).decode()
-        row_size = input_data[0, :].nbytes + output_data[0, :].nbytes
-        rows_per_batch = int(np.ceil(BATCH_SIZE / row_size))
-        num_batches = int(np.ceil(input_data.shape[0] / rows_per_batch))
-        input_batches = np.array_split(input_data, num_batches)
-        output_batches = np.array_split(output_data, num_batches)
+        msg_types, input_data, output_data = RMQMessage(body).decode()
+        must_terminate = False
+        for m, i, o in zip(msg_types, input_data, output_data):
+            msg = QueueMessage(MessageType(m), DataBlob(i, o))
+            self.o_queue.put(msg)
+            # RMQ does not guarantee FIFO. We are here pessimistic.
+            # Assuming a message re-ordering did happen, and we received a termination message
+            # and after we receive data message. We will push all data to the queue and after
+            # we are going to teminate
+            if msg.is_terminate():
+                must_terminate = True
 
-        for j, (i, o) in enumerate(zip(input_batches, output_batches)):
-            self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(i, o)))
+        if must_terminate:
+            print("Received Terminate Message Exiting")
+            self.rmq_consumer.stop()
 
         self.total_time += time.time() - start_time
 
@@ -869,5 +877,4 @@ def get_pipeline(src_mechanism="fs"):
     PipeMechanisms = {"fs": FSPipeline, "network": RMQPipeline}
     if src_mechanism not in PipeMechanisms.keys():
         raise RuntimeError(f"Pipeline {src_mechanism} storing mechanism does not exist")
-    return PipeMechanisms[src_mechanism]
     return PipeMechanisms[src_mechanism]

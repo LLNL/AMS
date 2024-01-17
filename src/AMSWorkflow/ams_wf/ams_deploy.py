@@ -7,6 +7,7 @@ import logging
 import subprocess as sp
 import json
 import flux
+import time
 from flux.job import JobspecV1
 import flux.job as fjob
 import signal
@@ -58,7 +59,7 @@ class JobSpec:
 
     def start(self, flux_handle):
         logger.info(f"Submitting Job {self._name}")
-        job_id = flux.job.submit(flux_handle, self._spec, pre_signed=False, waitable=True)
+        job_id = fjob.submit(flux_handle, self._spec, pre_signed=False, waitable=True)
         return job_id
 
     @property
@@ -72,6 +73,50 @@ class JobSpec:
     @property
     def name(self):
         return self._name
+
+
+class FluxJobStatus:
+    """Simple class to get job info from active Flux handle"""
+
+    def __init__(self, handle):
+        self.handle = handle
+
+    def get_job(self, jobid):
+        """
+        Get details for a job
+        """
+        jobid = fjob.JobID(jobid)
+        payload = {"id": jobid, "attrs": ["all"]}
+        rpc = fjob.list.JobListIdRPC(self.handle, "job-list.list-id", payload)
+        try:
+            jobinfo = rpc.get()
+
+        # The job does not exist!
+        except FileNotFoundError:
+            return None
+
+        jobinfo = jobinfo["job"]
+
+        # User friendly string from integer
+        state = jobinfo["state"]
+        jobinfo["state"] = fjob.info.statetostr(state)
+
+        # Get job info to add to result
+        info = rpc.get_jobinfo()
+        jobinfo["nnodes"] = info._nnodes
+        jobinfo["result"] = info.result
+        jobinfo["returncode"] = info.returncode
+        jobinfo["runtime"] = info.runtime
+        jobinfo["priority"] = info._priority
+        jobinfo["waitstatus"] = info._waitstatus
+        jobinfo["nodelist"] = info._nodelist
+        jobinfo["nodelist"] = info._nodelist
+        jobinfo["exception"] = info._exception.__dict__
+
+        # Only appears after finished?
+        if "duration" not in jobinfo:
+            jobinfo["duration"] = ""
+        return jobinfo
 
 
 class AMSJobScheduler:
@@ -151,6 +196,9 @@ class AMSConcurrentJobScheduler(AMSJobScheduler):
         logger.debug("Start stager")
         stager_id = self._stager.start(self._flux_handle)
         logger.debug(f"Stager job id is {stager_id}")
+        time.sleep(120)
+        stager_status = FluxJobStatus(self._flux_handle)
+        logger.debug(f"{json.dumps(stager_status.get_job(stager_id), indent=4)}")
 
         logger.debug("Start user app")
         user_app_id = self._user_app.start(self._flux_handle)
@@ -161,10 +209,11 @@ class AMSConcurrentJobScheduler(AMSJobScheduler):
         result = fjob.wait(self._flux_handle, jobid=user_app_id)
 
         # stager handles SIGTERM, kill it
-        kill_status = fjob.kill_async(self._flux_handle, jobid=stager_id, signum=signal.SIGTERM)
+        logger.debug(f"{json.dumps(stager_status.get_job(stager_id), indent=4)}")
+        kill_status = fjob.kill(self._flux_handle, jobid=stager_id, signum=signal.SIGINT)
         logger.debug("Waiting for job to be killed")
-        print(kill_status.get())
         fjob.wait(self._flux_handle, jobid=stager_id)
+        logger.debug(f"{json.dumps(stager_status.get_job(stager_id), indent=4)}")
 
         return True
 
