@@ -58,10 +58,10 @@ AMSEOS<FPType>::AMSEOS(EOS<FPType> *model,
   wf_ = AMSCreateExecutor(conf);
 }
 
+template <typename FPType>
 #ifdef __ENABLE_PERFFLOWASPECT__
 __attribute__((annotate("@critical_path(pointcut='around')")))
 #endif
-template <typename FPType>
 void AMSEOS<FPType>::Eval(const int length,
                           const FPType *density,
                           const FPType *energy,
