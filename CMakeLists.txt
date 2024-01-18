@@ -237,8 +237,7 @@ if (WITH_PERFFLOWASPECT)
   list(APPEND AMS_APP_DEFINES "-D__ENABLE_PERFFLOWASPECT__")
   list(APPEND AMS_APP_LIB_DIRS "${PERFFLOWASPECT_LIB_DIR}")
 
-  add_library(perfflowaspect_full INTERFACE)
-  target_link_libraries(perfflowaspect_full INTERFACE perfflowaspect::perfflow_runtime)
+  list(APPEND AMS_APP_LIBRARIES "perfflow_runtime")
 endif()
 
 # TODO: currently we are focusing only on BLASS. Try out other libraries.
