@@ -33,7 +33,7 @@ function(ADDExec binary_name definitions)
       endif()
 
       if (WITH_PERFFLOWASPECT)
-        set_property(SOURCE ${AMS_EXAMPLE_SRC} APPEND_STRING PROPERTY COMPILE_FLAGS " -ccbin clang++ -Xcompiler=-Xclang -Xcompiler=-load -Xcompiler=-Xclang -Xcompiler=${PERFFLOWASPECT_LIB_DIR}/libWeavePass.so")
+        set_property(SOURCE ${AMS_EXAMPLE_SRC} APPEND_STRING PROPERTY COMPILE_FLAGS " -Xcompiler=-Xclang -Xcompiler=-load -Xcompiler=-Xclang -Xcompiler=${PERFFLOWASPECT_LIB_DIR}/libWeavePass.so")
       endif()
   endif()
 endfunction()
