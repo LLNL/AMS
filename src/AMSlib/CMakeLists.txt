@@ -41,8 +41,10 @@ target_include_directories(AMS PUBLIC
   $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include/>
   $<INSTALL_INTERFACE:include/>)
 target_include_directories(AMS PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_directories(AMS PUBLIC ${AMS_APP_LIB_DIRS})
-target_link_libraries(AMS PUBLIC ${AMS_APP_LIBRARIES} stdc++fs)
+#AMS links in PRIVATELY everything that it uses. As, it only exposes AMS API, it doesn't
+#expose umpire/torch/faiss API to the linked in library.
+target_link_directories(AMS PRIVATE ${AMS_APP_LIB_DIRS})
+target_link_libraries(AMS PRIVATE ${AMS_APP_LIBRARIES} stdc++fs)
 
 #-------------------------------------------------------------------------------
 # create the configuration header file with the respective information
@@ -75,7 +77,7 @@ install(TARGETS AMS
         DESTINATION lib)
 
 install(EXPORT AMSTargets
-  FILE AMS.cmake
+  FILE AMSConfig.cmake
   DESTINATION lib/cmake/AMS)
 
 install(FILES ${PROJECT_BINARY_DIR}/include/AMS.h DESTINATION include)

@@ -187,7 +187,11 @@ if (WITH_TORCH)
 
   list(APPEND AMS_APP_INCLUDES "${TORCH_INCLUDE_DIRS}")
   list(APPEND AMS_APP_LIBRARIES "${TORCH_LIBRARIES}")
-
+  # This is inspired by this thread here: https://discuss.pytorch.org/t/libtorch-cmake-build-tutorial/134898
+  # It picks manually all *.so files. In our case, we "trust" FindPackage to find the right libraries
+  # but it does not export where this libraries are. From looking into 2 systems, libtorch is never an absolute 
+  # path. We can work around this by explicitly appending "TORCH_INSTALL_PREFIX/lib" and "TORCH_INSTALL_PREFIX/lib64".
+  # I am currently ommitting this change in favor of PRIVATE linkage. We will see how this work.
   list(APPEND AMS_APP_DEFINES "-D__ENABLE_TORCH__")
 endif()
 
