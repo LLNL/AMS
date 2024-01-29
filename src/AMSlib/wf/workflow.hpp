@@ -395,17 +395,17 @@ public:
       void **oPtr = reinterpret_cast<void **>(packedOutputs.data());
       long lbElements = packedElements;
 
-//#ifdef __ENABLE_MPI__
-//    CALIPER(CALI_MARK_BEGIN("LOAD BALANCE MODULE");)
-//    AMSLoadBalancer<FPTypeValue> lBalancer(rId, wSize, packedElements, Comm, inputDim, outputDim, mLoc);
-//    if (ePolicy == AMSExecPolicy::BALANCED && Comm) {
-//      lBalancer.scatterInputs(packedInputs, mLoc);
-//      iPtr = reinterpret_cast<void **>(lBalancer.inputs());
-//      oPtr = reinterpret_cast<void **>(lBalancer.outputs());
-//      lbElements = lBalancer.getBalancedSize();
-//    }
-//    CALIPER(CALI_MARK_END("LOAD BALANCE MODULE");)
-//#endif
+#ifdef __ENABLE_MPI__
+   CALIPER(CALI_MARK_BEGIN("LOAD BALANCE MODULE");)
+   AMSLoadBalancer<FPTypeValue> lBalancer(rId, wSize, packedElements, Comm, inputDim, outputDim, mLoc);
+   if (ePolicy == AMSExecPolicy::BALANCED && Comm) {
+     lBalancer.scatterInputs(packedInputs, mLoc);
+     iPtr = reinterpret_cast<void **>(lBalancer.inputs());
+     oPtr = reinterpret_cast<void **>(lBalancer.outputs());
+     lbElements = lBalancer.getBalancedSize();
+   }
+   CALIPER(CALI_MARK_END("LOAD BALANCE MODULE");)
+#endif
 
       // ---- 3b: call the physics module and store in the data base
       if (packedElements > 0) {
@@ -414,13 +414,13 @@ public:
         CALIPER(CALI_MARK_END("PHYSICS MODULE");)
       }
 
-//#ifdef __ENABLE_MPI__
-//    CALIPER(CALI_MARK_BEGIN("LOAD BALANCE MODULE");)
-//    if (ePolicy == AMSExecPolicy::BALANCED && Comm) {
-//      lBalancer.gatherOutputs(packedOutputs, mLoc);
-//    }
-//    CALIPER(CALI_MARK_END("LOAD BALANCE MODULE");)
-//#endif
+#ifdef __ENABLE_MPI__
+   CALIPER(CALI_MARK_BEGIN("LOAD BALANCE MODULE");)
+   if (ePolicy == AMSExecPolicy::BALANCED && Comm) {
+     lBalancer.gatherOutputs(packedOutputs, mLoc);
+   }
+   CALIPER(CALI_MARK_END("LOAD BALANCE MODULE");)
+#endif
     }
 
     // ---- 3c: unpack the data
