@@ -176,8 +176,10 @@ int run(const char *device_name,
   CALIPER(mgr.start();)
   CALIPER(CALI_MARK_BEGIN("Setup");)
 
-  const bool physics_use_device = ((std::strcmp(device_name, "gpu_cpu") == 0) || std::strcmp(device_name, "gpu_gpu") == 0);
-  const bool ml_use_device = ((std::strcmp(device_name, "cpu_gpu") == 0) || std::strcmp(device_name, "gpu_gpu") == 0);
+  const bool physics_use_device = ((std::strcmp(device_name, "gpu_cpu") == 0) ||
+                                   std::strcmp(device_name, "gpu_gpu") == 0);
+  const bool ml_use_device = ((std::strcmp(device_name, "cpu_gpu") == 0) ||
+                              std::strcmp(device_name, "gpu_gpu") == 0);
 
 
   AMSDBType dbType = AMSDBType::None;
@@ -265,7 +267,7 @@ int run(const char *device_name,
   if (strcmp(pool, "default") != 0) {
     AMSSetAllocator(AMSResourceType::HOST, ams_host_alloc.c_str());
 
-    if ( physics_use_device || ml_use_device ) {
+    if (physics_use_device || ml_use_device) {
       AMSSetAllocator(AMSResourceType::DEVICE, ams_device_alloc.c_str());
       AMSSetAllocator(AMSResourceType::PINNED, ams_pinned_alloc.c_str());
     }
@@ -276,7 +278,7 @@ int run(const char *device_name,
 
   mfem::Device device;
 
-  if ( physics_use_device )
+  if (physics_use_device)
     device.Configure("cuda");
   else
     device.Configure("cpu");
@@ -661,7 +663,11 @@ int main(int argc, char **argv)
   // setup command line parser
   // -------------------------------------------------------------------------
   mfem::OptionsParser args(argc, argv);
-  args.AddOption(&device_name, "-d", "--device", "device(physics)_device(model), for example: cpu_gpu means execute physics on the cpu and the model on gpu");
+  args.AddOption(&device_name,
+                 "-d",
+                 "--device",
+                 "device(physics)_device(model), for example: cpu_gpu means "
+                 "execute physics on the cpu and the model on gpu");
 
   // set precision
   args.AddOption(&precision_opt,
@@ -767,7 +773,10 @@ int main(int argc, char **argv)
   args.AddOption(
       &verbose, "-v", "--verbose", "-qu", "--quiet", "Print extra stuff");
 
-  args.AddOption(&repeats, "-rp", "--repeats", "Number of repeats to perform on physics eval");
+  args.AddOption(&repeats,
+                 "-rp",
+                 "--repeats",
+                 "Number of repeats to perform on physics eval");
 
   args.AddOption(&pool,
                  "-ptype",
