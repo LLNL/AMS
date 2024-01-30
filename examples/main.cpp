@@ -166,7 +166,8 @@ int run(const char *device_name,
         const char *model_path,
         const char *db_config,
         bool lbalance,
-        int k_nearest)
+        int k_nearest,
+        int repeats)
 {
   // -------------------------------------------------------------------------
   // setup
@@ -860,7 +861,8 @@ int main(int argc, char **argv)
                      model_path,
                      db_config,
                      lbalance,
-                     k_nearest);
+                     k_nearest,
+                     repeats);
   else if (precision == AMSDType::Double)
     ret = run<double>(device_name,
                       db_type,
@@ -886,7 +888,8 @@ int main(int argc, char **argv)
                       model_path,
                       db_config,
                       lbalance,
-                      k_nearest);
+                      k_nearest,
+                      repeats);
   else {
     std::cerr << "Invalid precision " << precision_opt << "\n";
     return -1;
