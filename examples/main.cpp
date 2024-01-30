@@ -177,7 +177,7 @@ int run(const char *device_name,
   CALIPER(CALI_MARK_BEGIN("Setup");)
 
   const bool physics_use_device = ((std::strcmp(device_name, "gpu_cpu") == 0) || std::strcmp(device_name, "gpu_gpu") == 0);
-  const bool ml_use_device = ((std::strcmp(device_name, "gpu_cpu") == 0) || std::strcmp(device_name, "gpu_gpu") == 0);
+  const bool ml_use_device = ((std::strcmp(device_name, "cpu_gpu") == 0) || std::strcmp(device_name, "gpu_gpu") == 0);
 
 
   AMSDBType dbType = AMSDBType::None;
