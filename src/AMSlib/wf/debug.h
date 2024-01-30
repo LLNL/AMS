@@ -24,8 +24,8 @@
 
 enum AMSVerbosity {
   AMSFATAL = 0x001,
-  AMSINFO = 0x002,
-  AMSWARNING = 0x004,
+  AMSWARNING = 0x002,
+  AMSINFO = 0x004,
   AMSDEBUG = 0x008,
 };
 
