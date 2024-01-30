@@ -224,14 +224,12 @@ public:
     }
 
     // -------------------------------------------------------------
-    // STEP 1: call the hdcache to look at input uncertainties
+    // STEP 1: call the UQ module to look at input uncertainties
     //         to decide if making a ML inference makes sense
     // -------------------------------------------------------------
-    if (hdcache != nullptr) {
-      CALIPER(CALI_MARK_BEGIN("UQ_MODULE");)
-      hdcache->evaluate(totalElements, tmpInputs, p_ml_acceptable);
-      CALIPER(CALI_MARK_END("UQ_MODULE");)
-    }
+    CALIPER(CALI_MARK_BEGIN("UQ_MODULE");)
+    UQModel->evaluate(totalElements, tmpInputs, tmpOutputs, p_ml_acceptable);
+    CALIPER(CALI_MARK_END("UQ_MODULE");)
 
     DBG(Workflow, "Computed Predicates")
 
@@ -240,7 +238,7 @@ public:
     // Because we expect it to be faster.
     // I guess we may need to add some policy to do this
     DBG(Workflow, "Model exists, I am calling surrogate (for all data)");
-    surrogate->evaluate(totalElements, tmpInputs, tmpOutputs);
+    UQModel->evaluate(totalElements, tmpInputs, tmpOutputs);
     CALIPER(CALI_MARK_END("SURROGATE");)
 
     if ( phLoc != mlLoc ){
