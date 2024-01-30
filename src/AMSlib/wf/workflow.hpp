@@ -68,7 +68,7 @@ class AMSWorkflow
    * (world_size for MPI) */
   int wSize;
 
-  /** @brief  Location of data during simulation (CPU or GPU) */
+  /** @brief mlLoc describes the location of the ML model during simulation (CPU or GPU) */
   AMSResourceType mlLoc;
   AMSResourceType phLoc;
 
