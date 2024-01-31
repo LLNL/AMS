@@ -29,7 +29,6 @@ public:
          const int k_nearest,
          const int mpi_task,
          const int mpi_nproc,
-         const int repeats,
          const double threshold,
          const char *surrogate_path,
          const char *uq_path,
