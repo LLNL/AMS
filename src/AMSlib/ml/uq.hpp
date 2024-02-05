@@ -128,6 +128,11 @@ public:
       DBG(Workflow, "Evaluating Random UQ");
       randomUQ->evaluate(totalElements, p_ml_acceptable);
       CALIPER(CALI_MARK_END("RANDOM_UQ");)
+
+      CALIPER(CALI_MARK_BEGIN("SURROGATE");)
+      DBG(Workflow, "Model exists, I am calling surrogate (for all data)");
+      surrogate->evaluate(totalElements, inputs, outputs);
+      CALIPER(CALI_MARK_END("SURROGATE");)
     } else {
       THROW(std::runtime_error, "Invalid UQ policy");
     }
