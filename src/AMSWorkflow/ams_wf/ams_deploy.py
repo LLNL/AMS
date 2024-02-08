@@ -9,7 +9,9 @@ import json
 import flux
 import time
 from flux.job import JobspecV1
+from flux.kvs import KVSDir
 import flux.job as fjob
+import flux.uri as uri
 import signal
 from ams.store import CreateStore, AMSDataStore
 
@@ -36,6 +38,7 @@ class JobSpec:
         logger.info(f"Creating Job Description: {self._executable} {self._arguments}")
 
         self._resources = job_descr["resources"]
+
         jobspec = JobspecV1.from_command(
             command=self._command,
             num_tasks=job_descr["resources"]["num_tasks"],
@@ -173,7 +176,7 @@ class AMSConcurrentJobScheduler(AMSJobScheduler):
                 "num_nodes": 1,
                 "num_processes_per_node": 1,
                 "num_tasks": 1,
-                "cores_per_task": 5,
+                "cores_per_task": 32,
                 "gpus_per_task": 0,
             }
 
@@ -192,13 +195,32 @@ class AMSConcurrentJobScheduler(AMSJobScheduler):
                 return False
             return True
 
+        # We create a KVS Namespace
+        kvs_dir = KVSDir(self._flux_handle)
+        print("KVS (Deploy) RESOURCE DIR IS", kvs_dir["resource.R"])
         # We start stager first
         logger.debug("Start stager")
         stager_id = self._stager.start(self._flux_handle)
         logger.debug(f"Stager job id is {stager_id}")
-        time.sleep(120)
-        stager_status = FluxJobStatus(self._flux_handle)
-        logger.debug(f"{json.dumps(stager_status.get_job(stager_id), indent=4)}")
+
+        stager_connected = False
+        # Here we actively wait for stagers to subscribe into
+        # our KVS. By doing so, we know the
+        for tries in range(0, 6):
+            if kvs_dir.exists("AMSStager"):
+                stager_connected = True
+                break
+            logger.debug(f"Stager KVS Value does not exist")
+            time.sleep(25)
+
+        if not stager_connected:
+            logger.critical(f"Cannot connect to stager")
+            stager_status = FluxJobStatus(self._flux_handle)
+            logger.debug(f"{json.dumps(stager_status.get_job(stager_id), indent=4)}")
+            logger.critical(f"Killing pending jobs")
+            kill_status = fjob.kill(self._flux_handle, jobid=stager_id, signum=signal.SIGINT)
+            fjob.wait(self._flux_handle, jobid=stager_id)
+            return False
 
         logger.debug("Start user app")
         user_app_id = self._user_app.start(self._flux_handle)
@@ -280,6 +302,7 @@ def deploy(config):
     # kosh store is up and running
     st = CreateStore(config["db"]["path"], config["db"]["store_name"], config["db"]["name"])
     logger.info(f"Generating AMS Store at {st.ams_config.db_path}")
+    logger.info(f"Flux URI is {os.environ.get('FLUX_URI')}")
     with AMSDataStore(st.ams_config.db_path, st.ams_config.db_store, st.ams_config.name, False) as store:
         st(store)
     # TODO: In case of RMQ configbase we need to make sure

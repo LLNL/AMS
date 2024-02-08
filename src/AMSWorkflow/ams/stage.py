@@ -6,6 +6,8 @@
 
 import glob
 import shutil
+import sys
+import os
 import time
 from abc import ABC, abstractclassmethod, abstractmethod
 from enum import Enum
@@ -25,6 +27,9 @@ from ams.faccessors import get_reader, get_writer
 from ams.store import AMSDataStore
 from ams.util import get_unique_fn
 from ams.rmq_async import RMQConsumer
+
+from flux.kvs import KVSDir
+import flux
 
 BATCH_SIZE = 32 * 1024 * 1024
 
@@ -526,11 +531,13 @@ class PushToStore(Task):
         self._store = store
         if not self.dir.exists():
             self.dir.mkdir(parents=True, exist_ok=True)
+        print("AMS Store directories created")
 
     def __call__(self):
         """
         A busy loop reading messages from the i_queue publishing them to the kosh store.
         """
+        print("In busy loop of AMS Store")
         start = time.time()
         if self._store:
             db_store = AMSDataStore(
@@ -629,11 +636,30 @@ class Pipeline(ABC):
             executing actions by reading data from i/o_queue(s).
         """
         executors = list()
-        for a in self._tasks:
+        for i, a in enumerate(self._tasks):
+            print(f"Instantiating Task: {i}:{a.__class__.__name__}")
             executors.append(exec_vehicle_cls(target=a))
 
-        for e in executors:
+        for i, e in enumerate(executors):
+            print(f"Start Executor: {i}")
             e.start()
+            print(f"Executor {i} started")
+
+        # This is currently is hardcoded. We need to abstract it
+        # to make this callable from the command line.
+        # Addtionally a good communication protocol with KVS of
+        # AMS-deploy can help us to gracefull shutdown connections
+        flux_handle = flux.Flux()
+        kvs_dir = KVSDir(flux_handle=flux_handle)
+        print("Instance level is ", flux_handle.attr_get("instance-level"))
+        print(f"Flux URI is {os.environ.get('FLUX_URI')}")
+        sys.stdout.flush()
+        print("KVS RESOURCE DIR IS", kvs_dir["resource.R"])
+        sys.stdout.flush()
+        kvs_dir["AMSStager"] = "Active"
+        kvs_dir.commit()
+        print("Commit to KVS Store")
+        sys.stdout.flush()
 
         for e in executors:
             e.join()
