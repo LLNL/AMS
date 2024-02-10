@@ -248,19 +248,21 @@ public:
     if (phLoc != mlLoc) {
       // Copy out the result
       ResourceManager::copy(p_ml_acceptable, _p_ml_acceptable);
-      ResourceManager::deallocate(p_ml_acceptable, mlLoc);
       for (int i = 0; i < Outputs.size(); i++) {
         ResourceManager::copy(tmpOutputs[i], Outputs[i]);
-
+      }
         // De-allocate temp data
-        for (int i = 0; i < Inputs.size(); i++)
+        for (int i = 0; i < Inputs.size(); i++) {
           ams::ResourceManager::deallocate(const_cast<FPTypeValue *>(
                                                tmpInputs[i]),
                                            mlLoc);
-        for (int i = 0; i < Outputs.size(); i++)
+        }
+
+        for (int i = 0; i < Outputs.size(); i++) {
           ams::ResourceManager::deallocate((tmpOutputs[i]), mlLoc);
+        }
+
         ams::ResourceManager::deallocate(p_ml_acceptable, mlLoc);
-      }
     }
   }
 
