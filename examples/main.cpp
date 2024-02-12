@@ -166,7 +166,8 @@ int run(const char *device_name,
         const char *model_path,
         const char *db_config,
         bool lbalance,
-        int k_nearest)
+        int k_nearest,
+        int repeats)
 {
   // -------------------------------------------------------------------------
   // setup
@@ -175,7 +176,12 @@ int run(const char *device_name,
   CALIPER(mgr.start();)
   CALIPER(CALI_MARK_BEGIN("Setup");)
 
-  const bool use_device = std::strcmp(device_name, "cpu") != 0;
+  const bool physics_use_device = ((std::strcmp(device_name, "gpu_cpu") == 0) ||
+                                   std::strcmp(device_name, "gpu_gpu") == 0);
+  const bool ml_use_device = ((std::strcmp(device_name, "cpu_gpu") == 0) ||
+                              std::strcmp(device_name, "gpu_gpu") == 0);
+
+
   AMSDBType dbType = AMSDBType::None;
   if (std::strcmp(db_type, "csv") == 0) {
     dbType = AMSDBType::CSV;
@@ -250,7 +256,7 @@ int run(const char *device_name,
 
 
   mfem::MemoryManager::SetUmpireHostAllocatorName(physics_host_alloc.c_str());
-  if (use_device) {
+  if (physics_use_device) {
     mfem::MemoryManager::SetUmpireDeviceAllocatorName(
         physics_device_alloc.c_str());
   }
@@ -261,7 +267,7 @@ int run(const char *device_name,
   if (strcmp(pool, "default") != 0) {
     AMSSetAllocator(AMSResourceType::HOST, ams_host_alloc.c_str());
 
-    if (use_device) {
+    if (physics_use_device || ml_use_device) {
       AMSSetAllocator(AMSResourceType::DEVICE, ams_device_alloc.c_str());
       AMSSetAllocator(AMSResourceType::PINNED, ams_pinned_alloc.c_str());
     }
@@ -270,7 +276,13 @@ int run(const char *device_name,
   mfem::Device::SetMemoryTypes(mfem::MemoryType::HOST_UMPIRE,
                                mfem::MemoryType::DEVICE_UMPIRE);
 
-  mfem::Device device(device_name);
+  mfem::Device device;
+
+  if (physics_use_device)
+    device.Configure("cuda");
+  else
+    device.Configure("cpu");
+
   std::cout << std::endl;
   device.Print();
   std::cout << std::endl;
@@ -332,8 +344,12 @@ int run(const char *device_name,
 
   db_path = (strlen(db_config) > 0) ? db_config : nullptr;
 
-  AMSResourceType ams_device = AMSResourceType::HOST;
-  if (use_device) ams_device = AMSResourceType::DEVICE;
+  AMSResourceType ams_physics_device = AMSResourceType::HOST;
+  if (physics_use_device) ams_physics_device = AMSResourceType::DEVICE;
+
+  AMSResourceType ams_ml_device = AMSResourceType::HOST;
+  if (ml_use_device) ams_ml_device = AMSResourceType::DEVICE;
+
   AMSExecPolicy ams_loadBalance = AMSExecPolicy::UBALANCED;
   if (lbalance) ams_loadBalance = AMSExecPolicy::BALANCED;
 #else
@@ -347,7 +363,7 @@ int run(const char *device_name,
   for (int mat_idx = 0; mat_idx < num_mats; ++mat_idx) {
     EOS<TypeValue> *base;
     if (eos_name == std::string("ideal_gas")) {
-      base = new IdealGas<TypeValue>(1.6, 1.4);
+      base = new IdealGas<TypeValue>(1.6, 1.4, repeats);
     } else if (eos_name == std::string("constant_host")) {
       base = new ConstantEOSOnHost<TypeValue>(physics_host_alloc.c_str(), 1.0);
     } else {
@@ -360,7 +376,8 @@ int run(const char *device_name,
                                              dbType,
                                              precision,
                                              ams_loadBalance,
-                                             ams_device,
+                                             ams_physics_device,
+                                             ams_ml_device,
                                              uq_policy,
                                              k_nearest,
                                              rId,
@@ -605,7 +622,7 @@ int main(int argc, char **argv)
     std::cout.setstate(std::ios::failbit);
   }
 
-  const char *device_name = "cpu";
+  const char *device_name = "cpu_cpu";
   const char *eos_name = "ideal_gas";
   const char *model_path = "";
   const char *hdcache_path = "";
@@ -634,6 +651,7 @@ int main(int argc, char **argv)
   double avg = 0.5;
   double stdDev = 0.2;
   bool reqDB = false;
+  int repeats = 1;
   const char *pool = "default";
 
 #ifdef __ENABLE_DB__
@@ -646,7 +664,11 @@ int main(int argc, char **argv)
   // setup command line parser
   // -------------------------------------------------------------------------
   mfem::OptionsParser args(argc, argv);
-  args.AddOption(&device_name, "-d", "--device", "Device config string");
+  args.AddOption(&device_name,
+                 "-d",
+                 "--device",
+                 "device(physics)_device(model), for example: cpu_gpu means "
+                 "execute physics on the cpu and the model on gpu");
 
   // set precision
   args.AddOption(&precision_opt,
@@ -752,6 +774,11 @@ int main(int argc, char **argv)
   args.AddOption(
       &verbose, "-v", "--verbose", "-qu", "--quiet", "Print extra stuff");
 
+  args.AddOption(&repeats,
+                 "-rp",
+                 "--repeats",
+                 "Number of repeats to perform on physics eval");
+
   args.AddOption(&pool,
                  "-ptype",
                  "--pool-type",
@@ -844,7 +871,8 @@ int main(int argc, char **argv)
                      model_path,
                      db_config,
                      lbalance,
-                     k_nearest);
+                     k_nearest,
+                     repeats);
   else if (precision == AMSDType::Double)
     ret = run<double>(device_name,
                       db_type,
@@ -870,7 +898,8 @@ int main(int argc, char **argv)
                       model_path,
                       db_config,
                       lbalance,
-                      k_nearest);
+                      k_nearest,
+                      repeats);
   else {
     std::cerr << "Invalid precision " << precision_opt << "\n";
     return -1;
