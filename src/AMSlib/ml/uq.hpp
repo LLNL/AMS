@@ -17,9 +17,7 @@
 #include "ml/surrogate.hpp"
 #include "wf/resource_manager.hpp"
 
-static inline bool isNullOrEmpty(const char *p) {
-  return (!p || p[0] =='\0');
-}
+static inline bool isNullOrEmpty(const char *p) { return (!p || p[0] == '\0'); }
 
 template <typename FPTypeValue>
 class UQ
@@ -33,12 +31,17 @@ public:
      FPTypeValue threshold)
       : uqPolicy(uqPolicy), threshold(threshold)
   {
+    if (isNullOrEmpty(surrogatePath)) {
+      surrogate = nullptr;
+      hdcache = nullptr;
+      randomUQ = nullptr;
+      return;
+    }
+
     if (!(AMSUQPolicy::AMSUQPolicy_BEGIN <= uqPolicy &&
           uqPolicy <= AMSUQPolicy::AMSUQPolicy_END))
       THROW(std::runtime_error, "Invalid UQ policy, value is out-of-bounds");
 
-    if (isNullOrEmpty(surrogatePath))
-      THROW(std::runtime_error, "Missing file path to surrogate model");
 
     bool is_DeltaUQ = ((uqPolicy == AMSUQPolicy::DeltaUQ_Max ||
                         uqPolicy == AMSUQPolicy::DeltaUQ_Mean)

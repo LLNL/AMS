@@ -8,6 +8,8 @@
 #ifndef __AMS_WORKFLOW_HPP__
 #define __AMS_WORKFLOW_HPP__
 
+#include <caliper/cali_macros.h>
+
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
@@ -249,6 +251,8 @@ public:
                 int outputDim,
                 MPI_Comm Comm = nullptr)
   {
+    CALIPER(CALI_MARK_BEGIN("AMSEvaluate");)
+
     CDEBUG(Workflow,
            rId == 0,
            "Entering Evaluate "
@@ -268,15 +272,18 @@ public:
 
       std::vector<FPTypeValue *> tmpIn(tmpInputs, tmpInputs + inputDim);
       DBG(Workflow, "No-Model, I am calling Physics code (for all data)");
+      CALIPER(CALI_MARK_BEGIN("PHYSICS MODULE");)
       AppCall(probDescr,
               totalElements,
               reinterpret_cast<const void **>(origInputs.data()),
               reinterpret_cast<void **>(origOutputs.data()));
+      CALIPER(CALI_MARK_END("PHYSICS MODULE");)
       if (DB) {
         CALIPER(CALI_MARK_BEGIN("DBSTORE");)
         Store(totalElements, tmpIn, origOutputs);
         CALIPER(CALI_MARK_END("DBSTORE");)
       }
+      CALIPER(CALI_MARK_END("AMSEvaluate");)
       return;
     }
     // The predicate with which we will split the data on a later step
@@ -308,11 +315,13 @@ public:
     bool *predicate = p_ml_acceptable;
 
     // -----------------------------------------------------------------
-    // STEP 3: call physics module only where d_dense_need_phys = true
+    // STEP 3: call physics module only where predicate = false
     // -----------------------------------------------------------------
     // ---- 3a: we need to pack the sparse data based on the uq flag
+    CALIPER(CALI_MARK_BEGIN("PACK");)
     const long packedElements = data_handler::pack(
         appDataLoc, predicate, totalElements, origInputs, packedInputs);
+    CALIPER(CALI_MARK_END("PACK");)
 
     // Pointer values which store output data values
     // to be computed using the eos function.
@@ -358,8 +367,10 @@ public:
     }
 
     // ---- 3c: unpack the data
+    CALIPER(CALI_MARK_BEGIN("UNPACK");)
     data_handler::unpack(
         appDataLoc, predicate, totalElements, packedOutputs, origOutputs);
+    CALIPER(CALI_MARK_END("UNPACK");)
 
     DBG(Workflow, "Finished physics evaluation")
 
@@ -392,6 +403,7 @@ public:
           (float)(packedElements) / float(totalElements))
 
     REPORT_MEM_USAGE(Workflow, "End")
+    CALIPER(CALI_MARK_END("AMSEvaluate");)
   }
 };
 
