@@ -1844,18 +1844,15 @@ private:
         std::find_if(buf.begin(), buf.end(), [&msg_id](const AMSMessage& obj) {
           return obj.id() == msg_id;
         });
-    if (it == buf.end()) {
-      WARNING(RMQPublisherHandler,
-              "Failed to deallocate msg #%d: not found",
-              msg_id)
-      return;
-    }
+    CFATAL(RMQPublisherHandler, it == buf.end(),
+            "Failed to deallocate msg #%d: not found",
+            msg_id)
     auto& msg = *it;
     auto& rm = ams::ResourceManager::getInstance();
     try {
       rm.deallocate(msg.data(), AMSResourceType::HOST);
     } catch (const umpire::util::Exception& e) {
-      WARNING(RMQPublisherHandler,
+      FATAL(RMQPublisherHandler,
               "Failed to deallocate #%d (%p)",
               msg.id(),
               msg.data());
@@ -1877,7 +1874,7 @@ private:
       try {
         rm.deallocate(dp.data(), AMSResourceType::HOST);
       } catch (const umpire::util::Exception& e) {
-        WARNING(RMQPublisherHandler,
+        FATAL(RMQPublisherHandler,
                 "Failed to deallocate msg #%d (%p)",
                 dp.id(),
                 dp.data());
