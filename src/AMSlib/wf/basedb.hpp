@@ -835,8 +835,7 @@ struct AMSMsgHeader {
     uint8_t new_dtype = data_blob[current_offset];
     current_offset += sizeof(uint8_t);
     // MPI rank (should be 2 bytes)
-    uint16_t new_mpirank;
-    std::memcpy(&new_mpirank, data_blob + current_offset, sizeof(uint16_t));
+    uint16_t new_mpirank = (reinterpret_cast<uint16_t*>(data_blob + current_offset))[0];
     current_offset += sizeof(uint16_t);
     // Num elem (should be 4 bytes)
     uint32_t new_num_elem;
@@ -882,6 +881,7 @@ private:
    */
   AMSMessage()
       : _id(0),
+        _rank(0),
         _num_elements(0),
         _input_dim(0),
         _output_dim(0),
@@ -897,6 +897,7 @@ private:
   void swap(const AMSMessage& other)
   {
     _id = other._id;
+    _rank = other._rank;
     _num_elements = other._num_elements;
     _input_dim = other._input_dim;
     _output_dim = other._output_dim;
@@ -918,6 +919,7 @@ public:
              const std::vector<TypeValue*>& inputs,
              const std::vector<TypeValue*>& outputs)
       : _id(id),
+        _rank(0),
         _num_elements(num_elements),
         _input_dim(inputs.size()),
         _output_dim(outputs.size()),
@@ -1480,10 +1482,11 @@ private:
   std::promise<RMQConnectionStatus> _error_connection;
   std::future<RMQConnectionStatus> _ftr_error;
 
-public:
-  std::mutex ptr_mutex;
-  std::vector<AMSMessage> data_ptrs;
+  std::mutex _mutex;
+  /** @brief Messages that have not been successfully acknowledged */
+  std::vector<AMSMessage> _messages;
 
+public:
   /**
    *  @brief Constructor
    *  @param[in]  loop         Event Loop
@@ -1519,7 +1522,10 @@ public:
    */
   void publish(AMSMessage&& msg)
   {
-    data_ptrs.push_back(msg);
+    {
+      const std::lock_guard<std::mutex> lock(_mutex);
+      _messages.push_back(msg);
+    }
     if (_rchannel) {
       // publish a message via the reliable-channel
       //    onAck   : message has been explicitly ack'ed by RabbitMQ
@@ -1532,7 +1538,7 @@ public:
                   &_nb_msg_ack = _nb_msg_ack,
                   id = msg.id(),
                   data = msg.data(),
-                  &data_ptrs = this->data_ptrs]() mutable {
+                  &_messages = this->_messages]() mutable {
             DBG(RMQPublisherHandler,
                 "[rank=%d] message #%d (Addr:%p) got acknowledged successfully "
                 "by "
@@ -1541,7 +1547,7 @@ public:
                 _rank,
                 id,
                 data)
-            this->free_ams_message(id, data_ptrs);
+            this->free_ams_message(id, _messages);
             _nb_msg_ack++;
           })
           .onNack([this, id = msg.id(), data = msg.data()]() mutable {
@@ -1616,12 +1622,12 @@ public:
    *  @brief  Return the messages that have NOT been acknowledged by the RabbitMQ server. 
    *  @return     A vector of AMSMessage
    */
-  std::vector<AMSMessage>& internal_msg_buffer() { return data_ptrs; }
+  std::vector<AMSMessage>& internal_msg_buffer() { return _messages; }
 
   /**
    *  @brief    Free AMSMessages held by the handler
    */
-  void cleanup() { free_all_messages(data_ptrs); }
+  void cleanup() { free_all_messages(_messages); }
 
   /**
    *  @brief    Total number of messages sent
@@ -1648,7 +1654,7 @@ public:
       if (++tries > 10) break;
       std::this_thread::sleep_for(std::chrono::milliseconds(50 * tries));
     }
-    free_all_messages(data_ptrs);
+    free_all_messages(_messages);
   }
 
 private:
@@ -1833,7 +1839,7 @@ private:
    */
   void free_ams_message(int msg_id, std::vector<AMSMessage>& buf)
   {
-    const std::lock_guard<std::mutex> lock(ptr_mutex);
+    const std::lock_guard<std::mutex> lock(_mutex);
     auto it =
         std::find_if(buf.begin(), buf.end(), [&msg_id](const AMSMessage& obj) {
           return obj.id() == msg_id;
@@ -1855,16 +1861,7 @@ private:
               msg.data());
     }
     DBG(RMQPublisherHandler, "Deallocated msg #%d (%p)", msg.id(), msg.data())
-    it = std::remove_if(buf.begin(),
-                        buf.end(),
-                        [&msg_id](const AMSMessage& obj) {
-                          return obj.id() == msg_id;
-                        });
-    CWARNING(RMQPublisherHandler,
-             it == buf.end(),
-             "Failed to erase %p from buffer",
-             msg.data());
-    buf.erase(it, buf.end());
+    buf.erase(it);
   }
 
   /**
@@ -1873,8 +1870,7 @@ private:
    */
   void free_all_messages(std::vector<AMSMessage>& buffer)
   {
-    const std::lock_guard<std::mutex> lock(ptr_mutex);
-    // auto& urm = umpire::ResourceManager::getInstance();
+    const std::lock_guard<std::mutex> lock(_mutex);
     auto& rm = ams::ResourceManager::getInstance();
     for (auto& dp : buffer) {
       DBG(RMQPublisherHandler, "deallocate msg #%d (%p)", dp.id(), dp.data())
@@ -1887,7 +1883,7 @@ private:
                 dp.data());
       }
     }
-    buffer.erase(buffer.begin(), buffer.end());
+    buffer.clear();
   }
 
 };  // class RMQPublisherHandler
@@ -2006,14 +2002,14 @@ public:
   bool connection_valid() { return _handler->connection_valid(); }
 
   /**
-   * @brief Return the messages that have not been acknolwged.
+   * @brief Return the messages that have not been acknowledged.
    * It does not mean they have not been delivered but the
    * acknowledgements have not arrived yet.
-   * @return A map of messages (ID, data)
+   * @return A vector of AMSMessage
    */
-  std::vector<AMSMessage> get_buffer_msgs()
+  std::vector<AMSMessage>& get_buffer_msgs()
   {
-    return std::move(_handler->internal_msg_buffer());
+    return _handler->internal_msg_buffer();
   }
 
   /**
@@ -2314,7 +2310,7 @@ public:
                              return a.id() < b.id();
                            }));
 
-    WARNING(RMQPublisher,
+    DBG(RMQPublisher,
             "[rank=%d] we have %d buffered messages that will get re-send "
             "(starting from msg #%d).",
             _rank,
