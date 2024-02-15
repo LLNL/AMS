@@ -158,7 +158,8 @@ void deviceCheckErrors(const char *file, const int line)
 #include <curand.h>
 #include <curand_kernel.h>
 PERFFASPECT()
-__global__ void random_uq_device(bool *uq_flags,
+__global__ void random_uq_device(int seed,
+                                 bool *uq_flags,
                                  int ndata,
                                  double acceptable_error)
 {
@@ -166,19 +167,21 @@ __global__ void random_uq_device(bool *uq_flags,
   /* CUDA's random number library uses curandState_t to keep track of the seed
      value we will store a random state for every thread  */
   curandState_t state;
+  int id = threadIdx.x + blockDim.x * blockIdx.x;
+
+  if (id >= ndata) return;
 
   /* we have to initialize the state */
   curand_init(
-      0, /* the seed controls the sequence of random values that are produced */
-      0, /* the sequence number is only important with multiple cores */
+      seed +
+          id, /* the seed controls the sequence of random values that are produced */
+      0,      /* the sequence number is only important with multiple cores */
       0, /* the offset is how much extra we advance in the sequence for each
             call, can be 0 */
       &state);
 
-  for (int i = 0; i < ndata; i++) {
-    float x = curand_uniform(&state);
-    uq_flags[i] = (x <= acceptable_error);
-  }
+  float x = curand_uniform(&state);
+  uq_flags[id] = (x <= acceptable_error);
 }
 
 

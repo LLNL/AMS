@@ -16,6 +16,7 @@
 #ifdef __ENABLE_TORCH__
 #include <ATen/core/interned_strings.h>
 #include <ATen/core/ivalue.h>
+#include <torch/cuda.h>
 #include <torch/script.h>  // One-stop header.
 #endif
 
@@ -73,12 +74,17 @@ private:
                                   const TypeInValue** array)
   {
     c10::SmallVector<at::Tensor, 8> Tensors;
+    CALIPER(CALI_MARK_BEGIN("ARRAY_BLOB");)
     for (int i = 0; i < numCols; i++) {
       Tensors.push_back(torch::from_blob((TypeInValue*)array[i],
                                          {numRows, 1},
                                          tensorOptions));
     }
+    CALIPER(CALI_MARK_END("ARRAY_BLOB");)
+
+    CALIPER(CALI_MARK_BEGIN("ARRAY_RESHAPE");)
     at::Tensor tensor = at::reshape(at::cat(Tensors, 1), {numRows, numCols});
+    CALIPER(CALI_MARK_END("ARRAY_RESHAPE");)
     return tensor;
   }
 
@@ -183,24 +189,37 @@ private:
   {
     //torch::NoGradGuard no_grad;
     c10::InferenceMode guard(true);
+    CALIPER(CALI_MARK_BEGIN("ARRAY_TO_TENSOR");)
     auto input = arrayToTensor(num_elements, num_in, inputs);
+    CALIPER(CALI_MARK_END("ARRAY_TO_TENSOR");)
+
     input.set_requires_grad(false);
     if (_is_DeltaUQ) {
       assert(outputs_stdev && "Expected non-null outputs_stdev");
       // The deltauq surrogate returns a tuple of (outputs, outputs_stdev)
+      CALIPER(CALI_MARK_BEGIN("SURROGATE-EVAL");)
       auto output_tuple = module.forward({input}).toTuple();
+      CALIPER(CALI_MARK_END("SURROGATE-EVAL");)
+
       at::Tensor output_mean_tensor =
           output_tuple->elements()[0].toTensor().detach();
       at::Tensor output_stdev_tensor =
           output_tuple->elements()[1].toTensor().detach();
+      CALIPER(CALI_MARK_BEGIN("TENSOR_TO_ARRAY");)
       tensorToArray(output_mean_tensor, num_elements, num_out, outputs);
       tensorToHostArray(output_stdev_tensor,
                         num_elements,
                         num_out,
                         outputs_stdev);
+      CALIPER(CALI_MARK_END("TENSOR_TO_ARRAY");)
     } else {
+      CALIPER(CALI_MARK_BEGIN("SURROGATE-EVAL");)
       at::Tensor output = module.forward({input}).toTensor().detach();
+      CALIPER(CALI_MARK_END("SURROGATE-EVAL");)
+
+      CALIPER(CALI_MARK_BEGIN("TENSOR_TO_ARRAY");)
       tensorToArray(output, num_elements, num_out, outputs);
+      CALIPER(CALI_MARK_END("TENSOR_TO_ARRAY");)
     }
 
     if (is_device()) {
