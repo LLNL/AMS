@@ -112,6 +112,8 @@ public:
                      std::vector<TypeValue*>& outputs) = 0;
 
   uint64_t getId() const { return id; }
+
+  virtual bool updateModel() { return false; }
 };
 
 /**
@@ -835,7 +837,8 @@ struct AMSMsgHeader {
     uint8_t new_dtype = data_blob[current_offset];
     current_offset += sizeof(uint8_t);
     // MPI rank (should be 2 bytes)
-    uint16_t new_mpirank = (reinterpret_cast<uint16_t*>(data_blob + current_offset))[0];
+    uint16_t new_mpirank =
+        (reinterpret_cast<uint16_t*>(data_blob + current_offset))[0];
     current_offset += sizeof(uint16_t);
     // Num elem (should be 4 bytes)
     uint32_t new_num_elem;
@@ -1844,18 +1847,19 @@ private:
         std::find_if(buf.begin(), buf.end(), [&msg_id](const AMSMessage& obj) {
           return obj.id() == msg_id;
         });
-    CFATAL(RMQPublisherHandler, it == buf.end(),
-            "Failed to deallocate msg #%d: not found",
-            msg_id)
+    CFATAL(RMQPublisherHandler,
+           it == buf.end(),
+           "Failed to deallocate msg #%d: not found",
+           msg_id)
     auto& msg = *it;
     auto& rm = ams::ResourceManager::getInstance();
     try {
       rm.deallocate(msg.data(), AMSResourceType::HOST);
     } catch (const umpire::util::Exception& e) {
       FATAL(RMQPublisherHandler,
-              "Failed to deallocate #%d (%p)",
-              msg.id(),
-              msg.data());
+            "Failed to deallocate #%d (%p)",
+            msg.id(),
+            msg.data());
     }
     DBG(RMQPublisherHandler, "Deallocated msg #%d (%p)", msg.id(), msg.data())
     buf.erase(it);
@@ -1875,9 +1879,9 @@ private:
         rm.deallocate(dp.data(), AMSResourceType::HOST);
       } catch (const umpire::util::Exception& e) {
         FATAL(RMQPublisherHandler,
-                "Failed to deallocate msg #%d (%p)",
-                dp.id(),
-                dp.data());
+              "Failed to deallocate msg #%d (%p)",
+              dp.id(),
+              dp.data());
       }
     }
     buffer.clear();
@@ -2308,11 +2312,11 @@ public:
                            }));
 
     DBG(RMQPublisher,
-            "[rank=%d] we have %d buffered messages that will get re-send "
-            "(starting from msg #%d).",
-            _rank,
-            messages.size(),
-            msg_min.id())
+        "[rank=%d] we have %d buffered messages that will get re-send "
+        "(starting from msg #%d).",
+        _rank,
+        messages.size(),
+        msg_min.id())
 
     // Stop the faulty publisher
     _publisher->stop();

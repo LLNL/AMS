@@ -283,6 +283,11 @@ public:
       CALIPER(CALI_MARK_END("AMSEvaluate");)
       return;
     }
+
+    if (DB && DB->updateModel()) {
+      UQModel->updateModel("");
+    }
+
     // The predicate with which we will split the data on a later step
     bool *p_ml_acceptable = rm.allocate<bool>(totalElements, appDataLoc);
 
