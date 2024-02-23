@@ -394,7 +394,7 @@ public:
 
   bool is_DeltaUQ() { return _is_DeltaUQ; }
 
-  void update(std::string modelPath)
+  void update(std::string new_path)
   {
     /* This function updates the underlying torch model,
      * with a new one pointed at location modelPath. The previous
@@ -406,9 +406,9 @@ public:
      * invocation. This is currently not done.
      */
     if (model_resource != AMSResourceType::DEVICE)
-      _load<TypeInValue>(model_path, "cpu");
+      _load<TypeInValue>(new_path, "cpu");
     else
-      _load<TypeInValue>(model_path, "cuda");
+      _load<TypeInValue>(new_path, "cuda");
   }
 };
 
