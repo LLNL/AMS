@@ -4,6 +4,7 @@ add_subdirectory(ams_wf)
 add_subdirectory(ams)
 
 configure_file("setup.py" "${CMAKE_CURRENT_BINARY_DIR}/setup.py" COPYONLY)
+configure_file("${CMAKE_HOME_DIRECTORY}/pyproject.toml" "${CMAKE_CURRENT_BINARY_DIR}/pyproject.toml" COPYONLY)
 
 file(GLOB_RECURSE pyfiles *.py ams_wf/*.py ams/*.py)
 
@@ -15,8 +16,8 @@ else()
   set(_pip_args "--user")
 endif()
 
-message(WARNING "AMS Python Source files are ${pyfiles}")
-message(WARNING "AMS Python built cmd is : ${Python_EXECUTABLE} -m pip install ${_pip_args} ${AMS_PY_APP}")
+message(STATUS "AMS Python Source files are ${pyfiles}")
+message(STATUS "AMS Python built cmd is : ${Python_EXECUTABLE} -m pip install ${_pip_args} ${AMS_PY_APP}")
 
 add_custom_target(PyAMS ALL
         COMMAND ${Python_EXECUTABLE} -m pip install ${_pip_args} ${AMS_PY_APP}
