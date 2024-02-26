@@ -130,9 +130,9 @@ endif() # WITH_REDIS
 if (WITH_HDF5)
   find_package(HDF5 NAMES hdf5 COMPONENTS C shared REQUIRED NO_DEFAULT_PATH PATHS ${HDF5_Dir} ${HDF5_Dir}/share/cmake)
   list(APPEND AMS_APP_INCLUDES ${HDF5_INCLUDE_DIR})
-  list(APPEND AMS_APP_LIBRARIES ${HDF5_C_SHARED_LIBRARY})
+  list(APPEND AMS_APP_LIBRARIES ${HDF5_LIBRARIES})
   list(APPEND AMS_APP_DEFINES "-D__ENABLE_HDF5__")
-  message(STATUS "HDF5 Shared Library: ${HDF5_C_SHARED_LIBRARY}")
+  message(STATUS "HDF5 Shared Library: ${HDF5_LIBRARIES}")
   message(STATUS "HDF5 Include directories: ${HDF5_INCLUDE_DIR}")
 endif() # WITH_HDF5
 
@@ -182,12 +182,16 @@ if (WITH_TORCH)
   find_package(Torch REQUIRED)
   # This is annoying, torch populates all my cuda flags
   # and resets them
-  set(CMAKE_CUDA_FLAGS "")
+  #set(CMAKE_CUDA_FLAGS "")
   set(CMAKE_CUDA_ARCHITECTURES ON)
 
   list(APPEND AMS_APP_INCLUDES "${TORCH_INCLUDE_DIRS}")
   list(APPEND AMS_APP_LIBRARIES "${TORCH_LIBRARIES}")
-
+  # This is inspired by this thread here: https://discuss.pytorch.org/t/libtorch-cmake-build-tutorial/134898
+  # It picks manually all *.so files. In our case, we "trust" FindPackage to find the right libraries
+  # but it does not export where this libraries are. From looking into 2 systems, libtorch is never an absolute 
+  # path. We can work around this by explicitly appending "TORCH_INSTALL_PREFIX/lib" and "TORCH_INSTALL_PREFIX/lib64".
+  # I am currently ommitting this change in favor of PRIVATE linkage. We will see how this work.
   list(APPEND AMS_APP_DEFINES "-D__ENABLE_TORCH__")
 endif()
 
