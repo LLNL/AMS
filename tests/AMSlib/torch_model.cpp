@@ -24,7 +24,7 @@ void inference(SurrogateModel<T> &model, AMSResourceType resource)
 
   std::vector<const T *> inputs;
   std::vector<T *> outputs;
-  auto& ams_rm = ams::ResourceManager::getInstance();
+  auto &ams_rm = ams::ResourceManager::getInstance();
 
   for (int i = 0; i < 2; i++)
     inputs.push_back(ams_rm.allocate<T>(SIZE, resource));
@@ -46,8 +46,7 @@ void inference(SurrogateModel<T> &model, AMSResourceType resource)
 int main(int argc, char *argv[])
 {
   using namespace ams;
-  auto &rm = umpire::ResourceManager::getInstance();
-  auto& ams_rm = ams::ResourceManager::getInstance();
+  auto &ams_rm = ams::ResourceManager::getInstance();
   int use_device = std::atoi(argv[1]);
   char *model_path = argv[2];
   char *data_type = argv[3];

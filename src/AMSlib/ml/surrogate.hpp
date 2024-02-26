@@ -393,6 +393,23 @@ public:
   }
 
   bool is_DeltaUQ() { return _is_DeltaUQ; }
+
+  void update(std::string new_path)
+  {
+    /* This function updates the underlying torch model,
+     * with a new one pointed at location modelPath. The previous
+     * one is destructed automatically.
+     *
+     * TODO: I decided to not update the model path on the ``instances''
+     * map. As we currently expect this change will be agnostic to the application
+     * user. But, in any case we should keep track of which model has been used at which
+     * invocation. This is currently not done.
+     */
+    if (model_resource != AMSResourceType::DEVICE)
+      _load<TypeInValue>(new_path, "cpu");
+    else
+      _load<TypeInValue>(new_path, "cuda");
+  }
 };
 
 template <typename T>

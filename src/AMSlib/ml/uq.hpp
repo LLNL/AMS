@@ -77,11 +77,10 @@ public:
       const size_t ndims = outputs.size();
       std::vector<FPTypeValue *> outputs_stdev(ndims);
       // TODO: Enable device-side allocation and predicate calculation.
-      auto& rm = ams::ResourceManager::getInstance();
+      auto &rm = ams::ResourceManager::getInstance();
       for (int dim = 0; dim < ndims; ++dim)
         outputs_stdev[dim] =
-            rm.allocate<FPTypeValue>(totalElements,
-                                                        AMSResourceType::HOST);
+            rm.allocate<FPTypeValue>(totalElements, AMSResourceType::HOST);
 
       CALIPER(CALI_MARK_BEGIN("SURROGATE");)
       DBG(Workflow,
@@ -114,8 +113,7 @@ public:
       }
 
       for (int dim = 0; dim < ndims; ++dim)
-        rm.deallocate(outputs_stdev[dim],
-                                         AMSResourceType::HOST);
+        rm.deallocate(outputs_stdev[dim], AMSResourceType::HOST);
       CALIPER(CALI_MARK_END("DELTAUQ");)
     } else if (uqPolicy == AMSUQPolicy::FAISS_Mean ||
                uqPolicy == AMSUQPolicy::FAISS_Max) {
@@ -140,6 +138,23 @@ public:
     } else {
       THROW(std::runtime_error, "Invalid UQ policy");
     }
+  }
+
+  void updateModel(std::string model_path, std::string uq_path = "")
+  {
+    if (uqPolicy != AMSUQPolicy::RandomUQ &&
+        uqPolicy != AMSUQPolicy::DeltaUQ_Max &&
+        uqPolicy != AMSUQPolicy::DeltaUQ_Mean) {
+      THROW(std::runtime_error, "UQ model does not support update.");
+    }
+
+    if (uqPolicy == AMSUQPolicy::RandomUQ && uq_path != "") {
+      WARNING(Workflow,
+              "RandomUQ cannot update hdcache path, ignoring argument")
+    }
+
+    surrogate->update(model_path);
+    return;
   }
 
   bool hasSurrogate() { return (surrogate ? true : false); }
