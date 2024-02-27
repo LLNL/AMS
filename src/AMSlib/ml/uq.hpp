@@ -140,7 +140,8 @@ public:
     }
   }
 
-  void updateModel(std::string model_path, std::string uq_path = "")
+  void updateModel(const std::string &model_path,
+                   const std::string &uq_path = "")
   {
     if (uqPolicy != AMSUQPolicy::RandomUQ &&
         uqPolicy != AMSUQPolicy::DeltaUQ_Max &&
