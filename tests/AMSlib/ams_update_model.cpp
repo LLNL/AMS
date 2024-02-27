@@ -62,8 +62,8 @@ bool inference(SurrogateModel<T> &model,
     }
 
     if (resource == AMSResourceType::DEVICE) {
-      ams_rm.deallocate(first_model_out, resource);
-      ams_rm.deallocate(second_model_out, resource);
+      ams_rm.deallocate(first_model_out, AMSResourceType::HOST);
+      ams_rm.deallocate(second_model_out, AMSResourceType::HOST);
     }
   }
 
