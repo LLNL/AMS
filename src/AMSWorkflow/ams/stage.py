@@ -17,6 +17,7 @@ from threading import Thread
 from typing import Callable, List, Tuple
 import struct
 import signal
+import os
 
 import numpy as np
 
@@ -92,10 +93,15 @@ class Task(ABC):
     the staging mechanism.
     """
 
+    def __init__(self):
+        self.statistics = {"datasize" : 0, "duration" : 0}
+
     @abstractmethod
     def __call__(self):
         pass
 
+    def stats(self):
+        return self.statistics
 
 class ForwardTask(Task):
     """
@@ -112,7 +118,7 @@ class ForwardTask(Task):
         """
         initializes a ForwardTask class with the queues and the callback.
         """
-
+        super().__init__()
         if not isinstance(callback, Callable):
             raise TypeError(f"{callback} argument is not Callable")
 
@@ -142,6 +148,7 @@ class ForwardTask(Task):
         the output to the output queue. In the case of receiving a 'termination' messages informs
         the tasks waiting on the output queues about the terminations and returns from the function.
         """
+        start = time.time()
 
         while True:
             # This is a blocking call
@@ -152,9 +159,14 @@ class ForwardTask(Task):
             elif item.is_process():
                 inputs, outputs = self._action(item.data())
                 self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(inputs, outputs)))
+                self.statistics["datasize"] += (inputs.nbytes + outputs.nbytes)
             elif item.is_new_model():
                 # This is not handled yet
                 continue
+
+        end = time.time()
+        self.statistics["duration"] = end - start
+        print(f"Spend {end - start} at {self.__class__.__name__} ({self.statistics})")
         return
 
 
@@ -171,6 +183,7 @@ class FSLoaderTask(Task):
     """
 
     def __init__(self, o_queue, loader, pattern):
+        super().__init__()
         self.o_queue = o_queue
         self.pattern = pattern
         self.loader = loader
@@ -193,10 +206,13 @@ class FSLoaderTask(Task):
                 output_batches = np.array_split(output_data, num_batches)
                 for j, (i, o) in enumerate(zip(input_batches, output_batches)):
                     self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(i, o)))
+                self.statistics["datasize"] += (input_data.nbytes + output_data.nbytes)
+
         self.o_queue.put(QueueMessage(MessageType.Terminate, None))
 
         end = time.time()
-        print(f"Spend {end - start} at {self.__class__.__name__}")
+        self.statistics["duration"] += (end - start)
+        print(f"Spend {end - start} at {self.__class__.__name__} ({self.statistics})")
 
 
 class RMQMessage(object):
@@ -343,7 +359,8 @@ class RMQLoaderTask(Task):
         prefetch_count: Number of messages prefected by RMQ (impact performance)
     """
 
-    def __init__(self, o_queue, credentials, cacert, rmq_queue, prefetch_count=1):
+    def __init__(self, o_queue, credentials, cacert, rmq_queue, prefetch_count = 1):
+        super().__init__()
         self.o_queue = o_queue
         self.credentials = credentials
         self.cacert = cacert
@@ -387,6 +404,8 @@ class RMQLoaderTask(Task):
         input_batches = np.array_split(input_data, num_batches)
         output_batches = np.array_split(output_data, num_batches)
 
+        self.statistics["datasize"] += (input_data.nbytes + output_data.nbytes)
+
         for j, (i, o) in enumerate(zip(input_batches, output_batches)):
             self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(i, o)))
 
@@ -397,15 +416,14 @@ class RMQLoaderTask(Task):
             print(f"Received SIGNUM={signum} for {name}[pid={pid}]: stopping process")
             self.rmq_consumer.stop()
             self.o_queue.put(QueueMessage(MessageType.Terminate, None))
-            print(f"Spend {self.total_time} at {self.__class__.__name__}")
+            self.statistics["duration"] += (end - start)
+            print(f"Spend {self.total_time} at {self.__class__.__name__} ({self.statistics})")
 
         return handler
 
     def __call__(self):
         """
-        Busy loop of reading all files matching the pattern and creating
-        '100' batches which will be pushed on the queue. Upon reading all files
-        the Task pushes a 'Terminate' message to the queue and returns.
+        Busy loop of consuming messages from RMQ queue
         """
         self.rmq_consumer.run()
 
@@ -426,6 +444,7 @@ class FSWriteTask(Task):
         initializes the writer task to read data from the i_queue write them using
         the writer_cls and store the data in the out_dir.
         """
+        super().__init__()
         self.data_writer_cls = writer_cls
         self.out_dir = out_dir
         self.i_queue = i_queue
@@ -470,7 +489,9 @@ class FSWriteTask(Task):
                 break
 
         end = time.time()
-        print(f"Spend {end - start} {total_bytes_written} at {self.__class__.__name__}")
+        self.statistics["datasize"] = total_bytes_written
+        self.statistics["duration"] += (end - start)
+        print(f"Spend {end - start} {total_bytes_written} at {self.__class__.__name__} ({self.statistics})")
 
 
 class PushToStore(Task):
@@ -491,7 +512,7 @@ class PushToStore(Task):
         is not under db_path, it copies the file to this location and if store defined
         it makes the kosh-store aware about the existence of the file.
         """
-
+        super().__init__()
         self.ams_config = ams_config
         self.i_queue = i_queue
         self.dir = Path(db_path).absolute()
@@ -521,9 +542,12 @@ class PushToStore(Task):
 
                 if self._store:
                     db_store.add_candidates([str(dest_file)])
+            
+                self.statistics["datasize"] += os.stat(src_fn).st_size
 
         end = time.time()
-        print(f"Spend {end - start} at {self.__class__.__name__}")
+        self.statistics["duration"] += (end - start)
+        print(f"Spend {end - start} at {self.__class__.__name__} ({self.statistics})")
 
 
 class Pipeline(ABC):

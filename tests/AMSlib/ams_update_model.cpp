@@ -85,7 +85,6 @@ int main(int argc, char *argv[])
   char *data_type = argv[2];
   char *zero_model = argv[3];
   char *one_model = argv[4];
-  char *swap;
 
   AMSResourceType resource = AMSResourceType::HOST;
   if (use_device == 1) {

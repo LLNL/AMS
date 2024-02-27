@@ -394,7 +394,7 @@ public:
 
   bool is_DeltaUQ() { return _is_DeltaUQ; }
 
-  void update(std::string new_path)
+  void update(const std::string& new_path)
   {
     /* This function updates the underlying torch model,
      * with a new one pointed at location modelPath. The previous
