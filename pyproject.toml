@@ -81,3 +81,8 @@ show-fixes = true
 
 # change the default line length number or characters.
 line-length = 120
+
+[tool.yapf]
+ignore = ["E501", "W503", "E226", "BLK100", "E203"]
+column_limit = 120
+
