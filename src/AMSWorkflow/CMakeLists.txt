@@ -19,8 +19,17 @@ endif()
 message(STATUS "AMS Python Source files are ${pyfiles}")
 message(STATUS "AMS Python built cmd is : ${Python_EXECUTABLE} -m pip install ${_pip_args} ${AMS_PY_APP}")
 
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/timestamp"
+    COMMAND ${CMAKE_COMMAND} -E touch "${CMAKE_CURRENT_BINARY_DIR}/timestamp"
+    COMMAND ${Python_EXECUTABLE} -m pip install ${_pip_args} ${AMS_PY_APP}
+    DEPENDS ${pyfiles}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    COMMENT "Build AMS-WF Python Modules and Applications"
+    BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/timestamp"
+    )
+
 add_custom_target(PyAMS ALL
-        COMMAND ${Python_EXECUTABLE} -m pip install ${_pip_args} ${AMS_PY_APP}
-        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-        COMMENT "Build AMS-WF Python Modules and Applications"
-        DEPENDS ${pyfiles})
+  DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/timestamp"
+  )
+
