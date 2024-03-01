@@ -4,6 +4,7 @@ import sys
 import argparse
 from enum import Enum
 import logging
+import shutil
 import subprocess as sp
 import json
 import flux

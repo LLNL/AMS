@@ -400,3 +400,31 @@ class RMQConsumer(object):
             print("Stopped RabbitMQ connection")
         else:
             print("Already closed?")
+
+
+def broker_running(credentials, cacert):
+    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
+    ssl_context.verify_mode = ssl.CERT_REQUIRED
+    ssl_context.load_verify_locations(cacert)
+
+    pika_credentials = pika.PlainCredentials(credentials["rabbitmq-user"], credentials["rabbitmq-password"])
+
+    parameters = pika.ConnectionParameters(
+        host=credentials["server"],
+        port=credentials["port"],
+        virtual_host=credentials["virtual_host"],
+        credentials=pika_credentials,
+        ssl_options=pika.SSLOptions(ssl_context),
+    )
+
+    # try to establish connection and check its status
+    try:
+        connection = pika.BlockingConnection(parameters)
+        if connection.is_open:
+            connection.close()
+            return True
+        else:
+            return False
+    except Exception as error:
+        print("Error:", error.__class__.__name__)
+        return False
