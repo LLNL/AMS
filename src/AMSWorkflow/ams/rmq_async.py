@@ -402,7 +402,9 @@ class RMQConsumer(object):
             print("Already closed?")
 
 
-def broker_running(credentials, cacert):
+def broker_status(credentials, cacert):
+    print(credentials)
+    print(cacert)
     ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
     ssl_context.verify_mode = ssl.CERT_REQUIRED
     ssl_context.load_verify_locations(cacert)
@@ -410,9 +412,9 @@ def broker_running(credentials, cacert):
     pika_credentials = pika.PlainCredentials(credentials["rabbitmq-user"], credentials["rabbitmq-password"])
 
     parameters = pika.ConnectionParameters(
-        host=credentials["server"],
-        port=credentials["port"],
-        virtual_host=credentials["virtual_host"],
+        host=credentials["service-host"],
+        port=credentials["service-port"],
+        virtual_host=credentials["rabbitmq-vhost"],
         credentials=pika_credentials,
         ssl_options=pika.SSLOptions(ssl_context),
     )
