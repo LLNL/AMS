@@ -30,6 +30,7 @@ AMSTrain = "ams_wf.AMSTrain:main"
 "Homepage" = "https://github.com/LLNL/AMS/"
 
 [tool.setuptools]
+package-dir = {"" = "src/AMSWorkflow"}
 packages = ["ams_wf", "ams"]
 
 # Black formatting
