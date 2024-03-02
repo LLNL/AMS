@@ -6,6 +6,8 @@
 
 import glob
 import shutil
+import sys
+import os
 import time
 from abc import ABC, abstractclassmethod, abstractmethod
 from enum import Enum
@@ -25,6 +27,9 @@ from ams.faccessors import get_reader, get_writer
 from ams.store import AMSDataStore
 from ams.util import get_unique_fn
 from ams.rmq_async import RMQConsumer
+
+from flux.kvs import KVSDir
+import flux
 
 BATCH_SIZE = 32 * 1024 * 1024
 
@@ -142,19 +147,29 @@ class ForwardTask(Task):
         the output to the output queue. In the case of receiving a 'termination' messages informs
         the tasks waiting on the output queues about the terminations and returns from the function.
         """
-
+        received_in = [0, 0]
+        received_out = [0, 0]
+        sent_in = [0, 0]
+        sent_out = [0, 0]
         while True:
             # This is a blocking call
             item = self.i_queue.get(block=True)
+
             if item.is_terminate():
                 self.o_queue.put(QueueMessage(MessageType.Terminate, None))
                 break
             elif item.is_process():
+                received_in = [o + i for o, i in zip(received_in, item.data().inputs.shape)]
+                received_out = [o + i for o, i in zip(received_in, item.data().outputs.shape)]
+
                 inputs, outputs = self._action(item.data())
+                sent_in = [o + i for o, i in zip(sent_in, inputs.shape)]
+                sent_out = [o + i for o, i in zip(sent_out, outputs.shape)]
                 self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(inputs, outputs)))
             elif item.is_new_model():
                 # This is not handled yet
                 continue
+        print(f"Inputs {received_in}/{sent_in} outputs {received_out}/{sent_out}")
         return
 
 
@@ -183,10 +198,14 @@ class FSLoaderTask(Task):
         """
 
         start = time.time()
+        input_rows = 0
+        output_rows = 0
         for fn in glob.glob(self.pattern):
             with self.loader(fn) as fd:
                 input_data, output_data = fd.load()
                 row_size = input_data[0, :].nbytes + output_data[0, :].nbytes
+                input_rows += input_data.shape[0]
+                output_rows += output_data.shape[0]
                 rows_per_batch = int(np.ceil(BATCH_SIZE / row_size))
                 num_batches = int(np.ceil(input_data.shape[0] / rows_per_batch))
                 input_batches = np.array_split(input_data, num_batches)
@@ -197,6 +216,7 @@ class FSLoaderTask(Task):
 
         end = time.time()
         print(f"Spend {end - start} at {self.__class__.__name__}")
+        print(f"Read {input_rows} and {output_rows}")
 
 
 class RMQMessage(object):
@@ -273,7 +293,7 @@ class RMQMessage(object):
             res["num_element"],
             res["input_dim"],
             res["output_dim"],
-            res["padding"],
+            res["msg_type"],
         ) = struct.unpack(fmt, body[:hsize])
         assert hsize == res["hsize"]
         assert res["datatype"] in [4, 8]
@@ -310,20 +330,22 @@ class RMQMessage(object):
         return data[:, :idim], data[:, idim:]
 
     def _decode(self, body: str) -> Tuple[np.array]:
-        input = []
-        output = []
+        inputs = []
+        outputs = []
+        types = []
         # Multiple AMS messages could be packed in one RMQ message
         while body:
             header_info = self._parse_header(body)
             temp_input, temp_output = self._parse_data(body, header_info)
-            print(f"input shape {temp_input.shape} outpute shape {temp_output.shape}")
+            print(f"input shape {temp_input.shape} outpute shape {temp_output.shape} {header_info['msg_type']}")
             # total size of byte we read for that message
             chunk_size = header_info["hsize"] + header_info["dsize"]
-            input.append(temp_input)
-            output.append(temp_output)
+            inputs.append(temp_input)
+            outputs.append(temp_output)
+            types.append(header_info["msg_type"])
             # We remove the current message and keep going
             body = body[chunk_size:]
-        return np.concatenate(input), np.concatenate(output)
+        return types, inputs, outputs
 
     def decode(self) -> Tuple[np.array]:
         return self._decode(self.body)
@@ -380,15 +402,21 @@ class RMQLoaderTask(Task):
         the connection (or if a problem happened with the connection).
         """
         start_time = time.time()
-        input_data, output_data = RMQMessage(body).decode()
-        row_size = input_data[0, :].nbytes + output_data[0, :].nbytes
-        rows_per_batch = int(np.ceil(BATCH_SIZE / row_size))
-        num_batches = int(np.ceil(input_data.shape[0] / rows_per_batch))
-        input_batches = np.array_split(input_data, num_batches)
-        output_batches = np.array_split(output_data, num_batches)
+        msg_types, input_data, output_data = RMQMessage(body).decode()
+        must_terminate = False
+        for m, i, o in zip(msg_types, input_data, output_data):
+            msg = QueueMessage(MessageType(m), DataBlob(i, o))
+            self.o_queue.put(msg)
+            # RMQ does not guarantee FIFO. We are here pessimistic.
+            # Assuming a message re-ordering did happen, and we received a termination message
+            # and after we receive data message. We will push all data to the queue and after
+            # we are going to teminate
+            if msg.is_terminate():
+                must_terminate = True
 
-        for j, (i, o) in enumerate(zip(input_batches, output_batches)):
-            self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(i, o)))
+        if must_terminate:
+            print("Received Terminate Message Exiting")
+            self.rmq_consumer.stop()
 
         self.total_time += time.time() - start_time
 
@@ -445,6 +473,8 @@ class FSWriteTask(Task):
             fn = f"{self.out_dir}/{fn}.{self.suffix}"
             is_terminate = False
             total_bytes_written = 0
+            output_data = 0
+            input_data = 0
             with self.data_writer_cls(fn) as fd:
                 bytes_written = 0
                 while True:
@@ -459,6 +489,8 @@ class FSWriteTask(Task):
                         fd.store(data.inputs, data.outputs)
                         total_bytes_written += data.inputs.size * data.inputs.itemsize
                         total_bytes_written += data.outputs.size * data.outputs.itemsize
+                        output_data += data.outputs.shape[0]
+                        input_data += data.inputs.shape[0]
                     # FIXME: We currently decide to chunk files to 2GB
                     # of contents. Is this a good size?
                     if is_terminate or bytes_written >= 2 * 1024 * 1024 * 1024:
@@ -470,7 +502,8 @@ class FSWriteTask(Task):
                 break
 
         end = time.time()
-        print(f"Spend {end - start} {total_bytes_written} at {self.__class__.__name__}")
+        print(f"Spend {end - start} at {self.__class__.__name__}")
+        print(f"Data written to file {output_data} {input_data}")
 
 
 class PushToStore(Task):
@@ -498,11 +531,13 @@ class PushToStore(Task):
         self._store = store
         if not self.dir.exists():
             self.dir.mkdir(parents=True, exist_ok=True)
+        print("AMS Store directories created")
 
     def __call__(self):
         """
         A busy loop reading messages from the i_queue publishing them to the kosh store.
         """
+        print("In busy loop of AMS Store")
         start = time.time()
         if self._store:
             db_store = AMSDataStore(
@@ -521,6 +556,7 @@ class PushToStore(Task):
 
                 if self._store:
                     db_store.add_candidates([str(dest_file)])
+                    print(f"Adding candidate {dest_file}")
 
         end = time.time()
         print(f"Spend {end - start} at {self.__class__.__name__}")
@@ -600,11 +636,30 @@ class Pipeline(ABC):
             executing actions by reading data from i/o_queue(s).
         """
         executors = list()
-        for a in self._tasks:
+        for i, a in enumerate(self._tasks):
+            print(f"Instantiating Task: {i}:{a.__class__.__name__}")
             executors.append(exec_vehicle_cls(target=a))
 
-        for e in executors:
+        for i, e in enumerate(executors):
+            print(f"Start Executor: {i}")
             e.start()
+            print(f"Executor {i} started")
+
+        # This is currently is hardcoded. We need to abstract it
+        # to make this callable from the command line.
+        # Addtionally a good communication protocol with KVS of
+        # AMS-deploy can help us to gracefull shutdown connections
+        flux_handle = flux.Flux()
+        kvs_dir = KVSDir(flux_handle=flux_handle)
+        print("Instance level is ", flux_handle.attr_get("instance-level"))
+        print(f"Flux URI is {os.environ.get('FLUX_URI')}")
+        sys.stdout.flush()
+        print("KVS RESOURCE DIR IS", kvs_dir["resource.R"])
+        sys.stdout.flush()
+        kvs_dir["AMSStager"] = "Active"
+        kvs_dir.commit()
+        print("Commit to KVS Store")
+        sys.stdout.flush()
 
         for e in executors:
             e.join()
@@ -746,7 +801,7 @@ class FSPipeline(Pipeline):
         Returns: An FSLoaderTask instance reading data from the filesystem and forwarding the values to the o_queue.
         """
         loader = get_reader(self._src_type)
-        return FSLoaderTask(o_queue, loader, pattern=str(self._src) + "/" + self._pattern)
+        return FSLoaderTask(o_queue, loader, pattern=str(self._src) + "/*" + self._pattern)
 
     @staticmethod
     def add_cli_args(parser):
@@ -848,5 +903,4 @@ def get_pipeline(src_mechanism="fs"):
     PipeMechanisms = {"fs": FSPipeline, "network": RMQPipeline}
     if src_mechanism not in PipeMechanisms.keys():
         raise RuntimeError(f"Pipeline {src_mechanism} storing mechanism does not exist")
-
     return PipeMechanisms[src_mechanism]

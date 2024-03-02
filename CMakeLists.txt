@@ -43,6 +43,7 @@ option(WITH_RMQ            "Use RabbitMQ as a database back end (require a reach
 option(WITH_AMS_DEBUG      "Enable verbose messages" OFF)
 option(WITH_PERFFLOWASPECT "Use PerfFlowAspect for Profiling" OFF)
 option(WITH_WORKFLOW       "Install python drivers used by the outer workflow" OFF)
+option(WITH_AMS_LIB        "Install C++ library to support scientific applications" ON)
 option(BUILD_SHARED_LIBS "Build using shared libraries" ON)
 
 if (WITH_MPI)
@@ -248,6 +249,7 @@ list(APPEND AMS_APP_LIBRARIES "${BLAS_LIBRARIES}")
 add_subdirectory(src)
 
 # ------------------------------------------------------------------------------
+if (WITH_AMS_LIB)
 if (WITH_EXAMPLES)
   #The AMS Runtime does not depend on MFEM. The
   #examples we use do.
@@ -307,6 +309,7 @@ if (WITH_EXAMPLES)
   endif()
 
   add_subdirectory(examples)
+endif()
 endif()
 
 if (WITH_TESTS)

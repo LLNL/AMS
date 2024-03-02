@@ -3,7 +3,9 @@
 #
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-add_subdirectory(AMSlib)
+if (WITH_AMS_LIB)
+  add_subdirectory(AMSlib)
+endif()
 
 if (WITH_WORKFLOW)
   add_subdirectory(AMSWorkflow)

@@ -8,11 +8,17 @@ import time
 
 from ams.loader import load_class
 from ams.stage import get_pipeline
+import subprocess as sp
 
 import sys
 
 
 def main():
+    result = sp.run("flux getattr parent-uri", shell=True, capture_output=True)
+    print("Stdout is ")
+    print(result.stdout)
+    print("Stderr is: ")
+    print(result.stderr)
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description="AMS Stage mechanism. The mechanism moves data to the file-system and optionally registers them in a kosh store",
@@ -32,7 +38,7 @@ def main():
         default="process",
     )
 
-    parser.add_argument("--mechansism", "-m", dest="mechanism", choices=["fs", "network"], default="fs")
+    parser.add_argument("--mechanism", "-m", dest="mechanism", choices=["fs", "network"], default="fs")
 
     args, extras = parser.parse_known_args()
 
@@ -83,4 +89,5 @@ def main():
 
 
 if __name__ == "__main__":
+    print(" ".join(sys.argv))
     main()
