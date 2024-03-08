@@ -8,7 +8,9 @@
 #ifndef __AMS_WORKFLOW_HPP__
 #define __AMS_WORKFLOW_HPP__
 
+#ifdef __AMS_ENABLE_CALIPER__
 #include <caliper/cali_macros.h>
+#endif
 
 #include <cassert>
 #include <cstdio>
