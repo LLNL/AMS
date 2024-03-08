@@ -162,7 +162,7 @@ jobs:
             -DWITH_TESTS=On \
             -DWITH_AMS_DEBUG=On \
             -DWITH_WORKFLOW=On \
-            -DWITH_ADIAK=On \
+            -DWITH_ADIAK=Off \
             $GITHUB_WORKSPACE
             make
       - name: Run tests Torch=Off FAISS=Off HDF5=Off AMS
