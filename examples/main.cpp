@@ -5,7 +5,9 @@
  * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
  */
 
+#ifdef __AMS_ENABLE_ADIAK__
 #include <adiak.hpp>
+#endif
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -643,6 +645,7 @@ int main(int argc, char **argv)
 
   bool verbose = false;
 
+#ifdef __AMS_ENABLE_ADIAK__
   // add adiak init here
   adiak::init(NULL);
 
@@ -664,6 +667,7 @@ int main(int argc, char **argv)
   adiak::hostlist();
   adiak::numhosts();
   adiak::value("compiler", std::string("@RAJAPERF_COMPILER@"));
+#endif
 
   // -------------------------------------------------------------------------
   // setup command line parser
@@ -900,8 +904,10 @@ int main(int argc, char **argv)
   }
 
   // ---------------------------------------------------------------------------
+#ifdef __AMS_ENABLE_ADIAK__
   // adiak finalize
   adiak::fini();
+#endif
 
   MPI_CALL(MPI_Finalize());
   return ret;
