@@ -52,6 +52,7 @@ jobs:
             -DFAISS_DIR=$AMS_FAISS_PATH \
             -DWITH_AMS_DEBUG=On \
             -DWITH_WORKFLOW=On \
+            -DWITH_ADIAK=On \
             $GITHUB_WORKSPACE
             make
       - name: Run tests Torch=On FAISS=On HDF5=On AMS
@@ -90,6 +91,7 @@ jobs:
             -DFAISS_DIR=$AMS_FAISS_PATH \
             -DWITH_AMS_DEBUG=On \
             -DWITH_WORKFLOW=On \
+            -DWITH_ADIAK=On \
             $GITHUB_WORKSPACE
             make
       - name: Run tests Torch=Off FAISS=On HDF5=On AMS
@@ -126,6 +128,7 @@ jobs:
             -DWITH_TESTS=On \
             -DWITH_AMS_DEBUG=On \
             -DWITH_WORKFLOW=On \
+            -DWITH_ADIAK=On \
             $GITHUB_WORKSPACE
             make
       - name: Run tests Torch=Off FAISS=Off HDF5=On AMS
@@ -159,6 +162,7 @@ jobs:
             -DWITH_TESTS=On \
             -DWITH_AMS_DEBUG=On \
             -DWITH_WORKFLOW=On \
+            -DWITH_ADIAK=Off \
             $GITHUB_WORKSPACE
             make
       - name: Run tests Torch=Off FAISS=Off HDF5=Off AMS
@@ -208,6 +212,7 @@ jobs:
             -DFAISS_DIR=$AMS_FAISS_PATH \
             -DWITH_AMS_DEBUG=On \
             -DWITH_WORKFLOW=On \
+            -DWITH_ADIAK=On \
             $GITHUB_WORKSPACE
             make
       - name: Build Torch=Off FAISS=On HDF5=On AMS
@@ -242,6 +247,7 @@ jobs:
             -DFAISS_DIR=$AMS_FAISS_PATH \
             -DWITH_AMS_DEBUG=On \
             -DWITH_WORKFLOW=On \
+            -DWITH_ADIAK=On \
             $GITHUB_WORKSPACE
             make
       - name: Build Torch=Off FAISS=Off HDF5=On AMS
@@ -274,6 +280,7 @@ jobs:
             -DWITH_TESTS=On \
             -DWITH_AMS_DEBUG=On \
             -DWITH_WORKFLOW=On \
+            -DWITH_ADIAK=On \
             $GITHUB_WORKSPACE
             make
       - name: Build Torch=Off FAISS=Off HDF5=Off AMS
@@ -303,5 +310,6 @@ jobs:
             -DWITH_TESTS=On \
             -DWITH_AMS_DEBUG=On \
             -DWITH_WORKFLOW=On \
+            -DWITH_ADIAK=Off \
             $GITHUB_WORKSPACE
             make

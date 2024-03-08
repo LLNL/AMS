@@ -11,6 +11,7 @@ AMSLib depends on the following packages:
 * REDIS (Optional)
 * HDF5 (Optional)
 * CUDA (Optional)
+* ADIAK (Optional)
 
 ## Spack Installation
 

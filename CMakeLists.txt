@@ -44,6 +44,7 @@ option(WITH_AMS_DEBUG      "Enable verbose messages" OFF)
 option(WITH_PERFFLOWASPECT "Use PerfFlowAspect for Profiling" OFF)
 option(WITH_WORKFLOW       "Install python drivers used by the outer workflow" OFF)
 option(WITH_AMS_LIB        "Install C++ library to support scientific applications" ON)
+option(WITH_ADIAK          "Use Adiak for recording metadata" OFF)
 option(BUILD_SHARED_LIBS "Build using shared libraries" ON)
 
 if (WITH_MPI)
@@ -306,6 +307,13 @@ if (WITH_EXAMPLES)
 
   if (WITH_PERFFLOWASPECT)
     list(APPEND AMS_EXAMPLE_DEFINES "-D__ENABLE_PERFFLOWASPECT__")
+  endif()
+
+  if (WITH_ADIAK)
+    find_package(adiak REQUIRED)
+    list(APPEND AMS_EXAMPLE_DEFINES "-D__ENABLE_ADIAK__")
+    list(APPEND AMS_EXAMPLE_INCLUDES ${adiak_INCLUDE_DIR})
+    list(APPEND AMS_EXAMPLE_LIBRARIES adiak::adiak)
   endif()
 
   add_subdirectory(examples)
