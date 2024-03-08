@@ -89,7 +89,7 @@ install(TARGETS AMS
         DESTINATION lib)
 
 install(EXPORT AMSTargets
-  FILE AMS.cmake
+  FILE AMSConfig.cmake
   DESTINATION lib/cmake/AMS)
 
 install(FILES ${PROJECT_BINARY_DIR}/include/AMS.h DESTINATION include)
