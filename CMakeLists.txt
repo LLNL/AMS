@@ -189,6 +189,9 @@ if (WITH_TORCH)
   list(APPEND AMS_APP_LIBRARIES "${TORCH_LIBRARIES}")
 
   list(APPEND AMS_APP_DEFINES "-D__ENABLE_TORCH__")
+  set(BLA_VENDER OpenBLAS)
+  find_package(BLAS REQUIRED)
+  list(APPEND AMS_APP_LIBRARIES "${BLAS_LIBRARIES}")
 endif()
 
 # ------------------------------------------------------------------------------
@@ -240,10 +243,6 @@ if (WITH_PERFFLOWASPECT)
   list(APPEND AMS_APP_LIBRARIES "perfflow_runtime")
 endif()
 
-# TODO: currently we are focusing only on BLASS. Try out other libraries.
-set(BLA_VENDER OpenBLAS)
-find_package(BLAS REQUIRED)
-list(APPEND AMS_APP_LIBRARIES "${BLAS_LIBRARIES}")
 
 add_subdirectory(src)
 
