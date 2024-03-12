@@ -38,7 +38,7 @@ jobs:
             -DWITH_CALIPER=On \
             -DWITH_HDF5=On \
             -DWITH_EXAMPLES=On \
-            -DHDF5_Dir=$AMS_HDF5_PATH \
+            -DAMS_HDF5_DIR=$AMS_HDF5_PATH \
             -DCMAKE_INSTALL_PREFIX=./install \
             -DCMAKE_BUILD_TYPE=Release \
             -DWITH_CUDA=Off \
@@ -112,7 +112,7 @@ jobs:
             -DWITH_CALIPER=On \
             -DWITH_HDF5=On \
             -DWITH_EXAMPLES=On \
-            -DHDF5_Dir=$AMS_HDF5_PATH \
+            -DAMS_HDF5_DIR=$AMS_HDF5_PATH \
             -DCMAKE_INSTALL_PREFIX=./install \
             -DCMAKE_BUILD_TYPE=Release \
             -DWITH_CUDA=Off \
@@ -149,7 +149,7 @@ jobs:
             -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
             -DWITH_CALIPER=On \
             -DWITH_EXAMPLES=On \
-            -DHDF5_Dir=$AMS_HDF5_PATH \
+            -DAMS_HDF5_DIR=$AMS_HDF5_PATH \
             -DWITH_HDF5=On \
             -DCMAKE_INSTALL_PREFIX=./install \
             -DCMAKE_BUILD_TYPE=Release \
@@ -231,7 +231,7 @@ jobs:
             -DWITH_CALIPER=On \
             -DWITH_HDF5=On \
             -DWITH_EXAMPLES=On \
-            -DHDF5_Dir=$AMS_HDF5_PATH \
+            -DAMS_HDF5_DIR=$AMS_HDF5_PATH \
             -DCMAKE_INSTALL_PREFIX=./install \
             -DCMAKE_BUILD_TYPE=Release \
             -DCUDA_ARCH=70 \
@@ -267,7 +267,7 @@ jobs:
             -DWITH_CALIPER=On \
             -DWITH_HDF5=On \
             -DWITH_EXAMPLES=On \
-            -DHDF5_Dir=$AMS_HDF5_PATH \
+            -DAMS_HDF5_DIR=$AMS_HDF5_PATH \
             -DCMAKE_INSTALL_PREFIX=./install \
             -DCMAKE_BUILD_TYPE=Release \
             -DCUDA_ARCH=70 \
@@ -300,7 +300,7 @@ jobs:
             -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
             -DWITH_CALIPER=On \
             -DWITH_EXAMPLES=On \
-            -DHDF5_Dir=$AMS_HDF5_PATH \
+            -DAMS_HDF5_DIR=$AMS_HDF5_PATH \
             -DWITH_HDF5=On \
             -DCMAKE_INSTALL_PREFIX=./install \
             -DCMAKE_BUILD_TYPE=Release \

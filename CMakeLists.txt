@@ -133,11 +133,11 @@ endif() # WITH_REDIS
 
 if (WITH_HDF5)
   if (HDF5_USE_STATIC_LIBRARIES)
-  find_package(HDF5 NAMES hdf5 COMPONENTS C static NO_DEFAULT_PATH PATHS ${HDF5_Dir} ${HDF5_Dir}/share/cmake)
+    find_package(HDF5 NAMES hdf5 COMPONENTS C static NO_DEFAULT_PATH PATHS ${AMS_HDF5_DIR} ${AMS_HDF5_DIR}/share/cmake)
   list(APPEND AMS_APP_LIBRARIES ${HDF5_C_STATIC_LIBRARY})
   message(STATUS "HDF5 Static Library : ${HDF5_C_STATIC_LIBRARY}")
 else()
-  find_package(HDF5 NAMES hdf5 COMPONENTS C shared NO_DEFAULT_PATH PATHS ${HDF5_Dir} ${HDF5_Dir}/share/cmake)
+  find_package(HDF5 NAMES hdf5 COMPONENTS C shared NO_DEFAULT_PATH PATHS ${AMS_HDF5_DIR} ${AMS_HDF5_DIR}/share/cmake)
   list(APPEND AMS_APP_LIBRARIES ${HDF5_C_SHARED_LIBRARY})
   message(STATUS "HDF5 Shared Library : ${HDF5_C_SHARED_LIBRARY}")
 endif()
