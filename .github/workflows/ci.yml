@@ -59,6 +59,40 @@ jobs:
         run: |
           cd build
           make test
+      - name: Build CALIPER=Off Torch=Off FAISS=On HDF5=On AMS
+        shell: bash -l {0}
+        run: |
+          module load gcc/11.2.1
+          source /spack/share/spack/setup-env.sh
+          spack env activate -p /ams-spack-env
+          rm -rf build/
+          mkdir build
+          cd build
+          export AMS_MFEM_PATH=$(spack location -i mfem)
+          export AMS_FAISS_PATH=$(spack location -i faiss)
+          export AMS_UMPIRE_PATH=$(spack location -i umpire)
+          export AMS_HDF5_PATH=$(spack location -i hdf5)
+          cmake \
+            -DBUILD_SHARED_LIBS=On \
+            -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
+            -DWITH_CALIPER=Off \
+            -DWITH_HDF5=On \
+            -DWITH_EXAMPLES=On \
+            -DHDF5_Dir=$AMS_HDF5_PATH \
+            -DCMAKE_INSTALL_PREFIX=./install \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DWITH_CUDA=Off \
+            -DUMPIRE_DIR=$AMS_UMPIRE_PATH \
+            -DMFEM_DIR=$AMS_MFEM_PATH \
+            -DWITH_FAISS=On \
+            -DWITH_MPI=On \
+            -DWITH_TORCH=Off \
+            -DWITH_TESTS=On \
+            -DFAISS_DIR=$AMS_FAISS_PATH \
+            -DWITH_AMS_DEBUG=On \
+            -DWITH_WORKFLOW=On \
+            $GITHUB_WORKSPACE
+            make
       - name: Build Torch=Off FAISS=On HDF5=On AMS
         shell: bash -l {0}
         run: |
