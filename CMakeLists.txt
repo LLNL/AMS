@@ -69,7 +69,6 @@ if (WITH_CUDA)
   if (BUILD_SHARED_LIBS)
     set(CUDA_RUNTIME_LIBRARY "Shared")
   else()
-    set(HDF5_USE_STATIC_LIBRARIES True)
     set(CUDA_RUNTIME_LIBRARY "Static")
   endif()
 
@@ -133,7 +132,7 @@ endif() # WITH_REDIS
 
 if (WITH_HDF5)
   if (HDF5_USE_STATIC_LIBRARIES)
-    find_package(HDF5 NAMES hdf5 COMPONENTS C static NO_DEFAULT_PATH PATHS ${AMS_HDF5_DIR} ${AMS_HDF5_DIR}/share/cmake)
+  find_package(HDF5 NAMES hdf5 COMPONENTS C static NO_DEFAULT_PATH PATHS ${AMS_HDF5_DIR} ${AMS_HDF5_DIR}/share/cmake)
   list(APPEND AMS_APP_LIBRARIES ${HDF5_C_STATIC_LIBRARY})
   message(STATUS "HDF5 Static Library : ${HDF5_C_STATIC_LIBRARY}")
 else()
