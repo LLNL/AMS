@@ -78,7 +78,7 @@ jobs:
             -DWITH_CALIPER=Off \
             -DWITH_HDF5=On \
             -DWITH_EXAMPLES=On \
-            -DHDF5_Dir=$AMS_HDF5_PATH \
+            -DAMS_HDF5_DIR=$AMS_HDF5_PATH \
             -DCMAKE_INSTALL_PREFIX=./install \
             -DCMAKE_BUILD_TYPE=Release \
             -DWITH_CUDA=Off \
