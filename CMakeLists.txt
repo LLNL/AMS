@@ -95,7 +95,7 @@ if (WITH_CALIPER)
 endif()
 
 if (WITH_AMS_DEBUG)
-  list(APPEND AMS_APP_DEFINES "-DLIBAMS_VERBOSE")
+  list(APPEND AMS_APP_DEFINES "-DAMS_DEBUG")
 endif()
 
 # ------------------------------------------------------------------------------
