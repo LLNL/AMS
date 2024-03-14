@@ -141,7 +141,6 @@ class AMSWorkflow
       DB->store(actualElems, hInputs, hOutputs);
     }
     rm.deallocate(pPtr, AMSResourceType::PINNED);
-
     return;
   }
 
@@ -251,6 +250,7 @@ public:
   {
     CALIPER(CALI_MARK_BEGIN("AMSEvaluate");)
 
+    CAMSDebugDeviceSync(Workflow, rId == 0, "DeviceSyncrhonize, No-External Errors")
     CDEBUG(Workflow,
            rId == 0,
            "Entering Evaluate "
@@ -276,13 +276,17 @@ public:
               totalElements,
               reinterpret_cast<const void **>(origInputs.data()),
               reinterpret_cast<void **>(origOutputs.data()));
+
+      CAMSDebugDeviceSync(Workflow, rId == 0, "DeviceSyncrhonize, No-AppCall Errors")
       CALIPER(CALI_MARK_END("PHYSICS MODULE");)
       if (DB) {
         CALIPER(CALI_MARK_BEGIN("DBSTORE");)
         Store(totalElements, tmpIn, origOutputs);
+        CAMSDebugDeviceSync(Workflow, rId == 0, "DeviceSyncrhonize, No-Store Errors")
         CALIPER(CALI_MARK_END("DBSTORE");)
       }
       CALIPER(CALI_MARK_END("AMSEvaluate");)
+      CAMSDebugDeviceSync(Workflow, rId == 0, "DeviceSyncrhonize, No-Evaluate Errors")
       return;
     }
 
@@ -300,6 +304,7 @@ public:
     CALIPER(CALI_MARK_BEGIN("UQ_MODULE");)
     UQModel->evaluate(totalElements, origInputs, origOutputs, p_ml_acceptable);
     CALIPER(CALI_MARK_END("UQ_MODULE");)
+    CAMSDebugDeviceSync(Workflow, rId == 0, "DeviceSyncrhonize, No-UQ/Surrogate Errors")
 
     DBG(Workflow, "Computed Predicates")
 
@@ -324,6 +329,7 @@ public:
     const long packedElements = data_handler::pack(
         appDataLoc, predicate, totalElements, origInputs, packedInputs);
     CALIPER(CALI_MARK_END("PACK");)
+    CAMSDebugDeviceSync(Workflow, rId == 0, "DeviceSyncrhonize, No-Pack Errors")
 
     // Pointer values which store output data values
     // to be computed using the eos function.
@@ -351,12 +357,14 @@ public:
       CALIPER(CALI_MARK_END("LOAD BALANCE MODULE");)
 #endif
 
+
       // ---- 3b: call the physics module and store in the data base
       if (packedElements > 0) {
         CALIPER(CALI_MARK_BEGIN("PHYSICS MODULE");)
         AppCall(probDescr, lbElements, iPtr, oPtr);
         CALIPER(CALI_MARK_END("PHYSICS MODULE");)
       }
+      CAMSDebugDeviceSync(Workflow, rId == 0, "DeviceSyncrhonize, No-AppCall Errors")
 
 #ifdef __ENABLE_MPI__
       CALIPER(CALI_MARK_BEGIN("LOAD BALANCE MODULE");)
@@ -372,6 +380,7 @@ public:
     data_handler::unpack(
         appDataLoc, predicate, totalElements, packedOutputs, origOutputs);
     CALIPER(CALI_MARK_END("UNPACK");)
+    CAMSDebugDeviceSync(Workflow, rId == 0, "DeviceSyncrhonize, No-UnPack Errors")
 
     DBG(Workflow, "Finished physics evaluation")
 
@@ -383,6 +392,7 @@ public:
       Store(packedElements, packedInputs, packedOutputs);
       CALIPER(CALI_MARK_END("DBSTORE");)
     }
+    CAMSDebugDeviceSync(Workflow, rId == 0, "DeviceSyncrhonize, No-Store Errors")
 
     // -----------------------------------------------------------------
     // Deallocate temporal data
@@ -405,6 +415,7 @@ public:
 
     REPORT_MEM_USAGE(Workflow, "End")
     CALIPER(CALI_MARK_END("AMSEvaluate");)
+    CAMSDebugDeviceSync(Workflow, rId == 0, "DeviceSyncrhonize, No-Evaluate Errors")
   }
 };
 

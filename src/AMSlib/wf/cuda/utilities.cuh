@@ -16,6 +16,7 @@
 #include <iostream>
 
 #include "wf/resource_manager.hpp"
+#include "wf/debug.h"
 
 //#include <stdio.h>
 //#include <stdlib.h>
@@ -35,23 +36,10 @@ __device__ __inline__ int pow2i(int e) { return 1 << e; }
 
 inline void __cudaSafeCall(cudaError err, const char* file, const int line)
 {
-#ifdef CUDA_ERROR_CHECK
-  if (cudaSuccess != err) {
-    fprintf(stderr,
-            "cudaSafeCall() failed at %s:%i : %s\n",
+  CFATAL(CUDA, (cudaSuccess != err), "cudaSafeCall() failed at %s:%i : %s\n",
             file,
             line,
             cudaGetErrorString(err));
-
-    fprintf(stdout,
-            "cudaSafeCall() failed at %s:%i : %s\n",
-            file,
-            line,
-            cudaGetErrorString(err));
-    exit(-1);
-  }
-#endif
-
   return;
 }
 
