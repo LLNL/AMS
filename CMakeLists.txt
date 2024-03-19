@@ -43,6 +43,8 @@ option(WITH_RMQ            "Use RabbitMQ as a database back end (require a reach
 option(WITH_AMS_DEBUG      "Enable verbose messages" OFF)
 option(WITH_PERFFLOWASPECT "Use PerfFlowAspect for Profiling" OFF)
 option(WITH_WORKFLOW       "Install python drivers used by the outer workflow" OFF)
+option(WITH_AMS_LIB        "Install C++ library to support scientific applications" ON)
+option(WITH_ADIAK          "Use Adiak for recording metadata" OFF)
 option(BUILD_SHARED_LIBS "Build using shared libraries" ON)
 
 if (WITH_MPI)
@@ -131,14 +133,14 @@ endif() # WITH_REDIS
 
 if (WITH_HDF5)
   if (HDF5_USE_STATIC_LIBRARIES)
-  find_package(HDF5 NAMES hdf5 COMPONENTS C static NO_DEFAULT_PATH PATHS ${HDF5_Dir} ${HDF5_Dir}/share/cmake)
-  list(APPEND AMS_APP_LIBRARIES ${HDF5_C_STATIC_LIBRARY})
-  message(STATUS "HDF5 Static Library : ${HDF5_C_STATIC_LIBRARY}")
-else()
-  find_package(HDF5 NAMES hdf5 COMPONENTS C shared NO_DEFAULT_PATH PATHS ${HDF5_Dir} ${HDF5_Dir}/share/cmake)
-  list(APPEND AMS_APP_LIBRARIES ${HDF5_C_SHARED_LIBRARY})
-  message(STATUS "HDF5 Shared Library : ${HDF5_C_SHARED_LIBRARY}")
-endif()
+    find_package(HDF5 NAMES hdf5 COMPONENTS C static NO_DEFAULT_PATH PATHS ${AMS_HDF5_DIR} ${AMS_HDF5_DIR}/share/cmake)
+    list(APPEND AMS_APP_LIBRARIES ${HDF5_C_STATIC_LIBRARY})
+    message(STATUS "HDF5 Static Library : ${HDF5_C_STATIC_LIBRARY}")
+  else()
+    find_package(HDF5 NAMES hdf5 COMPONENTS C shared NO_DEFAULT_PATH PATHS ${AMS_HDF5_DIR} ${AMS_HDF5_DIR}/share/cmake)
+    list(APPEND AMS_APP_LIBRARIES ${HDF5_C_SHARED_LIBRARY})
+    message(STATUS "HDF5 Shared Library : ${HDF5_C_SHARED_LIBRARY}")
+  endif()
   list(APPEND AMS_APP_INCLUDES ${HDF5_INCLUDE_DIR})
   list(APPEND AMS_APP_DEFINES "-D__ENABLE_HDF5__")
   message(STATUS "HDF5 Include directories: ${HDF5_INCLUDE_DIR}")
@@ -255,6 +257,7 @@ endif()
 add_subdirectory(src)
 
 # ------------------------------------------------------------------------------
+if (WITH_AMS_LIB)
 if (WITH_EXAMPLES)
   #The AMS Runtime does not depend on MFEM. The
   #examples we use do.
@@ -313,7 +316,15 @@ if (WITH_EXAMPLES)
     list(APPEND AMS_EXAMPLE_DEFINES "-D__ENABLE_PERFFLOWASPECT__")
   endif()
 
+  if (WITH_ADIAK)
+    find_package(adiak REQUIRED)
+    list(APPEND AMS_EXAMPLE_DEFINES "-D__ENABLE_ADIAK__")
+    list(APPEND AMS_EXAMPLE_INCLUDES ${adiak_INCLUDE_DIR})
+    list(APPEND AMS_EXAMPLE_LIBRARIES adiak::adiak)
+  endif()
+
   add_subdirectory(examples)
+endif()
 endif()
 
 if (WITH_TESTS)
