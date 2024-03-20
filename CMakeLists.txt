@@ -46,6 +46,7 @@ option(WITH_WORKFLOW       "Install python drivers used by the outer workflow" O
 option(WITH_AMS_LIB        "Install C++ library to support scientific applications" ON)
 option(WITH_ADIAK          "Use Adiak for recording metadata" OFF)
 option(BUILD_SHARED_LIBS "Build using shared libraries" ON)
+option(EXCLUDE_STATIC_LIBS "Exclude static libs from the linking line" OFF)
 
 if (WITH_MPI)
   #  SET(CMAKE_CXX_COMPILER "${MPI_CXX_COMPILER}" CACHE FILEPATH "CXX compiler overridden with MPI C++ wrapper")
@@ -253,6 +254,96 @@ if (WITH_PERFFLOWASPECT)
   list(APPEND AMS_APP_LIBRARIES "perfflow_runtime")
 endif()
 
+
+macro(inherit_target_nostatic)
+    set(options)
+    set(singleValueArgs TO FROM OBJECT)
+    set(multiValueArgs)
+
+    # Parse the arguments
+    cmake_parse_arguments(arg "${options}" "${singleValueArgs}"
+                        "${multiValueArgs}" ${ARGN} )
+
+    # Check arguments
+    if ( NOT DEFINED arg_TO )
+        message( FATAL_ERROR "Must provide a TO argument to the 'blt_inherit_target' macro" )
+    endif()
+
+    if ( NOT DEFINED arg_FROM )
+        message( FATAL_ERROR "Must provide a FROM argument to the 'blt_inherit_target' macro" )
+    endif()
+
+    set(_scope INTERFACE)
+
+    get_target_property(_interface_system_includes
+                        ${arg_FROM} INTERFACE_SYSTEM_INCLUDE_DIRECTORIES)
+    if ( _interface_system_includes )
+        target_include_directories(${arg_TO} SYSTEM ${_scope} ${_interface_system_includes})
+    endif()
+
+    get_target_property(_interface_includes
+                        ${arg_FROM} INTERFACE_INCLUDE_DIRECTORIES)
+    if ( _interface_includes )
+        target_include_directories(${arg_TO} ${_scope} ${_interface_includes})
+    endif()
+
+    get_target_property(_interface_defines
+                        ${arg_FROM} INTERFACE_COMPILE_DEFINITIONS)
+    if ( _interface_defines )
+        target_compile_definitions( ${arg_TO} ${_scope} ${_interface_defines})
+    endif()
+
+    if( ${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.13.0" )
+        get_target_property(_interface_link_options
+                            ${arg_FROM} INTERFACE_LINK_OPTIONS)
+        if ( _interface_link_options )
+            target_link_options( ${arg_TO} ${_scope} ${_interface_link_options})
+        endif()
+    endif()
+
+    get_target_property(_interface_compile_options
+                        ${arg_FROM} INTERFACE_COMPILE_OPTIONS)
+    if ( _interface_compile_options )
+        target_compile_options( ${arg_TO} ${_scope} ${_interface_compile_options})
+    endif()
+
+    if ( NOT arg_OBJECT )
+        #get_target_property(_interface_link_directories
+        #                    ${arg_FROM} INTERFACE_LINK_DIRECTORIES)
+        #if ( _interface_link_directories )
+        #    target_link_directories( ${arg_TO} ${_scope} ${_interface_link_directories})
+        #endif()
+
+        #get_target_property(_interface_link_libraries
+        #                    ${arg_FROM} INTERFACE_LINK_LIBRARIES)
+        #if ( _interface_link_libraries )
+        #    target_link_libraries( ${arg_TO} ${_scope} ${_interface_link_libraries})
+        #endif()
+    endif()
+
+endmacro(inherit_target_nostatic)
+
+
+if (EXCLUDE_STATIC_LIBS)
+   set(NONSTATIC_AMS_APP_LIBRARIES "")
+   foreach (THIS_LIB ${AMS_APP_LIBRARIES})
+     if (TARGET ${THIS_LIB})
+       get_target_property(target_type ${THIS_LIB} TYPE)
+       if (NOT target_type STREQUAL STATIC_LIBRARY)
+          list(APPEND NONSTATIC_AMS_APP_LIBRARIES ${THIS_LIB})
+       else()
+          add_library("${THIS_LIB}::nostatic" INTERFACE IMPORTED)
+          inherit_target_nostatic(TO "${THIS_LIB}::nostatic" FROM ${THIS_LIB})   
+          list(APPEND NONSTATIC_AMS_APP_LIBRARIES "${THIS_LIB}::nostatic")
+       endif()
+     else()
+       get_filename_component(THIS_EXT ${THIS_LIB} EXT)
+       if (NOT ".a" STREQUAL "${THIS_EXT}")
+          list(APPEND NONSTATIC_AMS_APP_LIBRARIES ${THIS_LIB})
+       endif()
+     endif()
+   endforeach()
+endif()
 
 add_subdirectory(src)
 
