@@ -50,7 +50,12 @@ target_include_directories(AMS PUBLIC
   $<INSTALL_INTERFACE:include/>)
 target_include_directories(AMS PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_directories(AMS PUBLIC ${AMS_APP_LIB_DIRS})
-target_link_libraries(AMS PUBLIC ${AMS_APP_LIBRARIES} stdc++fs)
+if (EXCLUDE_STATIC_LIBS)
+   target_link_libraries(AMS PUBLIC ${NONSTATIC_AMS_APP_LIBRARIES} stdc++fs)
+   target_link_options(AMS PRIVATE "-Wl,--unresolved-symbols=ignore-all")
+else()
+   target_link_libraries(AMS PUBLIC ${AMS_APP_LIBRARIES} stdc++fs)
+endif()
 
 #-------------------------------------------------------------------------------
 # create the configuration header file with the respective information
