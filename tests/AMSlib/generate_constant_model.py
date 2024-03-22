@@ -34,7 +34,7 @@ def main(args):
 
     model.eval()
     with torch.jit.optimized_execution(True):
-        traced = torch.jit.trace(model, (torch.randn(inputDim, dtype=torch.double), ))
+        traced = torch.jit.trace(model, (torch.randn(inputDim, dtype=torch.double).to(device), ))
         traced.save(f"ConstantOneModel_{suffix}.pt")
 
     model = ConstantModel(inputDim, outputDim, 0.0).double()
@@ -43,10 +43,10 @@ def main(args):
 
     model.eval()
     with torch.jit.optimized_execution(True):
-        traced = torch.jit.trace(model, (torch.randn(inputDim, dtype=torch.double), ))
+        traced = torch.jit.trace(model, (torch.randn(inputDim, dtype=torch.double).to(device), ))
         traced.save(f"ConstantZeroModel_{suffix}.pt")
 
-    inputs = Variable(torch.from_numpy(np.zeros((1, inputDim))))
+    inputs = Variable(torch.from_numpy(np.zeros((1, inputDim))).to(device))
     zero_model = jit.load(f"ConstantZeroModel_{suffix}.pt")
     print("ZeroModel", zero_model(inputs))
 

@@ -8,6 +8,8 @@
 #ifndef __DEVICE_UTILITIES__
 #define __DEVICE_UTILITIES__
 
+#ifdef __ENABLE_CUDA__
+
 #include <curand.h>
 #include <curand_kernel.h>
 #include <thrust/device_vector.h>
@@ -288,27 +290,17 @@ int compact(bool cond,
 {
   int numBlocks = divup(length, blockSize);
   auto& rm = ams::ResourceManager::getInstance();
-  int* d_BlocksCount =
-      rm.allocate<int>(numBlocks, AMSResourceType::DEVICE);
-  int* d_BlocksOffset =
-      rm.allocate<int>(numBlocks, AMSResourceType::DEVICE);
+  int* d_BlocksCount = rm.allocate<int>(numBlocks, AMSResourceType::DEVICE);
+  int* d_BlocksOffset = rm.allocate<int>(numBlocks, AMSResourceType::DEVICE);
   // determine number of elements in the compacted list
-  int* h_BlocksCount =
-      rm.allocate<int>(numBlocks, AMSResourceType::HOST);
-  int* h_BlocksOffset =
-      rm.allocate<int>(numBlocks, AMSResourceType::HOST);
+  int* h_BlocksCount = rm.allocate<int>(numBlocks, AMSResourceType::HOST);
+  int* h_BlocksOffset = rm.allocate<int>(numBlocks, AMSResourceType::HOST);
 
-  T** d_dense =
-      rm.allocate<T*>(dims, AMSResourceType::DEVICE);
-  T** d_sparse =
-      rm.allocate<T*>(dims, AMSResourceType::DEVICE);
+  T** d_dense = rm.allocate<T*>(dims, AMSResourceType::DEVICE);
+  T** d_sparse = rm.allocate<T*>(dims, AMSResourceType::DEVICE);
 
-  rm.registerExternal(dense,
-                                         sizeof(T*) * dims,
-                                         AMSResourceType::HOST);
-  rm.registerExternal(sparse,
-                                         sizeof(T*) * dims,
-                                         AMSResourceType::HOST);
+  rm.registerExternal(dense, sizeof(T*) * dims, AMSResourceType::HOST);
+  rm.registerExternal(sparse, sizeof(T*) * dims, AMSResourceType::HOST);
   rm.copy(dense, d_dense);
   rm.copy(const_cast<T**>(sparse), d_sparse);
   thrust::device_ptr<int> thrustPrt_bCount(d_BlocksCount);
@@ -466,5 +458,7 @@ void device_compute_predicate(float* data,
   cudaDeviceSynchronize();
   CUDACHECKERROR();
 }
+
+#endif
 
 #endif

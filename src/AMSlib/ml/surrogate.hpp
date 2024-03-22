@@ -13,6 +13,9 @@
 #include <string>
 #include <unordered_map>
 
+#include "AMS.h"
+#include "wf/cuda/utilities.cuh"
+
 #ifdef __ENABLE_TORCH__
 #include <ATen/core/interned_strings.h>
 #include <ATen/core/ivalue.h>
@@ -177,6 +180,85 @@ private:
   }
 
   // -------------------------------------------------------------------------
+  // compute delta uq predicates
+  // -------------------------------------------------------------------------
+  void computeDeltaUQPredicates(AMSUQPolicy uq_policy,
+                                const TypeInValue* __restrict__ outputs_stdev,
+                                bool* __restrict__ predicates,
+                                const size_t nrows,
+                                const size_t ncols,
+                                const double threshold)
+  {
+    auto computeDeltaUQMeanPredicatesHost = [&]() {
+      for (size_t i = 0; i < nrows; ++i) {
+        double mean = 0.0;
+        for (size_t j = 0; j < ncols; ++j)
+          mean += outputs_stdev[j + i * ncols];
+        mean /= ncols;
+
+        predicates[i] = (mean < threshold);
+      }
+    };
+
+    auto computeDeltaUQMaxPredicatesHost = [&]() {
+      for (size_t i = 0; i < nrows; ++i) {
+        predicates[i] = true;
+        for (size_t j = 0; j < ncols; ++j)
+          if (outputs_stdev[j + i * ncols] >= threshold) {
+            predicates[i] = false;
+            break;
+          }
+      }
+    };
+
+    if (uq_policy == AMSUQPolicy::DeltaUQ_Mean) {
+      if (model_resource == AMSResourceType::DEVICE)
+#ifdef __ENABLE_CUDA__
+      {
+        DBG(Surrogate, "Compute mean delta uq predicates on device\n");
+        constexpr int block_size = 256;
+        int grid_size = divup(nrows, block_size);
+        computeDeltaUQMeanPredicatesKernel<<<grid_size, block_size>>>(
+            outputs_stdev, predicates, nrows, ncols, threshold);
+        // TODO: use combined routine when it lands.
+        cudaDeviceSynchronize();
+        CUDACHECKERROR();
+      }
+#else
+        THROW(std::runtime_error,
+              "Expected CUDA is enabled when model data are on DEVICE");
+#endif
+      else {
+        DBG(Surrogate, "Compute mean delta uq predicates on host\n");
+        computeDeltaUQMeanPredicatesHost();
+      }
+    } else if (uq_policy == AMSUQPolicy::DeltaUQ_Max) {
+      if (model_resource == AMSResourceType::DEVICE)
+#ifdef __ENABLE_CUDA__
+      {
+        DBG(Surrogate, "Compute max delta uq predicates on device\n");
+        constexpr int block_size = 256;
+        int grid_size = divup(nrows, block_size);
+        computeDeltaUQMaxPredicatesKernel<<<grid_size, block_size>>>(
+            outputs_stdev, predicates, nrows, ncols, threshold);
+        // TODO: use combined routine when it lands.
+        cudaDeviceSynchronize();
+        CUDACHECKERROR();
+      }
+#else
+        THROW(std::runtime_error,
+              "Expected CUDA is enabled when model data are on DEVICE");
+#endif
+      else {
+        DBG(Surrogate, "Compute max delta uq predicates on host\n");
+        computeDeltaUQMaxPredicatesHost();
+      }
+    } else
+      THROW(std::runtime_error,
+            "Invalid uq_policy to compute delta uq predicates");
+  }
+
+  // -------------------------------------------------------------------------
   // evaluate a torch model
   // -------------------------------------------------------------------------
   PERFFASPECT()
@@ -185,7 +267,9 @@ private:
                         size_t num_out,
                         const TypeInValue** inputs,
                         TypeInValue** outputs,
-                        TypeInValue** outputs_stdev)
+                        AMSUQPolicy uq_policy,
+                        bool* predicates,
+                        double threshold)
   {
     //torch::NoGradGuard no_grad;
     c10::InferenceMode guard(true);
@@ -195,7 +279,6 @@ private:
 
     input.set_requires_grad(false);
     if (_is_DeltaUQ) {
-      assert(outputs_stdev && "Expected non-null outputs_stdev");
       // The deltauq surrogate returns a tuple of (outputs, outputs_stdev)
       CALIPER(CALI_MARK_BEGIN("SURROGATE-EVAL");)
       auto output_tuple = module.forward({input}).toTuple();
@@ -206,11 +289,14 @@ private:
       at::Tensor output_stdev_tensor =
           output_tuple->elements()[1].toTensor().detach();
       CALIPER(CALI_MARK_BEGIN("TENSOR_TO_ARRAY");)
+
+      computeDeltaUQPredicates(uq_policy,
+                               output_stdev_tensor.data_ptr<TypeInValue>(),
+                               predicates,
+                               num_elements,
+                               num_out,
+                               threshold);
       tensorToArray(output_mean_tensor, num_elements, num_out, outputs);
-      tensorToHostArray(output_stdev_tensor,
-                        num_elements,
-                        num_out,
-                        outputs_stdev);
       CALIPER(CALI_MARK_END("TENSOR_TO_ARRAY");)
     } else {
       CALIPER(CALI_MARK_BEGIN("SURROGATE-EVAL");)
@@ -248,7 +334,9 @@ private:
                         size_t num_out,
                         const TypeInValue** inputs,
                         TypeInValue** outputs,
-                        TypeInValue** outputs_stdev)
+                        AMSUQPolicy uq_policy,
+                        bool* predicates,
+                        double threshold)
   {
   }
 
@@ -340,23 +428,36 @@ public:
                        size_t num_out,
                        const TypeInValue** inputs,
                        TypeInValue** outputs,
-                       TypeInValue** outputs_stdev = nullptr)
+                       AMSUQPolicy uq_policy = AMSUQPolicy::AMSUQPolicy_BEGIN,
+                       bool* predicates = nullptr,
+                       double threshold = 0.0)
   {
-    _evaluate(num_elements, num_in, num_out, inputs, outputs, outputs_stdev);
+    _evaluate(num_elements,
+              num_in,
+              num_out,
+              inputs,
+              outputs,
+              uq_policy,
+              predicates,
+              threshold);
   }
 
   PERFFASPECT()
   inline void evaluate(long num_elements,
                        std::vector<const TypeInValue*> inputs,
                        std::vector<TypeInValue*> outputs,
-                       std::vector<TypeInValue*> outputs_stdev)
+                       AMSUQPolicy uq_policy,
+                       bool* predicates,
+                       double threshold)
   {
     _evaluate(num_elements,
               inputs.size(),
               outputs.size(),
               static_cast<const TypeInValue**>(inputs.data()),
               static_cast<TypeInValue**>(outputs.data()),
-              static_cast<TypeInValue**>(outputs_stdev.data()));
+              uq_policy,
+              predicates,
+              threshold);
   }
 
   PERFFASPECT()
@@ -369,7 +470,9 @@ public:
               outputs.size(),
               static_cast<const TypeInValue**>(inputs.data()),
               static_cast<TypeInValue**>(outputs.data()),
-              nullptr);
+              AMSUQPolicy::AMSUQPolicy_BEGIN,
+              nullptr,
+              0.0);
   }
 
 #ifdef __ENABLE_TORCH__
@@ -410,6 +513,8 @@ public:
     else
       _load<TypeInValue>(new_path, "cuda");
   }
+
+  AMSResourceType getModelResource() const { return model_resource; }
 };
 
 template <typename T>
