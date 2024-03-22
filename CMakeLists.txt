@@ -39,6 +39,8 @@ option(WITH_TORCH_DEBUG    "Compute RMSE of Surrogate Model and Physics Module" 
 option(WITH_TESTS          "Compile tests" OFF)
 option(WITH_REDIS          "Use REDIS as a database back end" OFF)
 option(WITH_HDF5           "Use HDF5 as a database back end" OFF)
+option(HDF5_USE_STATIC_LIBRARIES "Use static HDF5." OFF)
+set(HDF5_WITH_ZLIB "" CACHE FILETYPE "Use the following zlib for HDF5")
 option(WITH_RMQ            "Use RabbitMQ as a database back end (require a reachable and running RabbitMQ server service)" OFF)
 option(WITH_AMS_DEBUG      "Enable verbose messages" OFF)
 option(WITH_PERFFLOWASPECT "Use PerfFlowAspect for Profiling" OFF)
@@ -70,6 +72,7 @@ if (WITH_CUDA)
   if (BUILD_SHARED_LIBS)
     set(CUDA_RUNTIME_LIBRARY "Shared")
   else()
+    set(HDF5_USE_STATIC_LIBRARIES ON)
     set(CUDA_RUNTIME_LIBRARY "Static")
   endif()
 
@@ -133,14 +136,17 @@ endif() # WITH_REDIS
 
 if (WITH_HDF5)
   if (HDF5_USE_STATIC_LIBRARIES)
-  find_package(HDF5 NAMES hdf5 COMPONENTS C static NO_DEFAULT_PATH PATHS ${AMS_HDF5_DIR} ${AMS_HDF5_DIR}/share/cmake)
-  list(APPEND AMS_APP_LIBRARIES ${HDF5_C_STATIC_LIBRARY})
-  message(STATUS "HDF5 Static Library : ${HDF5_C_STATIC_LIBRARY}")
-else()
-  find_package(HDF5 NAMES hdf5 COMPONENTS C shared NO_DEFAULT_PATH PATHS ${AMS_HDF5_DIR} ${AMS_HDF5_DIR}/share/cmake)
-  list(APPEND AMS_APP_LIBRARIES ${HDF5_C_SHARED_LIBRARY})
-  message(STATUS "HDF5 Shared Library : ${HDF5_C_SHARED_LIBRARY}")
-endif()
+    find_package(HDF5 NAMES hdf5 COMPONENTS C static NO_DEFAULT_PATH PATHS ${AMS_HDF5_DIR} ${AMS_HDF5_DIR}/share/cmake)
+    list(APPEND AMS_APP_LIBRARIES ${HDF5_C_STATIC_LIBRARY})
+    message(STATUS "HDF5 Static Library : ${HDF5_C_STATIC_LIBRARY}")
+  else()
+    find_package(HDF5 NAMES hdf5 COMPONENTS C shared NO_DEFAULT_PATH PATHS ${AMS_HDF5_DIR} ${AMS_HDF5_DIR}/share/cmake)
+    list(APPEND AMS_APP_LIBRARIES ${HDF5_C_SHARED_LIBRARY})
+    message(STATUS "HDF5 Shared Library : ${HDF5_C_SHARED_LIBRARY}")
+  endif()
+  if (NOT HDF5_WITH_ZLIB STREQUAL "")
+    list(APPEND AMS_APP_LIBRARIES ${HDF5_WITH_ZLIB})
+  endif()
   list(APPEND AMS_APP_INCLUDES ${HDF5_INCLUDE_DIR})
   list(APPEND AMS_APP_DEFINES "-D__ENABLE_HDF5__")
   message(STATUS "HDF5 Include directories: ${HDF5_INCLUDE_DIR}")
@@ -195,16 +201,50 @@ if (WITH_TORCH)
   find_package(Torch REQUIRED)
   # This is annoying, torch populates all my cuda flags
   # and resets them
-  set(CMAKE_CUDA_FLAGS "")
+  # set(CMAKE_CUDA_FLAGS "")
   set(CMAKE_CUDA_ARCHITECTURES ON)
 
-  list(APPEND AMS_APP_INCLUDES "${TORCH_INCLUDE_DIRS}")
-  list(APPEND AMS_APP_LIBRARIES "${TORCH_LIBRARIES}")
+  #get_target_property(torch_interface_system_includes
+  #                    torch INTERFACE_SYSTEM_INCLUDE_DIRECTORIES)
+  #if ( torch_interface_system_includes )
+  #    list(APPEND AMS_APP_INCLUDES ${torch_interface_system_includes})
+  #endif()
+  #
+  #get_target_property(torch_interface_includes
+  #                    torch INTERFACE_INCLUDE_DIRECTORIES)
+  #if ( torch_interface_includes )
+  #    list(APPEND AMS_APP_INCLUDES ${torch_interface_includes})
+  #endif()
+  #
+  #get_target_property(torch_interface_defines
+  #                    torch INTERFACE_COMPILE_DEFINITIONS)
+  #if ( troch_interface_defines )
+  #    list(APPEND AMS_APP_DEFINES ${torch_interface_defines})
+  #endif()
+  #
+  #get_target_property(torch_interface_compile_options
+  #                    torch INTERFACE_COMPILE_OPTIONS)
+  #if ( torch_interface_compile_options )
+  #    list(APPEND AMS_APP_DEFINES ${torch_interface_compile_options})
+  #endif()
+  #
+  #get_target_property(_interface_link_directories
+  #                    ${arg_FROM} INTERFACE_LINK_DIRECTORIES)
+  #if ( _interface_link_directories )
+  #    target_link_directories( ${arg_TO} ${_scope} ${_interface_link_directories})
+  #endif()
+  #
+  #get_target_property(torch_interface_link_libraries
+  #                    torch INTERFACE_LINK_LIBRARIES)
+  #if ( torch_interface_link_libraries )
+  #    list(APPEND AMS_APP_LIBRARIES "${torch_interface_link_libraries}")
+  #endif()
 
+  list(APPEND AMS_TORCH_LIBRARY torch)
   list(APPEND AMS_APP_DEFINES "-D__ENABLE_TORCH__")
-  set(BLA_VENDER OpenBLAS)
-  find_package(BLAS REQUIRED)
-  list(APPEND AMS_APP_LIBRARIES "${BLAS_LIBRARIES}")
+  #set(BLA_VENDER OpenBLAS)
+  #find_package(BLAS REQUIRED)
+  #list(APPEND AMS_APP_LIBRARIES "${BLAS_LIBRARIES}")
 endif()
 
 # ------------------------------------------------------------------------------
