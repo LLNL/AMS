@@ -39,6 +39,19 @@ if (WITH_TORCH)
   add_test(NAME AMSExampleSingleRandomUQ::HOST COMMAND ams_example --precision single --uqtype random -S ${CMAKE_CURRENT_SOURCE_DIR}/debug_model.pt -e 100)
   add_test(NAME AMSExampleDoubleRandomUQ::HOST COMMAND ams_example --precision double --uqtype random -S ${CMAKE_CURRENT_SOURCE_DIR}/debug_model.pt -e 100)
 
+  # UQ Tests
+  BUILD_TEST(ams_delta_uq_test ams_uq_model.cpp)
+  if (WITH_TORCH)
+    add_test(NAME AMSDeltaUQDoubleMean::HOST COMMAND ams_delta_uq_test 0 ${CMAKE_CURRENT_SOURCE_DIR}/torch.duq.cuda "double" 8 9 3 0.0)
+    add_test(NAME AMSDeltaUQDoubleMax::HOST COMMAND ams_delta_uq_test 0 ${CMAKE_CURRENT_SOURCE_DIR}/torch.duq.cuda "double" 8 9 4 0.0)
+
+    if (WITH_CUDA)
+      add_test(NAME AMSDeltaUQDoubleMean::DEVICE COMMAND ams_delta_uq_test 1 ${CMAKE_CURRENT_SOURCE_DIR}/torch.duq.cuda "double" 8 9 3 0.0)
+      add_test(NAME AMSDeltaUQDoubleMax::DEVICE COMMAND ams_delta_uq_test 1 ${CMAKE_CURRENT_SOURCE_DIR}/torch.duq.cuda "double" 8 9 4 0.0)
+    endif()
+  endif()
+  #TODO Add tests with cpu model
+
   BUILD_TEST(ams_update_model ams_update_model.cpp)
   ADDTEST(ams_update_model AMSUpdateModelDouble "double" ${CMAKE_CURRENT_SOURCE_DIR}/ConstantZeroModel_cpu.pt ${CMAKE_CURRENT_SOURCE_DIR}/ConstantOneModel_cpu.pt)
 endif()
