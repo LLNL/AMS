@@ -10,7 +10,7 @@ import json
 import os
 import sys
 
-from ams.rmq import RMQClient
+from ams.rmq import BlockingClient
 
 
 def main():
@@ -68,7 +68,7 @@ def main():
     user = config["rabbitmq-user"]
     password = config["rabbitmq-password"]
 
-    with RMQClient(host, port, vhost, user, password, args.certificate) as client:
+    with BlockingClient(host, port, vhost, user, password, args.certificate) as client:
         with client.connect(args.queue) as channel:
             channel.send(args.msg_send)
 
