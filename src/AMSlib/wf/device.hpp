@@ -209,6 +209,11 @@ inline void DtoHMemcpy(void *dest, void *src, size_t nBytes)
 {
   cudaMemcpy(dest, src, nBytes, cudaMemcpyDeviceToHost);
 }
+
+inline void AMSDeviceSync(const char* file, const int line){
+  __cudaSafeCall(cudaDeviceSynchronize(), file, line);
+}
+
 #else
 PERFFASPECT()
 inline void DtoDMemcpy(void *dest, void *src, size_t nBytes)
@@ -235,6 +240,10 @@ inline void DtoHMemcpy(void *dest, void *src, size_t nBytes)
 {
   std::cerr << "DtoH Memcpy Not Enabled" << std::endl;
   exit(-1);
+}
+
+inline void AMSDeviceSync(const char* file, const int line){
+  std::cerr << "GPU Not enabled" << std::endl;
 }
 #endif
 

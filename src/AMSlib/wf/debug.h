@@ -80,7 +80,12 @@ inline uint32_t getVerbosityLevel()
 
 #define FATAL(id, ...) CFATAL(id, true, __VA_ARGS__)
 
-#ifdef LIBAMS_VERBOSE
+#define THROW(exception, msg)                                              \
+  throw exception(std::string(__FILE__) + ":" + std::to_string(__LINE__) + \
+                  " " + msg)
+
+
+#ifdef AMS_DEBUG
 
 #define CWARNING(id, condition, ...) \
   AMSPRINT(id, condition, AMSVerbosity::AMSWARNING, YEL, __VA_ARGS__)
@@ -122,10 +127,23 @@ inline uint32_t getVerbosityLevel()
     }                                                                  \
   } while (0);
 
-#define THROW(exception, msg)                                              \
-  throw exception(std::string(__FILE__) + ":" + std::to_string(__LINE__) + \
-                  " " + msg)
-#else  // LIBAMS_VERBOSE is disabled
+#ifdef __ENABLE_CUDA__
+// NOTE: Regardless of condition we synchronize. We only emit a message based on condition.
+#define _CAMSDebugDeviceSync(id, condition, fn, ln, ...)        \
+  do{                                      \
+    AMSDeviceSync(fn, ln);                  \
+    CDEBUG(id, condition, __VA_ARGS__)     \
+  }while(0);
+
+#define CAMSDebugDeviceSync(id, condition, ...)  _CAMSDebugDeviceSync(id, condition, __FILE__, __LINE__, __VA_ARGS__) 
+#define AMSDebugDeviceSync(id, ...) _CAMSDebugDeviceSync(id, true, __FILE__, __LINE__, __VA_ARGS__)
+#else
+#define CAMSDebugDeviceSync(id, condition, ...)
+#define AMSDebugDeviceSync(id, ...)
+#endif
+
+
+#else  // LIBAMS_DEBUG is disabled
 #define CWARNING(id, condition, ...)
 
 #define WARNING(id, ...)
@@ -138,7 +156,11 @@ inline uint32_t getVerbosityLevel()
 
 #define DBG(id, ...)
 
+#define REPORT_MEM_USAGE(id, phase)                                    \
 
-#endif  // LIBAMS_VERBOSE
+#define CAMSDebugDeviceSync(id, condition, ...)
+#define AMSDebugDeviceSync(id, ...)
 
-#endif  // _OMPTARGET_DEBUG_H
+#endif  // AMS_DEBUG
+
+#endif // __AMS_DEBUG__

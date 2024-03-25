@@ -310,7 +310,7 @@ private:
    */
   hid_t getDataSet(hid_t group,
                    std::string dName,
-                   const size_t Chunk = 32L * 1024L * 1024L)
+                   const size_t Chunk = 256L * 1024L)
   {
     // Our datasets a.t.m are 1-D vectors
     const int nDims = 1;
