@@ -341,8 +341,9 @@ public:
 #ifdef __ENABLE_MPI__
       CALIPER(CALI_MARK_BEGIN("LOAD BALANCE MODULE");)
       AMSLoadBalancer<FPTypeValue> lBalancer(
-          rId, wSize, packedElements, Comm, inputDim, outputDim, appDataLoc);
+          rId, wSize, packedElements, Comm);
       if (ePolicy == AMSExecPolicy::BALANCED && Comm) {
+        lBalancer.init(inputDim, outputDim, appDataLoc);
         lBalancer.scatterInputs(packedInputs, appDataLoc);
         iPtr = reinterpret_cast<void **>(lBalancer.inputs());
         oPtr = reinterpret_cast<void **>(lBalancer.outputs());
