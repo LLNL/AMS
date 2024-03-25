@@ -226,7 +226,7 @@ public:
   /**
    * @brief Return the DB enumerationt type (File, Redis etc)
    */
-  AMSDBType dbType() { return AMSDBType::CSV; };
+  AMSDBType dbType() { return AMSDBType::DBCSV; };
 
   /**
    * @brief Takes an input and an output vector each holding 1-D vectors data, and
@@ -488,7 +488,7 @@ public:
   /**
    * @brief Return the DB enumerationt type (File, Redis etc)
    */
-  AMSDBType dbType() { return AMSDBType::HDF5; };
+  AMSDBType dbType() { return AMSDBType::DBHDF5; };
 
 
   /**
@@ -586,7 +586,7 @@ public:
   /**
    * @brief Return the DB enumerationt type (File, Redis etc)
    */
-  AMSDBType dbType() { return AMSDBType::REDIS; };
+  AMSDBType dbType() { return AMSDBType::DBREDIS; };
 
 
   inline std::string info() { return _redis->info(); }
@@ -2339,7 +2339,7 @@ public:
   /**
    * @brief Return the DB enumerationt type (File, Redis etc)
    */
-  AMSDBType dbType() { return AMSDBType::RMQ; };
+  AMSDBType dbType() { return AMSDBType::DBRMQ; };
 
   void close()
   {
@@ -2425,18 +2425,18 @@ public:
     }
 
     switch (dbType) {
-      case AMSDBType::CSV:
+      case AMSDBType::DBCSV:
         return std::make_shared<csvDB<TypeValue>>(dbPath, rId);
 #ifdef __ENABLE_REDIS__
-      case AMSDBType::REDIS:
+      case AMSDBType::DBREDIS:
         return std::make_shared<RedisDB<TypeValue>>(dbPath, rId);
 #endif
 #ifdef __ENABLE_HDF5__
-      case AMSDBType::HDF5:
+      case AMSDBType::DBHDF5:
         return std::make_shared<hdf5DB<TypeValue>>(dbPath, rId);
 #endif
 #ifdef __ENABLE_RMQ__
-      case AMSDBType::RMQ:
+      case AMSDBType::DBRMQ:
         return std::make_shared<RabbitMQDB<TypeValue>>(dbPath, rId);
 #endif
       default:
