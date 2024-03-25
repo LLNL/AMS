@@ -103,8 +103,10 @@ class AMSLoadBalancer
   /** @brief The memory location of the data (GPU (DEVICE), CPU (HOST) ) */
   AMSResourceType resource;
 
-private:
+  /** @brief Check if load balancer is initialized **/
+  bool _initialized;
 
+private:
   /** @brief Computes the number of elements every rank will receive after balancing.
    *  @returns the number of elements computed by this rank.
    **/
@@ -197,10 +199,11 @@ private:
                    AMSResourceType resource)
   {
     FPTypeValue *temp_data;
-    auto& rm = ams::ResourceManager::getInstance();
+    auto &rm = ams::ResourceManager::getInstance();
 
     if (rId == root) {
-      temp_data = rm.ResourceManager::allocate<FPTypeValue>(globalLoad, resource);
+      temp_data =
+          rm.ResourceManager::allocate<FPTypeValue>(globalLoad, resource);
     }
 
     for (int i = 0; i < src.size(); i++) {
@@ -236,10 +239,7 @@ public:
    * @param[in] localLoad The number of elements this rank has to compute originally (before load balance).
    * @param[in] Comm The MPI communicator.
   */
-  AMSLoadBalancer(int rId,
-                  int worldSize,
-                  int localLoad,
-                  MPI_Comm comm)
+  AMSLoadBalancer(int rId, int worldSize, int localLoad, MPI_Comm comm)
       : rId(rId),
         worldSize(worldSize),
         localLoad(localLoad),
@@ -249,22 +249,27 @@ public:
         dataElements(nullptr),
         balancedElements(nullptr),
         balancedDispls(nullptr),
-        resource(resource)
+        resource(resource),
+        _initialized(false)
   {
   }
 
   /** @brief deallocates all objects of this load balancing transcation */
   ~AMSLoadBalancer()
   {
-    auto& rm = ams::ResourceManager::getInstance();
-    CINFO(LoadBalance, root==rId, "Total data %d Data per rank %d", globalLoad, balancedLoad);
+    if (!_initialized) return;
+
+    auto &rm = ams::ResourceManager::getInstance();
+    CINFO(LoadBalance,
+          root == rId,
+          "Total data %d Data per rank %d",
+          globalLoad,
+          balancedLoad);
     if (displs) rm.deallocate(displs, AMSResourceType::HOST);
-    if (dataElements)
-      rm.deallocate(dataElements, AMSResourceType::HOST);
+    if (dataElements) rm.deallocate(dataElements, AMSResourceType::HOST);
     if (balancedElements)
       rm.deallocate(balancedElements, AMSResourceType::HOST);
-    if (balancedDispls)
-      rm.deallocate(balancedDispls, AMSResourceType::HOST);
+    if (balancedDispls) rm.deallocate(balancedDispls, AMSResourceType::HOST);
 
     for (int i = 0; i < distOutputs.size(); i++)
       rm.deallocate(distOutputs[i], resource);
@@ -286,13 +291,11 @@ public:
   */
   void init(int numIn, int numOut, AMSResourceType resource)
   {
-    auto& rm = ams::ResourceManager::getInstance();
+    auto &rm = ams::ResourceManager::getInstance();
     // We need to store information
     if (rId == root) {
-      dataElements =
-          rm.allocate<int>(worldSize, AMSResourceType::HOST);
-      displs = rm.allocate<int>(worldSize + 1,
-                                                   AMSResourceType::HOST);
+      dataElements = rm.allocate<int>(worldSize, AMSResourceType::HOST);
+      displs = rm.allocate<int>(worldSize + 1, AMSResourceType::HOST);
     }
 
     // Gather the the number of items from each rank
@@ -334,14 +337,13 @@ public:
     }
 
     for (int i = 0; i < numIn; i++) {
-      distInputs.push_back(
-          rm.allocate<FPTypeValue>(balancedLoad, resource));
+      distInputs.push_back(rm.allocate<FPTypeValue>(balancedLoad, resource));
     }
 
     for (int i = 0; i < numOut; i++) {
-      distOutputs.push_back(
-          rm.allocate<FPTypeValue>(balancedLoad, resource));
+      distOutputs.push_back(rm.allocate<FPTypeValue>(balancedLoad, resource));
     }
+    _initialized = true;
   }
 
   /**
