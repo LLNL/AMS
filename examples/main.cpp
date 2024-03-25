@@ -179,13 +179,13 @@ int run(const char *device_name,
   CALIPER(CALI_MARK_BEGIN("Setup");)
 
   const bool use_device = std::strcmp(device_name, "cpu") != 0;
-  AMSDBType dbType = AMSDBType::None;
+  AMSDBType dbType = AMSDBType::DBNone;
   if (std::strcmp(db_type, "csv") == 0) {
-    dbType = AMSDBType::CSV;
+    dbType = AMSDBType::DBCSV;
   } else if (std::strcmp(db_type, "hdf5") == 0) {
-    dbType = AMSDBType::HDF5;
+    dbType = AMSDBType::DBHDF5;
   } else if (std::strcmp(db_type, "rmq") == 0) {
-    dbType = AMSDBType::RMQ;
+    dbType = AMSDBType::DBRMQ;
   }
 
   AMSUQPolicy uq_policy;

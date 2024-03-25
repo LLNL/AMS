@@ -63,7 +63,7 @@ class AMSWorkflow
   std::shared_ptr<BaseDB<FPTypeValue>> DB;
 
   /** @brief The type of the database we will use (HDF5, CSV, etc) */
-  AMSDBType dbType = AMSDBType::None;
+  AMSDBType dbType = AMSDBType::DBNone;
 
   /** @brief The process id. For MPI runs this is the rank */
   const int rId;
@@ -149,7 +149,7 @@ public:
   AMSWorkflow()
       : AppCall(nullptr),
         DB(nullptr),
-        dbType(AMSDBType::None),
+        dbType(AMSDBType::DBNone),
         appDataLoc(AMSResourceType::HOST),
         ePolicy(AMSExecPolicy::UBALANCED)
   {

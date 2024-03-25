@@ -55,7 +55,7 @@ typedef enum {
 
 typedef enum { UBALANCED = 0, BALANCED } AMSExecPolicy;
 
-typedef enum { None = 0, CSV, REDIS, HDF5, RMQ } AMSDBType;
+typedef enum { DBNone = 0, DBCSV, DBREDIS, DBHDF5, DBRMQ } AMSDBType;
 
 // TODO: create a cleaner interface that separates UQ type (FAISS, DeltaUQ) with policy (max, mean).
 enum struct AMSUQPolicy {
