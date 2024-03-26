@@ -7,7 +7,9 @@
 
 #include "wf/debug.h"
 
+#if defined(__ENABLE_CUDA__) && defined(__ENABLE_TORCH__) 
 #include <c10/cuda/CUDACachingAllocator.h>
+#endif
 #include <unistd.h>
 
 #include <fstream>
@@ -44,9 +46,9 @@ void memUsage(double& vm_usage, double& resident_set)
   resident_set = rss * page_size;
 }
 
-#ifdef __ENABLE_CUDA__
 void dumpTorchDeviceStats()
 {
+#if defined(__ENABLE_CUDA__) && defined(__ENABLE_TORCH__) 
   c10::cuda::CUDACachingAllocator::emptyCache();
   int curr_device = c10::cuda::current_device();
   c10::cuda::CUDACachingAllocator::DeviceStats stats =
@@ -100,5 +102,5 @@ void dumpTorchDeviceStats()
         (double)(S.allocated) / (1024.0 * 1024.0),
         (double)(S.freed) / (1024.0 * 1024.0));
   }
-}
 #endif
+}

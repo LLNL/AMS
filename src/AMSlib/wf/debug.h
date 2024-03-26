@@ -32,6 +32,7 @@ enum AMSVerbosity {
 
 void memUsage(double& vm_usage, double& resident_set);
 void dumpTorchDeviceStats();
+void deviceMemoryInfo(size_t *free, size_t *total);
 
 inline std::atomic<uint32_t>& getInfoLevelInternal()
 {

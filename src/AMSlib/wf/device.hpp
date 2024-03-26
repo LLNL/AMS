@@ -153,6 +153,13 @@ void deviceCheckErrors(const char *file, const int line)
 }
 
 
+void deviceMemoryInfo(size_t *free, size_t *total)
+{
+#ifdef __ENABLE_CUDA__
+  cudaMemGetInfo(free, total);
+#endif
+}
+
 #ifdef __ENABLE_CUDA__
 
 #include <curand.h>
@@ -183,12 +190,6 @@ __global__ void random_uq_device(int seed,
   float x = curand_uniform(&state);
   uq_flags[id] = (x <= acceptable_error);
 }
-
-void deviceMemoryInfo(size_t *free, size_t *total)
-{
-  cudaMemGetInfo(free, total);
-}
-
 
 #include <cuda_runtime.h>
 PERFFASPECT()
