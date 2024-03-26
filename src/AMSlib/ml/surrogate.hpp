@@ -410,6 +410,8 @@ public:
     else
       _load<TypeInValue>(new_path, "cuda");
   }
+
+  AMSResourceType getModelResource() const { return model_resource; }
 };
 
 template <typename T>

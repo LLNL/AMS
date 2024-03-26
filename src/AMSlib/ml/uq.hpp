@@ -63,6 +63,8 @@ public:
 
     if (uqPolicy == AMSUQPolicy::RandomUQ)
       randomUQ = std::make_unique<RandomUQ>(resourceLocation, threshold);
+
+    DBG(UQ, "UQ Model is of type %d", uqPolicy)
   }
 
   PERFFASPECT()
@@ -73,20 +75,39 @@ public:
   {
     if ((uqPolicy == AMSUQPolicy::DeltaUQ_Mean) ||
         (uqPolicy == AMSUQPolicy::DeltaUQ_Max)) {
+
+      auto &rm = ams::ResourceManager::getInstance();
+
       CALIPER(CALI_MARK_BEGIN("DELTAUQ");)
       const size_t ndims = outputs.size();
       std::vector<FPTypeValue *> outputs_stdev(ndims);
       // TODO: Enable device-side allocation and predicate calculation.
-      auto &rm = ams::ResourceManager::getInstance();
       for (int dim = 0; dim < ndims; ++dim)
         outputs_stdev[dim] =
             rm.allocate<FPTypeValue>(totalElements, AMSResourceType::HOST);
 
       CALIPER(CALI_MARK_BEGIN("SURROGATE");)
-      DBG(Workflow,
-          "Model exists, I am calling DeltaUQ surrogate (for all data)");
+      DBG(UQ,
+          "Model exists, I am calling DeltaUQ surrogate [%ld %ld] -> (mu:[%ld "
+          "%ld], std:[%ld %ld])",
+          totalElements,
+          inputs.size(),
+          totalElements,
+          outputs.size(),
+          totalElements,
+          inputs.size());
       surrogate->evaluate(totalElements, inputs, outputs, outputs_stdev);
       CALIPER(CALI_MARK_END("SURROGATE");)
+
+      // FIXME: We do something sub-optimal. We copy all the data from the GPU
+      // to the CPU and then we compute the predicate. Then we copy back the computed
+      // predicate to the device. We should avoid this unecessary back and forth.
+      bool *predicate = p_ml_acceptable;
+      if (surrogate->getModelResource() == AMSResourceType::DEVICE) {
+        predicate = rm.allocate<bool>(totalElements, AMSResourceType::HOST);
+        rm.copy(p_ml_acceptable, predicate);
+      }
+
 
       if (uqPolicy == AMSUQPolicy::DeltaUQ_Mean) {
         for (size_t i = 0; i < totalElements; ++i) {
@@ -95,7 +116,7 @@ public:
           for (size_t dim = 0; dim < ndims; ++dim)
             mean += outputs_stdev[dim][i];
           mean /= ndims;
-          p_ml_acceptable[i] = (mean < threshold);
+          predicate[i] = (mean < threshold);
         }
       } else if (uqPolicy == AMSUQPolicy::DeltaUQ_Max) {
         for (size_t i = 0; i < totalElements; ++i) {
@@ -106,10 +127,15 @@ public:
               break;
             }
 
-          p_ml_acceptable[i] = is_acceptable;
+          predicate[i] = is_acceptable;
         }
       } else {
         THROW(std::runtime_error, "Invalid UQ policy");
+      }
+
+      if (surrogate->getModelResource() == AMSResourceType::DEVICE) {
+        rm.copy(predicate, p_ml_acceptable);
+        rm.deallocate(predicate, AMSResourceType::HOST);
       }
 
       for (int dim = 0; dim < ndims; ++dim)
