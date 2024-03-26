@@ -179,7 +179,7 @@ int run(const char *device_name,
   CALIPER(CALI_MARK_BEGIN("Setup");)
 
   const bool use_device = std::strcmp(device_name, "cpu") != 0;
-  AMSDBType dbType = AMSDBType::DBNone;
+  AMSDBType dbType = AMSDBType::DDDBNone;
   if (std::strcmp(db_type, "csv") == 0) {
     dbType = AMSDBType::DBCSV;
   } else if (std::strcmp(db_type, "hdf5") == 0) {
