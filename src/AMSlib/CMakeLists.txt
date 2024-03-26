@@ -43,11 +43,11 @@ target_include_directories(AMS PUBLIC
 target_include_directories(AMS PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_directories(AMS PUBLIC ${AMS_APP_LIB_DIRS})
 if (EXCLUDE_STATIC_LIBS)
-   target_link_libraries(AMS PRIVATE ${NONSTATIC_AMS_APP_PRIVATE_LIBRARIES} ${AMS_TORCH_LIBRARY} stdc++fs)
-   target_link_libraries(AMS INTERFACE ${NONSTATIC_AMS_APP_INTERFACE_LIBRARIES} stdc++fs)
+   target_link_libraries(AMS PRIVATE ${NONSTATIC_AMS_APP_PRIVATE_LIBRARIES} ${AMS_TORCH_LIBRARY} stdc++fs stdc++ /usr/tce/packages/intel/intel-2022.1.0/compiler/2022.1.0/linux/compiler/lib/intel64_lin/libintlc.so m)
+   target_link_libraries(AMS INTERFACE ${NONSTATIC_AMS_APP_INTERFACE_LIBRARIES} stdc++fs stdc++ /usr/tce/packages/intel/intel-2022.1.0/compiler/2022.1.0/linux/compiler/lib/intel64_lin/libintlc.so m)
    target_link_options(AMS PRIVATE "-Wl,--unresolved-symbols=ignore-all")
 else()
-   target_link_libraries(AMS PUBLIC ${AMS_APP_LIBRARIES} stdc++fs)
+   target_link_libraries(AMS PUBLIC ${AMS_APP_LIBRARIES} stdc++fs stdc++ /usr/tce/packages/intel/intel-2022.1.0/compiler/2022.1.0/linux/compiler/lib/intel64_lin/libintlc.so m)
 endif()
 
 #-------------------------------------------------------------------------------
