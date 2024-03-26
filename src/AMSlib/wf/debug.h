@@ -31,6 +31,7 @@ enum AMSVerbosity {
 
 
 void memUsage(double& vm_usage, double& resident_set);
+void dumpTorchDeviceStats();
 
 inline std::atomic<uint32_t>& getInfoLevelInternal()
 {
@@ -97,29 +98,35 @@ inline uint32_t getVerbosityLevel()
 
 #define DBG(id, ...) CDEBUG(id, true, __VA_ARGS__)
 
-#define REPORT_MEM_USAGE(id, phase)                                    \
-  do {                                                                 \
-    double vm, rs;                                                     \
-    size_t watermark, current_size, actual_size;                       \
-    auto& rm = ams::ResourceManager::getInstance();                    \
-    memUsage(vm, rs);                                                  \
-    DBG(id, "Memory usage at %s is VM:%g RS:%g", phase, vm, rs);       \
-                                                                       \
-    for (int i = 0; i < AMSResourceType::RSEND; i++) {                 \
-      if (rm.isActive((AMSResourceType)i)) {                           \
-        rm.getAllocatorStats((AMSResourceType)i,                       \
-                                                watermark,             \
-                                                current_size,          \
-                                                actual_size);          \
-        DBG(id,                                                        \
-            "Allocator: %s HWM:%lu CS:%lu AS:%lu) ",                   \
-            rm.getAllocatorName((AMSResourceType)i)                    \
-                .c_str(),                                              \
-            watermark,                                                 \
-            current_size,                                              \
-            actual_size);                                              \
-      }                                                                \
-    }                                                                  \
+#define REPORT_MEM_USAGE(id, phase)                                           \
+  do {                                                                        \
+    double vm, rs;                                                            \
+    size_t watermark, current_size, actual_size;                              \
+    auto& rm = ams::ResourceManager::getInstance();                           \
+    memUsage(vm, rs);                                                         \
+    DBG(id, "Memory usage at %s is VM:%g RS:%g", phase, vm, rs);              \
+                                                                              \
+    for (int i = 0; i < AMSResourceType::RSEND; i++) {                        \
+      if (rm.isActive((AMSResourceType)i)) {                                  \
+        rm.getAllocatorStats((AMSResourceType)i,                              \
+                             watermark,                                       \
+                             current_size,                                    \
+                             actual_size);                                    \
+        DBG(id,                                                               \
+            "Allocator (in MBytes): %s HWM:%g CS:%g AS:%g) ",                 \
+            rm.getAllocatorName((AMSResourceType)i).c_str(),                  \
+            (double)(watermark) / (1024.0 * 1024.0),                          \
+            (double)(current_size) / (1024.0 * 1024.0),                       \
+            (double)(actual_size) / (1024.0 * 1024.0));                       \
+      }                                                                       \
+    }                                                                         \
+    dumpTorchDeviceStats();                                                   \
+    size_t free, total;                                                       \
+    deviceMemoryInfo(&free, &total);                                          \
+    DBG(id,                                                                   \
+        "Device Memory Usage (cuda-driver) Used: %g MBytes, Free: %g MBytes", \
+        ((double)(total - free)) / (1024.0 * 1024.0),                         \
+        (double)(free) / (1024.0 * 1024.0));                                  \
   } while (0);
 
 #define THROW(exception, msg)                                              \

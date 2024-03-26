@@ -5,6 +5,9 @@
  * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
  */
 
+#include "wf/debug.h"
+
+#include <c10/cuda/CUDACachingAllocator.h>
 #include <unistd.h>
 
 #include <fstream>
@@ -40,3 +43,62 @@ void memUsage(double& vm_usage, double& resident_set)
   vm_usage = vsize / 1024.0;
   resident_set = rss * page_size;
 }
+
+#ifdef __ENABLE_CUDA__
+void dumpTorchDeviceStats()
+{
+  c10::cuda::CUDACachingAllocator::emptyCache();
+  int curr_device = c10::cuda::current_device();
+  c10::cuda::CUDACachingAllocator::DeviceStats stats =
+      c10::cuda::CUDACachingAllocator::getDeviceStats(curr_device);
+
+  DBG(TorchDeviceStats,
+      "Current device according to torch has id : %d",
+      curr_device);
+
+  for (auto S : stats.allocated_bytes) {
+    DBG(TorchDeviceStats,
+        "Allocated Current: %g (MBytes) Peak: %g (MBytes) Allocated: %G "
+        "(MBytes) Freed: "
+        "%g (MBytes)",
+        (double)(S.current) / (1024.0 * 1024.0),
+        (double)(S.peak) / (1024.0 * 1024.0),
+        (double)(S.allocated) / (1024.0 * 1024.0),
+        (double)(S.freed) / (1024.0 * 1024.0));
+  }
+
+  for (auto S : stats.reserved_bytes) {
+    DBG(TorchDeviceStats,
+        "Reserved Current: %g (MBytes) Peak: %g (MBytes) Allocated: %G "
+        "(MBytes) Freed: "
+        "%g (MBytes)",
+        (double)(S.current) / (1024.0 * 1024.0),
+        (double)(S.peak) / (1024.0 * 1024.0),
+        (double)(S.allocated) / (1024.0 * 1024.0),
+        (double)(S.freed) / (1024.0 * 1024.0));
+  }
+
+  for (auto S : stats.active_bytes) {
+    DBG(TorchDeviceStats,
+        "Active Current: %g (MBytes) Peak: %g (MBytes) Allocated: %G "
+        "(MBytes) Freed: "
+        "%g (MBytes)",
+        (double)(S.current) / (1024.0 * 1024.0),
+        (double)(S.peak) / (1024.0 * 1024.0),
+        (double)(S.allocated) / (1024.0 * 1024.0),
+        (double)(S.freed) / (1024.0 * 1024.0));
+  }
+
+  for (auto S : stats.inactive_split_bytes) {
+    DBG(TorchDeviceStats,
+        "Inactive Split Bytes Current: %g (MBytes) Peak: %g (MBytes) "
+        "Allocated: %G "
+        "(MBytes) Freed: "
+        "%g (MBytes)",
+        (double)(S.current) / (1024.0 * 1024.0),
+        (double)(S.peak) / (1024.0 * 1024.0),
+        (double)(S.allocated) / (1024.0 * 1024.0),
+        (double)(S.freed) / (1024.0 * 1024.0));
+  }
+}
+#endif

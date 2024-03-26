@@ -184,6 +184,11 @@ __global__ void random_uq_device(int seed,
   uq_flags[id] = (x <= acceptable_error);
 }
 
+void deviceMemoryInfo(size_t *free, size_t *total)
+{
+  cudaMemGetInfo(free, total);
+}
+
 
 #include <cuda_runtime.h>
 PERFFASPECT()
