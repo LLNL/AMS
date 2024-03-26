@@ -103,77 +103,10 @@ class AMSLoadBalancer
   /** @brief The memory location of the data (GPU (DEVICE), CPU (HOST) ) */
   AMSResourceType resource;
 
+  /** @brief Check if load balancer is initialized **/
+  bool _initialized;
+
 private:
-  /** @brief Computes the number of balanced elements each process will gather and initializes
-   * memory structures.
-   * @param[in] numIn The number of input dimensions
-   * @param[in] numOut The number of input dimensions
-   * @param[in] resource The resource type to allocate data in.
-
-   * @details The function computes the total number of elements every rank will need to balance.
-   * It initializes the 'dataElements', 'displs' on the root node and the localLoad, balancedLoad
-   * across all ranks.
-  */
-  void init(int numIn, int numOut, AMSResourceType resource)
-  {
-    auto& rm = ams::ResourceManager::getInstance();
-    // We need to store information
-    if (rId == root) {
-      dataElements =
-          rm.allocate<int>(worldSize, AMSResourceType::HOST);
-      displs = rm.allocate<int>(worldSize + 1,
-                                                   AMSResourceType::HOST);
-    }
-
-    // Gather the the number of items from each rank
-    int rc = MPI_Gather(reinterpret_cast<const void *>(&localLoad),
-                        1,
-                        MPI_INT,
-                        reinterpret_cast<void *>(dataElements),
-                        1,
-                        MPI_INT,
-                        root,
-                        Comm);
-    CFATAL(LoadBalance, rc != MPI_SUCCESS, "Cannot gather per rank sizes")
-
-    // Populate displacement array
-    if (rId == 0) {
-      globalLoad = 0;
-      displs[0] = static_cast<int>(0);
-      for (size_t i = 0ul; i < worldSize; ++i) {
-        displs[i + 1] = dataElements[i] + displs[i];
-      }
-      globalLoad = displs[worldSize];
-    }
-
-    balancedLoad = computeBalanceLoad();
-
-    if (rId == root) {
-      balancedElements =
-          rm.ResourceManager::allocate<int>(worldSize, AMSResourceType::HOST);
-      balancedDispls =
-          rm.ResourceManager::allocate<int>(worldSize, AMSResourceType::HOST);
-      for (int i = 0; i < worldSize; i++) {
-        balancedElements[i] = (globalLoad / worldSize) +
-                              static_cast<int>(i < (globalLoad % worldSize));
-        if (i != 0)
-          balancedDispls[i] = balancedElements[i] + balancedDispls[i - 1];
-        else
-          balancedDispls[i] = 0;
-      }
-    }
-
-    for (int i = 0; i < numIn; i++) {
-      distInputs.push_back(
-          rm.allocate<FPTypeValue>(balancedLoad, resource));
-    }
-
-    for (int i = 0; i < numOut; i++) {
-      distOutputs.push_back(
-          rm.allocate<FPTypeValue>(balancedLoad, resource));
-    }
-  }
-
   /** @brief Computes the number of elements every rank will receive after balancing.
    *  @returns the number of elements computed by this rank.
    **/
@@ -266,10 +199,11 @@ private:
                    AMSResourceType resource)
   {
     FPTypeValue *temp_data;
-    auto& rm = ams::ResourceManager::getInstance();
+    auto &rm = ams::ResourceManager::getInstance();
 
     if (rId == root) {
-      temp_data = rm.ResourceManager::allocate<FPTypeValue>(globalLoad, resource);
+      temp_data =
+          rm.ResourceManager::allocate<FPTypeValue>(globalLoad, resource);
     }
 
     for (int i = 0; i < src.size(); i++) {
@@ -304,17 +238,8 @@ public:
    * @param[in] worldSize The total number of ranks in respect to the Comm communicator.
    * @param[in] localLoad The number of elements this rank has to compute originally (before load balance).
    * @param[in] Comm The MPI communicator.
-   * @param[in] numIn The number of input vectors to be balanced.
-   * @param[in] numOut The number of output vectors to be balanced.
-   * @param[in] resource The location of data allocations (CPU|GPU).
-   */
-  AMSLoadBalancer(int rId,
-                  int worldSize,
-                  int localLoad,
-                  MPI_Comm comm,
-                  int numIn,
-                  int numOut,
-                  AMSResourceType resource)
+  */
+  AMSLoadBalancer(int rId, int worldSize, int localLoad, MPI_Comm comm)
       : rId(rId),
         worldSize(worldSize),
         localLoad(localLoad),
@@ -324,23 +249,27 @@ public:
         dataElements(nullptr),
         balancedElements(nullptr),
         balancedDispls(nullptr),
-        resource(resource)
+        resource(resource),
+        _initialized(false)
   {
-    init(numIn, numOut, resource);
   }
 
   /** @brief deallocates all objects of this load balancing transcation */
   ~AMSLoadBalancer()
   {
-    auto& rm = ams::ResourceManager::getInstance();
-    CINFO(LoadBalance, root==rId, "Total data %d Data per rank %d", globalLoad, balancedLoad);
+    if (!_initialized) return;
+
+    auto &rm = ams::ResourceManager::getInstance();
+    CINFO(LoadBalance,
+          root == rId,
+          "Total data %d Data per rank %d",
+          globalLoad,
+          balancedLoad);
     if (displs) rm.deallocate(displs, AMSResourceType::HOST);
-    if (dataElements)
-      rm.deallocate(dataElements, AMSResourceType::HOST);
+    if (dataElements) rm.deallocate(dataElements, AMSResourceType::HOST);
     if (balancedElements)
       rm.deallocate(balancedElements, AMSResourceType::HOST);
-    if (balancedDispls)
-      rm.deallocate(balancedDispls, AMSResourceType::HOST);
+    if (balancedDispls) rm.deallocate(balancedDispls, AMSResourceType::HOST);
 
     for (int i = 0; i < distOutputs.size(); i++)
       rm.deallocate(distOutputs[i], resource);
@@ -349,6 +278,73 @@ public:
       rm.deallocate(distInputs[i], resource);
     }
   };
+
+  /** @brief Computes the number of balanced elements each process will gather and initializes
+   * memory structures.
+   * @param[in] numIn The number of input dimensions
+   * @param[in] numOut The number of input dimensions
+   * @param[in] resource The resource type to allocate data in.
+
+   * @details The function computes the total number of elements every rank will need to balance.
+   * It initializes the 'dataElements', 'displs' on the root node and the localLoad, balancedLoad
+   * across all ranks.
+  */
+  void init(int numIn, int numOut, AMSResourceType resource)
+  {
+    auto &rm = ams::ResourceManager::getInstance();
+    // We need to store information
+    if (rId == root) {
+      dataElements = rm.allocate<int>(worldSize, AMSResourceType::HOST);
+      displs = rm.allocate<int>(worldSize + 1, AMSResourceType::HOST);
+    }
+
+    // Gather the the number of items from each rank
+    int rc = MPI_Gather(reinterpret_cast<const void *>(&localLoad),
+                        1,
+                        MPI_INT,
+                        reinterpret_cast<void *>(dataElements),
+                        1,
+                        MPI_INT,
+                        root,
+                        Comm);
+    CFATAL(LoadBalance, rc != MPI_SUCCESS, "Cannot gather per rank sizes")
+
+    // Populate displacement array
+    if (rId == 0) {
+      globalLoad = 0;
+      displs[0] = static_cast<int>(0);
+      for (size_t i = 0ul; i < worldSize; ++i) {
+        displs[i + 1] = dataElements[i] + displs[i];
+      }
+      globalLoad = displs[worldSize];
+    }
+
+    balancedLoad = computeBalanceLoad();
+
+    if (rId == root) {
+      balancedElements =
+          rm.ResourceManager::allocate<int>(worldSize, AMSResourceType::HOST);
+      balancedDispls =
+          rm.ResourceManager::allocate<int>(worldSize, AMSResourceType::HOST);
+      for (int i = 0; i < worldSize; i++) {
+        balancedElements[i] = (globalLoad / worldSize) +
+                              static_cast<int>(i < (globalLoad % worldSize));
+        if (i != 0)
+          balancedDispls[i] = balancedElements[i] + balancedDispls[i - 1];
+        else
+          balancedDispls[i] = 0;
+      }
+    }
+
+    for (int i = 0; i < numIn; i++) {
+      distInputs.push_back(rm.allocate<FPTypeValue>(balancedLoad, resource));
+    }
+
+    for (int i = 0; i < numOut; i++) {
+      distOutputs.push_back(rm.allocate<FPTypeValue>(balancedLoad, resource));
+    }
+    _initialized = true;
+  }
 
   /**
    * @brief Reverse load balance in respect to the output vectors.
