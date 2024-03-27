@@ -7,15 +7,14 @@ import argparse
 import time
 
 from ams.loader import load_class
+from ams.monitor import AMSMonitor
 from ams.stage import get_pipeline
-
-import sys
 
 
 def main():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description="AMS Stage mechanism. The mechanism moves data to the file-system and optionally registers them in a kosh store",
+        description="AMS Stage mechanism. The mechanism moves data to the file-system and optionally registers them in a Kosh store",
     )
 
     parser.add_argument(
@@ -32,7 +31,7 @@ def main():
         default="process",
     )
 
-    parser.add_argument("--mechansism", "-m", dest="mechanism", choices=["fs", "network"], default="fs")
+    parser.add_argument("--mechanism", "-m", dest="mechanism", choices=["fs", "network"], default="fs")
 
     args, extras = parser.parse_known_args()
 
@@ -80,6 +79,9 @@ def main():
     pipeline.execute(args.policy)
     end = time.time()
     print(f"End to End time spend : {end - start}")
+    print(f"{AMSMonitor.info()}")
+    # Output profiling output to JSON (just as an example)
+    AMSMonitor.json("ams_monitor.json")
 
 
 if __name__ == "__main__":
