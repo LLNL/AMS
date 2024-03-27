@@ -25,53 +25,63 @@ class AMSMonitor:
                 self.total_bytes = 0
                 self.total_bytes2 = 0
 
+            # @AMSMonitor() would record all attributes
+            # (total_bytes and total_bytes2) and the duration
+            # of the block under the name amsmonitor_duration.
+            # Each time the same block (function in class or
+            # predefined tag) is being monitored, AMSMonitor
+            # create a new record with a timestamp (see below).
+            #
+            # @AMSMonitor(accumulate=True) records also all
+            # attributes but does not create a new record each
+            # time that block is being monitored, the first
+            # timestamp is always being used and only
+            # amsmonitor_duration is being accumulated.
+            # The user-managed attributes (like total_bytes
+            # and total_bytes2 ) are not being accumulated.
+            # By default, accumulate=False.
+
             # Example: we do not want to record total_bytes
             # but just total_bytes2
-            #
-            # @AMSMonitor() would record all attributes
-            # (total_bytes and total_bytes2)
-            #
-            # @AMSMonitor(accumulate=True) would record all
-            #   attributes and accumulate their values
-            #   (sum up total_bytes instead of recording a
-            #   different total_bytes per invocation)
-
             @AMSMonitor(record=["total_bytes2"])
             def __call__(self):
                 i = 0
+                # Here we have to manually provide the current object being monitored
                 with AMSMonitor(obj=self, tag="while_loop"):
-                while (i<=3):
-                    self.total_bytes += 10
-                    self.total_bytes2 = 1
-                    i += 1
+                    while (i<=3):
+                        self.total_bytes += 10
+                        self.total_bytes2 = 1
+                        i += 1
 
     Each time `ExampleTask1()` is being called, AMSMonitor will
     populate `_stats` as follows (showed with two calls here):
         {
-        "ExampleTask1": {
-            "while_loop": {
-            "02/29/2024-19:27:53": {
-                "total_bytes2": 30,
-                "amsmonitor_duration": 4.004607439041138
+            "ExampleTask1": {
+                "while_loop": {
+                    "02/29/2024-19:27:53": {
+                        "total_bytes2": 30,
+                        "amsmonitor_duration": 4.004607439041138
+                    }
+                },
+                "__call__": {
+                    "02/29/2024-19:29:24": {
+                        "total_bytes2": 30,
+                        "amsmonitor_duration": 4.10461138
+                    }
+                }
             }
-            },
-            "__call__": {
-            "02/29/2024-19:29:24": {
-                "total_bytes2": 30,
-                "amsmonitor_duration": 4.10461138
-            }
-            }
-        }
         }
 
     Attributes:
-        record: attributes to record, if empty ([]) all attributes
-            will be recorded.
+        record: attributes to record, if None, all attributes
+            will be recorded, except objects (e.g., multiprocessing.Queue)
+            which can cause problem. if empty ([]), no attributes will
+            be recorded, only amsmonitor_duration will be recorded.
         accumulate: If True, AMSMonitor will accumulate recorded
             data instead of recording a new timestamp for
             any subsequent call of AMSMonitor on the same method.
-            We accumulate only record managed by AMSMonitor, like 
-            for amsmonitor_duration. We do not accumulate records
+            We accumulate only records managed by AMSMonitor, like
+            amsmonitor_duration. We do not accumulate records
             from the monitored class/function.
         obj: Mandatory if using `with` statement, `object` is
             the main object should be provided (i.e., self).
