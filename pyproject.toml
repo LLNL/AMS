@@ -77,13 +77,18 @@ exclude = [
 # E226: Missing white space around arithmetic operator
 
 [tool.ruff]
-ignore = ["E501", "W503", "E226", "BLK100", "E203"]
+lint.ignore = ["E501", "E226", "E203"]
 show-fixes = true
-
+exclude = [
+  ".git",
+  "__pycache__",
+  "*.egg-info",
+  "build"
+]
 # change the default line length number or characters.
 line-length = 120
+lint.select = ['E', 'F', 'W', 'A', 'PLC', 'PLE', 'PLW', 'I', 'N', 'Q']
 
 [tool.yapf]
 ignore = ["E501", "W503", "E226", "BLK100", "E203"]
 column_limit = 120
-

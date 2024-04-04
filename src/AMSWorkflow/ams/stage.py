@@ -5,26 +5,27 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import glob
+import json
+import os
 import shutil
+import signal
 import time
 from abc import ABC, abstractclassmethod, abstractmethod
 from enum import Enum
-from multiprocessing import Process, current_process
+from multiprocessing import Process
 from multiprocessing import Queue as mp_queue
 from pathlib import Path
 from queue import Queue as ser_queue
 from threading import Thread
-from typing import Callable, List, Tuple
-import struct
-import signal
+from typing import Callable
 
 import numpy as np
-
 from ams.config import AMSInstance
 from ams.faccessors import get_reader, get_writer
+from ams.monitor import AMSMonitor
+from ams.rmq import AMSMessage, AsyncConsumer
 from ams.store import AMSDataStore
 from ams.util import get_unique_fn
-from ams.rmq_async import RMQConsumer
 
 BATCH_SIZE = 32 * 1024 * 1024
 
@@ -112,13 +113,13 @@ class ForwardTask(Task):
         """
         initializes a ForwardTask class with the queues and the callback.
         """
-
         if not isinstance(callback, Callable):
             raise TypeError(f"{callback} argument is not Callable")
 
         self.i_queue = i_queue
         self.o_queue = o_queue
         self.callback = callback
+        self.datasize = 0
 
     def _action(self, data):
         """
@@ -136,6 +137,7 @@ class ForwardTask(Task):
             raise TypeError(f"{self.callback.__name__} did not return numpy arrays")
         return inputs, outputs
 
+    @AMSMonitor(record=["datasize"])
     def __call__(self):
         """
         A busy loop reading messages from the i_queue, acting on those messages and forwarding
@@ -152,6 +154,7 @@ class ForwardTask(Task):
             elif item.is_process():
                 inputs, outputs = self._action(item.data())
                 self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(inputs, outputs)))
+                self.datasize += inputs.nbytes + outputs.nbytes
             elif item.is_new_model():
                 # This is not handled yet
                 continue
@@ -174,7 +177,9 @@ class FSLoaderTask(Task):
         self.o_queue = o_queue
         self.pattern = pattern
         self.loader = loader
+        self.datasize = 0
 
+    @AMSMonitor(record=["datasize"])
     def __call__(self):
         """
         Busy loop of reading all files matching the pattern and creating
@@ -193,140 +198,11 @@ class FSLoaderTask(Task):
                 output_batches = np.array_split(output_data, num_batches)
                 for j, (i, o) in enumerate(zip(input_batches, output_batches)):
                     self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(i, o)))
+                self.datasize += input_data.nbytes + output_data.nbytes
         self.o_queue.put(QueueMessage(MessageType.Terminate, None))
 
         end = time.time()
         print(f"Spend {end - start} at {self.__class__.__name__}")
-
-
-class RMQMessage(object):
-    """
-    Represents a RabbitMQ incoming message from AMSLib.
-
-    Attributes:
-        body: The body of the message as received from RabbitMQ
-    """
-
-    def __init__(self, body: str):
-        self.body = body
-
-    def header_format(self) -> str:
-        """
-        This string represents the AMS format in Python pack format:
-        See https://docs.python.org/3/library/struct.html#format-characters
-        - 1 byte is the size of the header (here 12). Limit max: 255
-        - 1 byte is the precision (4 for float, 8 for double). Limit max: 255
-        - 2 bytes are the MPI rank (0 if AMS is not running with MPI). Limit max: 65535
-        - 4 bytes are the number of elements in the message. Limit max: 2^32 - 1
-        - 2 bytes are the input dimension. Limit max: 65535
-        - 2 bytes are the output dimension. Limit max: 65535
-        - 4 bytes are for aligning memory to 8
-
-            |__Header_size__|__Datatype__|__Rank__|__#elem__|__InDim__|__OutDim__|...real data...|
-
-        Then the data starts at 12 and is structered as pairs of input/outputs.
-        Let K be the total number of elements, then we have K pairs of inputs/outputs (either float or double):
-
-            |__Header_(12B)__|__Input 1__|__Output 1__|...|__Input_K__|__Output_K__|
-
-        """
-        return "BBHIHHI"
-
-    def endianness(self) -> str:
-        """
-        '=' means native endianness in standart size (system).
-        See https://docs.python.org/3/library/struct.html#format-characters
-        """
-        return "="
-
-    def encode(num_elem: int, input_dim: int, output_dim: int, dtype_byte: int = 4) -> bytes:
-        """
-        For debugging and testing purposes, this function encode a message identical to what AMS would send
-        """
-        header_format = self.endianness() + self.header_format()
-        hsize = struct.calcsize(header_format)
-        assert dtype_byte in [4, 8]
-        dt = "f" if dtype_byte == 4 else "d"
-        mpi_rank = 0
-        data = np.random.rand(num_elem * (input_dim + output_dim))
-        header_content = (hsize, dtype_byte, mpi_rank, data.size, input_dim, output_dim)
-        # float or double
-        msg_format = f"{header_format}{data.size}{dt}"
-        return struct.pack(msg_format, *header_content, *data)
-
-    def _parse_header(self, body: str) -> dict:
-        """
-        Parse the header to extract information about data.
-        """
-        fmt = self.endianness() + self.header_format()
-        if len(body) == 0:
-            print(f"Empty message. skipping")
-            return {}
-
-        hsize = struct.calcsize(fmt)
-        res = {}
-        # Parse header
-        (
-            res["hsize"],
-            res["datatype"],
-            res["mpirank"],
-            res["num_element"],
-            res["input_dim"],
-            res["output_dim"],
-            res["padding"],
-        ) = struct.unpack(fmt, body[:hsize])
-        assert hsize == res["hsize"]
-        assert res["datatype"] in [4, 8]
-        if len(body) < hsize:
-            print(f"Incomplete message of size {len(body)}. Header should be of size {hsize}. skipping")
-            return {}
-
-        # Theoritical size in Bytes for the incoming message (without the header)
-        # Int() is needed otherwise we might overflow here (because of uint16 / uint8)
-        res["dsize"] = int(res["datatype"]) * int(res["num_element"]) * (int(res["input_dim"]) + int(res["output_dim"]))
-        res["msg_size"] = hsize + res["dsize"]
-        res["multiple_msg"] = len(body) != res["msg_size"]
-        return res
-
-    def _parse_data(self, body: str, header_info: dict) -> np.array:
-        data = np.array([])
-        if len(body) == 0:
-            return data
-        hsize = header_info["hsize"]
-        dsize = header_info["dsize"]
-        try:
-            if header_info["datatype"] == 4:  # if datatype takes 4 bytes (float)
-                data = np.frombuffer(body[hsize : hsize + dsize], dtype=np.float32)
-            else:
-                data = np.frombuffer(body[hsize : hsize + dsize], dtype=np.float64)
-        except ValueError as e:
-            print(f"Error: {e} => {header_info}")
-            return np.array([])
-
-        idim = header_info["input_dim"]
-        odim = header_info["output_dim"]
-        data = data.reshape((-1, idim + odim))
-        # Return input, output
-        return data[:, :idim], data[:, idim:]
-
-    def _decode(self, body: str) -> Tuple[np.array]:
-        input = []
-        output = []
-        # Multiple AMS messages could be packed in one RMQ message
-        while body:
-            header_info = self._parse_header(body)
-            temp_input, temp_output = self._parse_data(body, header_info)
-            print(f"input shape {temp_input.shape} outpute shape {temp_output.shape}")
-            # total size of byte we read for that message
-            chunk_size = header_info["hsize"] + header_info["dsize"]
-            input.append(temp_input)
-            output.append(temp_output)
-            # We remove the current message and keep going
-            body = body[chunk_size:]
-        return np.concatenate(input), np.concatenate(output)
-
-    def decode(self) -> Tuple[np.array]:
-        return self._decode(self.body)
 
 
 class RMQLoaderTask(Task):
@@ -343,23 +219,45 @@ class RMQLoaderTask(Task):
         prefetch_count: Number of messages prefected by RMQ (impact performance)
     """
 
-    def __init__(self, o_queue, credentials, cacert, rmq_queue, prefetch_count=1):
+    def __init__(
+        self,
+        o_queue,
+        host,
+        port,
+        vhost,
+        user,
+        password,
+        cert,
+        rmq_queue,
+        policy,
+        prefetch_count=1,
+        signals=[signal.SIGTERM, signal.SIGINT, signal.SIGUSR1],
+    ):
         self.o_queue = o_queue
-        self.credentials = credentials
-        self.cacert = cacert
+        self.cert = cert
         self.rmq_queue = rmq_queue
         self.prefetch_count = prefetch_count
-
-        # Installing signal callbacks
-        p = current_process()
-        print(f"pid = {p.pid}")
-        signal.signal(signal.SIGTERM, self.signal_wrapper(self.__class__.__name__, p.pid))
-        signal.signal(signal.SIGINT, self.signal_wrapper(self.__class__.__name__, p.pid))
+        self.datasize = 0
         self.total_time = 0
+        self.signals = signals
+        self.orig_sig_handlers = {}
+        self.policy = policy
 
-        self.rmq_consumer = RMQConsumer(
-            credentials=self.credentials,
-            cacert=self.cacert,
+        # Signals can only be used within the main thread
+        if self.policy != "thread":
+            # We ignore SIGTERM, SIGUSR1, SIGINT by default so later
+            # we can override that handler only for RMQLoaderTask
+            for s in self.signals:
+                self.orig_sig_handlers[s] = signal.getsignal(s)
+                signal.signal(s, signal.SIG_IGN)
+
+        self.rmq_consumer = AsyncConsumer(
+            host=host,
+            port=port,
+            vhost=vhost,
+            user=user,
+            password=password,
+            cert=self.cert,
             queue=self.rmq_queue,
             on_message_cb=self.callback_message,
             on_close_cb=self.callback_close,
@@ -371,7 +269,6 @@ class RMQLoaderTask(Task):
         Callback that will be called when RabbitMQ will close
         the connection (or if a problem happened with the connection).
         """
-        print(f"Sending Terminate to QueueMessage")
         self.o_queue.put(QueueMessage(MessageType.Terminate, None))
 
     def callback_message(self, ch, basic_deliver, properties, body):
@@ -380,12 +277,14 @@ class RMQLoaderTask(Task):
         the connection (or if a problem happened with the connection).
         """
         start_time = time.time()
-        input_data, output_data = RMQMessage(body).decode()
+        input_data, output_data = AMSMessage(body).decode()
         row_size = input_data[0, :].nbytes + output_data[0, :].nbytes
         rows_per_batch = int(np.ceil(BATCH_SIZE / row_size))
         num_batches = int(np.ceil(input_data.shape[0] / rows_per_batch))
         input_batches = np.array_split(input_data, num_batches)
         output_batches = np.array_split(output_data, num_batches)
+
+        self.datasize += input_data.nbytes + output_data.nbytes
 
         for j, (i, o) in enumerate(zip(input_batches, output_batches)):
             self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(i, o)))
@@ -395,18 +294,24 @@ class RMQLoaderTask(Task):
     def signal_wrapper(self, name, pid):
         def handler(signum, frame):
             print(f"Received SIGNUM={signum} for {name}[pid={pid}]: stopping process")
-            self.rmq_consumer.stop()
-            self.o_queue.put(QueueMessage(MessageType.Terminate, None))
-            print(f"Spend {self.total_time} at {self.__class__.__name__}")
+            self.stop()
 
         return handler
 
+    def stop(self):
+        self.rmq_consumer.stop()
+        self.o_queue.put(QueueMessage(MessageType.Terminate, None))
+        print(f"Spend {self.total_time} at {self.__class__.__name__}")
+
+    @AMSMonitor(record=["datasize", "total_time"])
     def __call__(self):
         """
-        Busy loop of reading all files matching the pattern and creating
-        '100' batches which will be pushed on the queue. Upon reading all files
-        the Task pushes a 'Terminate' message to the queue and returns.
+        Busy loop of consuming messages from RMQ queue
         """
+        # Installing signal callbacks only for RMQLoaderTask
+        if self.policy != "thread":
+            for s in self.signals:
+                signal.signal(s, self.signal_wrapper(self.__class__.__name__, os.getpid()))
         self.rmq_consumer.run()
 
 
@@ -432,6 +337,7 @@ class FSWriteTask(Task):
         self.o_queue = o_queue
         self.suffix = writer_cls.get_file_format_suffix()
 
+    @AMSMonitor(record=["datasize"])
     def __call__(self):
         """
         A busy loop reading messages from the i_queue, writting the input,output data in a file
@@ -447,22 +353,23 @@ class FSWriteTask(Task):
             total_bytes_written = 0
             with self.data_writer_cls(fn) as fd:
                 bytes_written = 0
-                while True:
-                    # This is a blocking call
-                    item = self.i_queue.get(block=True)
-                    if item.is_terminate():
-                        is_terminate = True
-                    elif item.is_process():
-                        data = item.data()
-                        bytes_written += data.inputs.size * data.inputs.itemsize
-                        bytes_written += data.outputs.size * data.outputs.itemsize
-                        fd.store(data.inputs, data.outputs)
-                        total_bytes_written += data.inputs.size * data.inputs.itemsize
-                        total_bytes_written += data.outputs.size * data.outputs.itemsize
-                    # FIXME: We currently decide to chunk files to 2GB
-                    # of contents. Is this a good size?
-                    if is_terminate or bytes_written >= 2 * 1024 * 1024 * 1024:
-                        break
+                with AMSMonitor(obj=self, tag="internal_loop", accumulate=False):
+                    while True:
+                        # This is a blocking call
+                        item = self.i_queue.get(block=True)
+                        if item.is_terminate():
+                            is_terminate = True
+                        elif item.is_process():
+                            data = item.data()
+                            bytes_written += data.inputs.size * data.inputs.itemsize
+                            bytes_written += data.outputs.size * data.outputs.itemsize
+                            fd.store(data.inputs, data.outputs)
+                            total_bytes_written += data.inputs.size * data.inputs.itemsize
+                            total_bytes_written += data.outputs.size * data.outputs.itemsize
+                        # FIXME: We currently decide to chunk files to 2GB
+                        # of contents. Is this a good size?
+                        if is_terminate or bytes_written >= 2 * 1024 * 1024 * 1024:
+                            break
 
             self.o_queue.put(QueueMessage(MessageType.Process, fn))
             if is_terminate:
@@ -470,6 +377,7 @@ class FSWriteTask(Task):
                 break
 
         end = time.time()
+        self.datasize = total_bytes_written
         print(f"Spend {end - start} {total_bytes_written} at {self.__class__.__name__}")
 
 
@@ -496,9 +404,12 @@ class PushToStore(Task):
         self.i_queue = i_queue
         self.dir = Path(db_path).absolute()
         self._store = store
+        self.nb_requests = 0
+        self.total_filesize = 0
         if not self.dir.exists():
             self.dir.mkdir(parents=True, exist_ok=True)
 
+    @AMSMonitor(record=["nb_requests"])
     def __call__(self):
         """
         A busy loop reading messages from the i_queue publishing them to the kosh store.
@@ -509,18 +420,22 @@ class PushToStore(Task):
                 self.ams_config.db_path, self.ams_config.db_store, self.ams_config.name, False
             ).open()
 
-        while True:
-            item = self.i_queue.get(block=True)
-            if item.is_terminate():
-                break
-            elif item.is_process():
-                src_fn = Path(item.data())
-                dest_file = self.dir / src_fn.name
-                if src_fn != dest_file:
-                    shutil.move(src_fn, dest_file)
+        with AMSMonitor(obj=self, tag="internal_loop", record=[]):
+            while True:
+                item = self.i_queue.get(block=True)
+                if item.is_terminate():
+                    break
+                elif item.is_process():
+                    with AMSMonitor(obj=self, tag="request_block", record=["nb_requests", "total_filesize"]):
+                        self.nb_requests += 1
+                        src_fn = Path(item.data())
+                        dest_file = self.dir / src_fn.name
+                        if src_fn != dest_file:
+                            shutil.move(src_fn, dest_file)
+                        if self._store:
+                            db_store.add_candidates([str(dest_file)])
 
-                if self._store:
-                    db_store.add_candidates([str(dest_file)])
+                        self.total_filesize += os.stat(src_fn).st_size
 
         end = time.time()
         print(f"Spend {end - start} at {self.__class__.__name__}")
@@ -640,7 +555,7 @@ class Pipeline(ABC):
         num_queues = 1 + len(self.actions) - 1 + 2
         self._queues = [_qType() for i in range(num_queues)]
 
-        self._tasks = [self.get_load_task(self._queues[0])]
+        self._tasks = [self.get_load_task(self._queues[0], policy)]
         for i, a in enumerate(self.actions):
             self._tasks.append(ForwardTask(self._queues[i], self._queues[i + 1], a))
 
@@ -667,7 +582,7 @@ class Pipeline(ABC):
         self._execute_tasks(policy)
 
     @abstractmethod
-    def get_load_task(self, o_queue):
+    def get_load_task(self, o_queue, policy):
         """
         Callback to the child class to return the task that loads data from some unspecified entry-point.
         """
@@ -736,7 +651,7 @@ class FSPipeline(Pipeline):
         self._pattern = pattern
         self._src_type = src_type
 
-    def get_load_task(self, o_queue):
+    def get_load_task(self, o_queue, policy):
         """
         Return a Task that loads data from the filesystem
 
@@ -781,31 +696,50 @@ class RMQPipeline(Pipeline):
     A 'Pipeline' reading data from RabbitMQ and storing them back to the filesystem.
 
     Attributes:
-        credentials: The JSON credentials to connect to RMQ Server
-        cacert: The TLS certificate
+        host: RabbitMQ host
+        port: RabbitMQ port
+        vhost: RabbitMQ virtual host
+        user: RabbitMQ username
+        password: RabbitMQ password for username
+        cert: The TLS certificate
         rmq_queue: The RMQ queue to listen to.
     """
 
-    def __init__(self, db_dir, store, dest_dir, stage_dir, db_type, credentials, cacert, rmq_queue):
+    def __init__(self, db_dir, store, dest_dir, stage_dir, db_type, host, port, vhost, user, password, cert, rmq_queue):
         """
         Initialize a RMQPipeline that will write data to the 'dest_dir' and optionally publish
         these files to the kosh-store 'store' by using the stage_dir as an intermediate directory.
         """
         super().__init__(db_dir, store, dest_dir, stage_dir, db_type)
-        self._credentials = Path(credentials)
-        self._cacert = Path(cacert)
+        self._host = host
+        self._port = port
+        self._vhost = vhost
+        self._user = user
+        self._password = password
+        self._cert = Path(cert)
         self._rmq_queue = rmq_queue
 
-    def get_load_task(self, o_queue):
+    def get_load_task(self, o_queue, policy):
         """
         Return a Task that loads data from the filesystem
 
         Args:
             o_queue: The queue the load task will push read data.
 
-        Returns: An RMQLoaderTask instance reading data from the filesystem and forwarding the values to the o_queue.
+        Returns: An RMQLoaderTask instance reading data from the
+        filesystem and forwarding the values to the o_queue.
         """
-        return RMQLoaderTask(o_queue, self._credentials, self._cacert, self._rmq_queue)
+        return RMQLoaderTask(
+            o_queue,
+            self._host,
+            self._port,
+            self._vhost,
+            self._user,
+            self._password,
+            self._cert,
+            self._rmq_queue,
+            policy,
+        )
 
     @staticmethod
     def add_cli_args(parser):
@@ -823,17 +757,37 @@ class RMQPipeline(Pipeline):
         """
         Create RMQPipeline from the user provided CLI.
         """
-        print("Creating database from here", args.persistent_db_path)
+
+        # TODO: implement an interface so users can plug any parser for RMQ credentials
+        config = cls.parse_credentials(cls, args.creds)
+        host = config["service-host"]
+        port = config["service-port"]
+        vhost = config["rabbitmq-vhost"]
+        user = config["rabbitmq-user"]
+        password = config["rabbitmq-password"]
+
         return cls(
             args.persistent_db_path,
             args.store,
             args.dest_dir,
             args.stage_dir,
             args.db_type,
-            args.creds,
+            host,
+            port,
+            vhost,
+            user,
+            password,
             args.cert,
             args.queue,
         )
+
+    @staticmethod
+    def parse_credentials(self, json_file: str) -> dict:
+        """Internal method to parse the credentials file"""
+        data = {}
+        with open(json_file, "r") as f:
+            data = json.load(f)
+        return data
 
 
 def get_pipeline(src_mechanism="fs"):
@@ -845,8 +799,8 @@ def get_pipeline(src_mechanism="fs"):
 
     Returns: A Pipeline class to start the stage AMS service
     """
-    PipeMechanisms = {"fs": FSPipeline, "network": RMQPipeline}
-    if src_mechanism not in PipeMechanisms.keys():
+    pipe_mechanisms = {"fs": FSPipeline, "network": RMQPipeline}
+    if src_mechanism not in pipe_mechanisms.keys():
         raise RuntimeError(f"Pipeline {src_mechanism} storing mechanism does not exist")
 
-    return PipeMechanisms[src_mechanism]
+    return pipe_mechanisms[src_mechanism]
