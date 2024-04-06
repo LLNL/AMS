@@ -119,10 +119,12 @@ class AMSMonitor:
     def __repr__(self) -> str:
         return self.__str__()
 
-    def lock(self):
+    @staticmethod
+    def lock():
         AMSMonitor._lock.acquire()
 
-    def unlock(self):
+    @staticmethod
+    def unlock():
         AMSMonitor._lock.release()
 
     def __enter__(self):
@@ -153,12 +155,12 @@ class AMSMonitor:
     @classmethod
     @property
     def stats(cls):
-        return AMSMonitor._stats
+        return cls._stats
 
     @classmethod
     @property
     def format_ts(cls):
-        return AMSMonitor._ts_format
+        return cls._ts_format
 
     @classmethod
     def convert_ts(cls, ts: str) -> datetime.datetime:
@@ -174,6 +176,12 @@ class AMSMonitor:
             json.dump(cls._stats.copy(), fp, indent=4)
             # To avoid partial line at the end of the file
             fp.write("\n")
+
+    @classmethod
+    def reset(cls):
+        cls.lock()
+        cls._stats = cls._manager.dict()
+        cls.unlock()
 
     def start_monitor(self, *args, **kwargs):
         self.start_time = time.time()
@@ -229,7 +237,7 @@ class AMSMonitor:
         """
         This function update the hashmap containing all the records.
         """
-        self.lock()
+        AMSMonitor.lock()
         if class_name not in AMSMonitor._stats:
             AMSMonitor._stats[class_name] = {}
 
@@ -249,7 +257,7 @@ class AMSMonitor:
                 temp[func_name][ts][k] = v
         # This trick is needed because AMSMonitor._stats is a manager.dict (not shared memory)
         AMSMonitor._stats[class_name] = temp
-        self.unlock()
+        AMSMonitor.unlock()
 
     def _remove_reserved_keys(self, d: Union[dict, List]) -> dict:
         for key in self._reserved_keys:
