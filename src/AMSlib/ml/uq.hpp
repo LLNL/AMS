@@ -81,13 +81,11 @@ public:
       CALIPER(CALI_MARK_BEGIN("DELTAUQ SURROGATE");)
       DBG(UQ,
           "Model exists, I am calling DeltaUQ surrogate [%ld %ld] -> (mu:[%ld "
-          "%ld], std:[%ld %ld])",
+          "%ld])",
           totalElements,
           inputs.size(),
           totalElements,
-          outputs.size(),
-          totalElements,
-          inputs.size());
+          outputs.size());
       surrogate->evaluate(
           totalElements, inputs, outputs, uqPolicy, p_ml_acceptable, threshold);
       CALIPER(CALI_MARK_END("DELTAUQ SURROGATE");)
