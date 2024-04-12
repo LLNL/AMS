@@ -13,7 +13,7 @@
 #include "utils/allocator.hpp"
 #include "utils/utils_data.hpp"
 
-#define SIZE (32 * 1024 + 3)
+#define SIZE (3280)
 
 void initPredicate(bool* ptr, double* data, int size)
 {
@@ -51,6 +51,7 @@ int main(int argc, char* argv[])
   auto& rm = umpire::ResourceManager::getInstance();
   auto& ams_rm = ams::ResourceManager::getInstance();
   const size_t size = SIZE;
+  int dims = std::atoi(argv[1]);
 
   bool* h_predicate =
       ams_rm.allocate<bool>(SIZE,

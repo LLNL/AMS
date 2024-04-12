@@ -33,17 +33,17 @@ struct AMSAllocator {
   {
     auto& rm = umpire::ResourceManager::getInstance();
     allocator = rm.getAllocator(alloc_name);
-    DBG(AMSAllocator, "in AMSAllocator(%d, %s, %p)", id, alloc_name.c_str(), this)
+    DBG(AMSAllocator,
+        "in AMSAllocator(%d, %s, %p)",
+        id,
+        alloc_name.c_str(),
+        this)
   }
 
-  ~AMSAllocator() {
-    DBG(AMSAllocator, "in ~AMSAllocator(%d, %p)", id, this)
-  }
+  ~AMSAllocator() { DBG(AMSAllocator, "in ~AMSAllocator(%d, %p)", id, this) }
 
   void* allocate(size_t num_bytes);
   void deallocate(void* ptr);
-
-  void setAllocator(umpire::Allocator& alloc);
 
   std::string getName();
 
@@ -63,15 +63,22 @@ private:
   /** @brief  Used internally to map resource types (Device, host, pinned memory) to
    * umpire allocator ids. */
   std::vector<AMSAllocator*> RMAllocators;
-  ResourceManager() : RMAllocators({nullptr,nullptr,nullptr}) {};
+  ResourceManager() : RMAllocators({nullptr, nullptr, nullptr}){};
+
 public:
-  ~ResourceManager() = default;
+  ~ResourceManager()
+  {
+    for (auto allocator : RMAllocators) {
+      if (allocator) delete allocator;
+    }
+  };
   ResourceManager(const ResourceManager&) = delete;
   ResourceManager(ResourceManager&&) = delete;
   ResourceManager& operator=(const ResourceManager&) = delete;
   ResourceManager& operator=(ResourceManager&&) = delete;
 
-  static ResourceManager& getInstance() {
+  static ResourceManager& getInstance()
+  {
     static ResourceManager instance;
     return instance;
   }
@@ -125,10 +132,7 @@ public:
    *  @param[in] ptr pointer to memory to de-register.
    *  @return void.
    */
-  void deregisterExternal(void* ptr)
-  {
-    AMSAllocator::deregisterPtr(ptr);
-  }
+  void deregisterExternal(void* ptr) { AMSAllocator::deregisterPtr(ptr); }
 
   /** @brief copy values from src to destination regardless of their memory location.
    *  @tparam TypeInValue type of pointers
@@ -184,7 +188,8 @@ public:
         RMAllocators[resource]->getName().c_str());
   }
 
-  bool isActive(AMSResourceType resource){
+  bool isActive(AMSResourceType resource)
+  {
     return RMAllocators[resource] != nullptr;
   }
 
@@ -196,13 +201,14 @@ public:
    *  @return void.
    */
   void getAllocatorStats(AMSResourceType resource,
-                                size_t& wm,
-                                size_t& cs,
-                                size_t& as)
+                         size_t& wm,
+                         size_t& cs,
+                         size_t& as)
   {
     RMAllocators[resource]->getAllocatorStats(wm, cs, as);
     return;
   }
+
   //! ------------------------------------------------------------------------
 };
 

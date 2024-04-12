@@ -19,8 +19,58 @@
 
 static inline bool isNullOrEmpty(const char *p) { return (!p || p[0] == '\0'); }
 
+class BaseUQ
+{
+public:
+  static inline bool isDeltaUQ(AMSUQPolicy policy)
+  {
+    if (policy >= AMSUQPolicy::DeltaUQ_Mean &&
+        policy <= AMSUQPolicy::DeltaUQ_Max) {
+      return true;
+    }
+    return false;
+  }
+
+  static inline bool isFaissUQ(AMSUQPolicy policy)
+  {
+    if (policy >= AMSUQPolicy::FAISS_Mean && policy <= AMSUQPolicy::FAISS_Max) {
+      return true;
+    }
+    return false;
+  }
+
+  static inline bool isRandomUQ(AMSUQPolicy policy)
+  {
+    return policy == AMSUQPolicy::Random;
+  }
+
+
+  static inline bool isUQPolicy(AMSUQPolicy policy)
+  {
+    if (AMSUQPolicy::AMSUQPolicy_BEGIN < policy &&
+        policy < AMSUQPolicy::AMSUQPolicy_END)
+      return true;
+    return false;
+  }
+
+  static std::string UQPolicyToStr(AMSUQPolicy policy)
+  {
+    if (policy == AMSUQPolicy::Random)
+      return "random";
+    else if (policy == AMSUQPolicy::FAISS_Max)
+      return "faiss (max)";
+    else if (policy == AMSUQPolicy::FAISS_Mean)
+      return "faiss (mean)";
+    else if (policy == AMSUQPolicy::DeltaUQ_Mean)
+      return "deltaUQ (mean)";
+    else if (policy == AMSUQPolicy::DeltaUQ_Max)
+      return "deltaUQ (max)";
+    return "Unknown";
+  }
+};
+
 template <typename FPTypeValue>
-class UQ
+class UQ : public BaseUQ
 {
 public:
   UQ(AMSResourceType resourceLocation,
@@ -38,22 +88,17 @@ public:
       return;
     }
 
-    if (!(AMSUQPolicy::AMSUQPolicy_BEGIN <= uqPolicy &&
-          uqPolicy <= AMSUQPolicy::AMSUQPolicy_END))
+    if (!isUQPolicy(uqPolicy))
       THROW(std::runtime_error, "Invalid UQ policy, value is out-of-bounds");
 
 
-    bool is_DeltaUQ = ((uqPolicy == AMSUQPolicy::DeltaUQ_Max ||
-                        uqPolicy == AMSUQPolicy::DeltaUQ_Mean)
-                           ? true
-                           : false);
+    bool is_DeltaUQ = isDeltaUQ(uqPolicy);
 
     surrogate = SurrogateModel<FPTypeValue>::getInstance(surrogatePath,
                                                          resourceLocation,
                                                          is_DeltaUQ);
 
-    if (uqPolicy == AMSUQPolicy::FAISS_Max ||
-        uqPolicy == AMSUQPolicy::FAISS_Mean) {
+    if (isFaissUQ(uqPolicy)) {
       if (isNullOrEmpty(uqPath))
         THROW(std::runtime_error, "Missing file path to a FAISS UQ model");
 
@@ -61,7 +106,7 @@ public:
           uqPath, resourceLocation, uqPolicy, nClusters, threshold);
     }
 
-    if (uqPolicy == AMSUQPolicy::RandomUQ)
+    if (isRandomUQ(uqPolicy))
       randomUQ = std::make_unique<RandomUQ>(resourceLocation, threshold);
 
     DBG(UQ, "UQ Model is of type %d", uqPolicy)
@@ -99,7 +144,7 @@ public:
       DBG(Workflow, "Model exists, I am calling surrogate (for all data)");
       surrogate->evaluate(totalElements, inputs, outputs);
       CALIPER(CALI_MARK_END("SURROGATE");)
-    } else if (uqPolicy == AMSUQPolicy::RandomUQ) {
+    } else if (uqPolicy == AMSUQPolicy::Random) {
       CALIPER(CALI_MARK_BEGIN("RANDOM_UQ");)
       DBG(Workflow, "Evaluating Random UQ");
       randomUQ->evaluate(totalElements, p_ml_acceptable);
@@ -117,13 +162,13 @@ public:
   void updateModel(const std::string &model_path,
                    const std::string &uq_path = "")
   {
-    if (uqPolicy != AMSUQPolicy::RandomUQ &&
+    if (uqPolicy != AMSUQPolicy::Random &&
         uqPolicy != AMSUQPolicy::DeltaUQ_Max &&
         uqPolicy != AMSUQPolicy::DeltaUQ_Mean) {
       THROW(std::runtime_error, "UQ model does not support update.");
     }
 
-    if (uqPolicy == AMSUQPolicy::RandomUQ && uq_path != "") {
+    if (uqPolicy == AMSUQPolicy::Random && uq_path != "") {
       WARNING(Workflow,
               "RandomUQ cannot update hdcache path, ignoring argument")
     }
@@ -133,6 +178,7 @@ public:
   }
 
   bool hasSurrogate() { return (surrogate ? true : false); }
+
 
 private:
   AMSUQPolicy uqPolicy;
