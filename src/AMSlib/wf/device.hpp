@@ -209,6 +209,51 @@ inline void DtoHMemcpy(void *dest, void *src, size_t nBytes)
 {
   cudaMemcpy(dest, src, nBytes, cudaMemcpyDeviceToHost);
 }
+
+template <typename scalar_t>
+__global__ void computeDeltaUQMeanPredicatesKernel(
+    const scalar_t *__restrict__ outputs_stdev,
+    bool *__restrict__ predicates,
+    const size_t nrows,
+    const size_t ncols,
+    const double threshold)
+{
+
+  size_t idx = blockDim.x * blockIdx.x + threadIdx.x;
+  size_t stride = blockDim.x * gridDim.x;
+  // Compute mean over columns, strided loop.
+  for (size_t i = idx; i < nrows; i += stride) {
+    double mean = 0.0;
+    for (size_t j = 0; j < ncols; ++j)
+      mean += outputs_stdev[j + i * ncols];
+    mean /= ncols;
+
+    predicates[i] = (mean < threshold);
+  }
+}
+
+template <typename scalar_t>
+__global__ void computeDeltaUQMaxPredicatesKernel(
+    const scalar_t *__restrict__ outputs_stdev,
+    bool *__restrict__ predicates,
+    const size_t nrows,
+    const size_t ncols,
+    const double threshold)
+{
+
+  size_t idx = blockDim.x * blockIdx.x + threadIdx.x;
+  size_t stride = blockDim.x * gridDim.x;
+  // Compute max delta uq over columns, strided loop.
+  for (size_t i = idx; i < nrows; i += stride) {
+    predicates[i] = true;
+    for (size_t j = 0; j < ncols; ++j)
+      if (outputs_stdev[j + i * ncols] >= threshold) {
+        predicates[i] = false;
+        break;
+      }
+  }
+}
+
 #else
 PERFFASPECT()
 inline void DtoDMemcpy(void *dest, void *src, size_t nBytes)
