@@ -8,6 +8,7 @@
 #ifndef __AMS_RANDOM_UQ_HPP__
 #define __AMS_RANDOM_UQ_HPP__
 
+
 #include "AMS.h"
 #include "wf/debug.h"
 #include "wf/utils.hpp"

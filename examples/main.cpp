@@ -199,7 +199,7 @@ int run(const char *device_name,
   else if (strcmp(uq_policy_opt, "deltauq-mean") == 0)
     uq_policy = AMSUQPolicy::DeltaUQ_Mean;
   else if (strcmp(uq_policy_opt, "random") == 0)
-    uq_policy = AMSUQPolicy::RandomUQ;
+    uq_policy = AMSUQPolicy::Random;
   else
     throw std::runtime_error("Invalid UQ policy");
 
