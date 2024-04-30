@@ -13,13 +13,16 @@
 #include <wf/data_handler.hpp>
 #include <wf/resource_manager.hpp>
 
-#define SIZE (32 * 1024 + 1)
+#define SIZE (3281)
 
-void initPredicate(bool* ptr, double* data, int size)
+void initPredicate(bool* ptr, std::vector<const double*>& data, int size)
 {
-  for (int i = 0; i < size; i++) {
-    ptr[i] = i % 2 == 0;
-    data[i] = i;
+  for (auto d_ptr : data){
+    double* d = const_cast<double*> (d_ptr);
+    for (int i = 0; i < size; i++) {
+      ptr[i] = i % 2 == 0;
+      d[i] = i;
+    }
   }
 }
 
@@ -51,19 +54,31 @@ int main(int argc, char* argv[])
   using data_handler = DataHandler<double>;
   const size_t size = SIZE;
   int device = std::atoi(argv[1]);
+  int dims = std::atoi(argv[2]);
   auto& rm = ams::ResourceManager::getInstance();
   rm.init();
-  if (device == 0) {
-    AMSResourceType resource = AMSResourceType::HOST;
-    bool* predicate = rm.allocate<bool>(SIZE, resource);
+  std::vector<const double*> s_data;
+  std::vector<double*> sr_data;
+  std::vector<double*> d_data;
+  REPORT_MEM_USAGE(Start, "Start")
+
+  AMSResourceType resource = AMSResourceType::HOST;
+  if (device == 1)
+    resource = AMSResourceType::DEVICE;
+
+  for (int i = 0; i < dims; i++){
     double* dense = rm.allocate<double>(SIZE, resource);
     double* sparse = rm.allocate<double>(SIZE, resource);
     double* rsparse = rm.allocate<double>(SIZE, resource);
+    s_data.push_back(const_cast<const double*>(sparse));
+    sr_data.push_back(rsparse);
+    d_data.push_back(dense);
+  }
 
-    initPredicate(predicate, sparse, SIZE);
-    std::vector<const double*> s_data({const_cast<const double*>(sparse)});
-    std::vector<double*> sr_data({rsparse});
-    std::vector<double*> d_data({dense});
+  bool* predicate = rm.allocate<bool>(SIZE, resource);
+
+  if (device == 0) {
+    initPredicate(predicate, s_data, SIZE);
     int elements;
 
     for (int flag = 0; flag < 2; flag++) {
@@ -76,25 +91,24 @@ int main(int argc, char* argv[])
         return 1;
       }
 
-      if (verify(dense, elements, flag)) {
-        std::cout << "Dense elements do not have the correct values\n";
-        return 1;
+      for ( auto d : d_data ){
+        if (verify(d, elements, flag)) {
+          std::cout << "Dense elements do not have the correct values\n";
+          return 1;
+        }
       }
 
       data_handler::unpack(resource, predicate, size, d_data, sr_data, flag);
 
-      if (verify(predicate, sparse, rsparse, size, flag)) {
-        std::cout << "Unpacking packed data does not match initial values\n";
-        return 1;
+      for ( int i = 0 ; i < dims; i++){
+        if (verify(predicate, const_cast<double*>(s_data[i]), sr_data[i], size, flag)) {
+          std::cout << "Unpacking packed data does not match initial values\n";
+          return 1;
+        }
       }
     }
 
-    rm.deallocate(predicate, AMSResourceType::HOST);
-    rm.deallocate(dense, AMSResourceType::HOST);
-    rm.deallocate(sparse, AMSResourceType::HOST);
-    rm.deallocate(rsparse, AMSResourceType::HOST);
   } else if (device == 1) {
-    AMSResourceType resource = AMSResourceType::DEVICE;
     bool* h_predicate =
         rm.allocate<bool>(SIZE, AMSResourceType::HOST);
     double* h_dense =
@@ -103,21 +117,19 @@ int main(int argc, char* argv[])
         rm.allocate<double>(SIZE, AMSResourceType::HOST);
     double* h_rsparse =
         rm.allocate<double>(SIZE, AMSResourceType::HOST);
-
-    initPredicate(h_predicate, h_sparse, SIZE);
+    
+    std::vector<const double*> tmp({const_cast<const double*>(h_sparse)});
+    initPredicate(h_predicate, tmp, SIZE);
 
     bool* predicate = rm.allocate<bool>(SIZE, resource);
     double* dense = rm.allocate<double>(SIZE, resource);
     double* sparse = rm.allocate<double>(SIZE, resource);
     double* rsparse = rm.allocate<double>(SIZE, resource);
-    int* reindex = rm.allocate<int>(SIZE, resource);
 
     rm.copy(h_predicate, predicate);
-    rm.copy(h_sparse, sparse);
-
-    std::vector<const double*> s_data({const_cast<const double*>(sparse)});
-    std::vector<double*> sr_data({rsparse});
-    std::vector<double*> d_data({dense});
+    for ( auto s: s_data ){
+      rm.copy(h_sparse, const_cast<double*>(s));
+    }
 
     for (int flag = 0; flag < 2; flag++) {
       int elements;
@@ -129,38 +141,45 @@ int main(int argc, char* argv[])
                   << ")\n";
         return 1;
       }
-
-      rm.copy(dense, h_dense);
-
-      if (verify(h_dense, elements, flag)) {
-        std::cout << "Dense elements do not have the correct values\n";
-        return 1;
+  
+      for ( auto d : d_data ){
+        rm.copy(d, h_dense);
+        if (verify(h_dense, elements, flag)) {
+          std::cout << "Dense elements do not have the correct values\n";
+          return 1;
+        }
       }
 
       data_handler::unpack(resource, predicate, size, d_data, sr_data, flag);
 
-      rm.copy(rsparse, h_rsparse);
-
-      if (verify(h_predicate, h_sparse, h_rsparse, size, flag)) {
-        //      for ( int k = 0; k < SIZE; k++){
-        //        std::cout << k << " " << h_sparse[k] << " " << h_rsparse[k] <<
-        //        "\n";
-        //      }
-        std::cout << "Unpacking packed data does not match initial values\n";
-        return 1;
+      for ( int i = 0; i < dims; i++){
+        rm.copy(sr_data[i], h_rsparse);
+        rm.copy(const_cast<double*>(s_data[i]), h_sparse);
+        if (verify(h_predicate, h_sparse, h_rsparse, size, flag)) {
+           std::cout << "Unpacking packed data does not match initial values\n";
+          return 1;
+        }
       }
     }
 
-    rm.deallocate(predicate, AMSResourceType::DEVICE);
     rm.deallocate(h_predicate, AMSResourceType::HOST);
-    rm.deallocate(dense, AMSResourceType::DEVICE);
     rm.deallocate(h_dense, AMSResourceType::HOST);
-    rm.deallocate(sparse, AMSResourceType::DEVICE);
     rm.deallocate(h_sparse, AMSResourceType::HOST);
-    rm.deallocate(rsparse, AMSResourceType::DEVICE);
     rm.deallocate(h_rsparse, AMSResourceType::HOST);
-    rm.deallocate(reindex, AMSResourceType::DEVICE);
   }
+
+  rm.deallocate(predicate, resource);
+  for (int i = 0; i < dims; i++){
+    rm.deallocate(const_cast<double*>(s_data[i]), resource);
+    rm.deallocate(sr_data[i], resource);
+    rm.deallocate(d_data[i], resource);
+  }
+  s_data.clear();
+  sr_data.clear();
+  d_data.clear();
+  cudaDeviceReset();
+  REPORT_MEM_USAGE(Finish, "Start")
+
 
   return 0;
 }
