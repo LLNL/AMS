@@ -9,16 +9,24 @@
 #define __AMS_ALLOCATOR__
 
 #include <cstddef>
+#include <stdexcept>
 #include <umpire/Allocator.hpp>
 #include <umpire/ResourceManager.hpp>
 #include <umpire/Umpire.hpp>
 
 #include "AMS.h"
+#include "debug.h"
 #include "wf/debug.h"
 
 
 namespace ams
 {
+
+struct DataPtr {
+  size_t size;
+  AMSResourceType resource;
+  DataPtr(size_t s, AMSResourceType res) : size(s), resource(res) {}
+};
 /**
  * @brief A "utility" class that provides
  * a unified interface to the umpire library for memory allocations
@@ -33,12 +41,14 @@ struct AMSAllocator {
   {
     auto& rm = umpire::ResourceManager::getInstance();
     allocator = rm.getAllocator(alloc_name);
-    DBG(AMSAllocator, "in AMSAllocator(%d, %s, %p)", id, alloc_name.c_str(), this)
+    DBG(AMSAllocator,
+        "in AMSAllocator(%d, %s, %p)",
+        id,
+        alloc_name.c_str(),
+        this)
   }
 
-  ~AMSAllocator() {
-    DBG(AMSAllocator, "in ~AMSAllocator(%d, %p)", id, this)
-  }
+  ~AMSAllocator() { DBG(AMSAllocator, "in ~AMSAllocator(%d, %p)", id, this) }
 
   void* allocate(size_t num_bytes);
   void deallocate(void* ptr);
@@ -57,13 +67,16 @@ struct AMSAllocator {
   void getAllocatorStats(size_t& wm, size_t& cs, size_t& as);
 };
 
+
 class ResourceManager
 {
 private:
   /** @brief  Used internally to map resource types (Device, host, pinned memory) to
    * umpire allocator ids. */
   std::vector<AMSAllocator*> RMAllocators;
-  ResourceManager() : RMAllocators({nullptr,nullptr,nullptr}) {};
+  ResourceManager() : RMAllocators({nullptr, nullptr, nullptr}){};
+  std::unordered_map<void*, DataPtr> activePointers;
+
 public:
   ~ResourceManager() = default;
   ResourceManager(const ResourceManager&) = delete;
@@ -71,16 +84,14 @@ public:
   ResourceManager& operator=(const ResourceManager&) = delete;
   ResourceManager& operator=(ResourceManager&&) = delete;
 
-  static ResourceManager& getInstance() {
+  static ResourceManager& getInstance()
+  {
     static ResourceManager instance;
     return instance;
   }
 
   /** @brief return the name of an allocator */
-  std::string getAllocatorName(AMSResourceType resource)
-  {
-    return RMAllocators[resource]->getName();
-  }
+  std::string getAllocatorName(AMSResourceType resource) { return "System"; }
 
   /** @brief Allocates nvalues on the specified device.
    *  @tparam TypeInValue The type of pointer to allocate.
@@ -92,8 +103,9 @@ public:
   PERFFASPECT()
   TypeInValue* allocate(size_t nvalues, AMSResourceType dev)
   {
-    return static_cast<TypeInValue*>(
-        RMAllocators[dev]->allocate(nvalues * sizeof(TypeInValue)));
+    void* ptr = malloc(nvalues * sizeof(TypeInValue));
+    activePointers.emplace(ptr, DataPtr(nvalues * sizeof(TypeInValue), dev));
+    return static_cast<TypeInValue*>(ptr);
   }
 
   /** @brief deallocates pointer from the specified device.
@@ -106,7 +118,9 @@ public:
   PERFFASPECT()
   void deallocate(TypeInValue* data, AMSResourceType dev)
   {
-    RMAllocators[dev]->deallocate(data);
+    activePointers.erase(static_cast<void*>(data));
+    free(data);
+    //RMAllocators[dev]->deallocate(data);
   }
 
   /** @brief registers an external pointer in the umpire allocation records.
@@ -118,7 +132,8 @@ public:
   PERFFASPECT()
   void registerExternal(void* ptr, size_t nBytes, AMSResourceType dev)
   {
-    RMAllocators[dev]->registerPtr(ptr, nBytes);
+    activePointers.emplace(ptr, DataPtr(nBytes, dev));
+    //RMAllocators[dev]->registerPtr(ptr, nBytes);
   }
 
   /** @brief removes a registered external pointer from the umpire allocation records.
@@ -127,7 +142,8 @@ public:
    */
   void deregisterExternal(void* ptr)
   {
-    AMSAllocator::deregisterPtr(ptr);
+    activePointers.erase((ptr));
+    //AMSAllocator::deregisterPtr(ptr);
   }
 
   /** @brief copy values from src to destination regardless of their memory location.
@@ -141,8 +157,32 @@ public:
   PERFFASPECT()
   void copy(TypeInValue* src, TypeInValue* dest, size_t size = 0)
   {
-    static auto& rm = umpire::ResourceManager::getInstance();
-    rm.copy(dest, src, size);
+    auto src_it = activePointers.find(src);
+    if (src_it == activePointers.end()) {
+      THROW(std::runtime_error,
+            "Pointer is not register in activePoints (src)");
+    }
+
+    size_t src_size = src_it->second.size;
+
+    auto dest_it = activePointers.find(dest);
+    if (dest_it == activePointers.end()) {
+      THROW(std::runtime_error,
+            "Pointer not registered in activePointers (dest)");
+    }
+
+    size_t dest_size = dest_it->second.size;
+
+    if (size == 0 && dest_size != src_size) {
+      THROW(std::runtime_error,
+            "Pointers have different sizes, I cannot copy them");
+    }
+
+    if (size == 0) {
+      std::memcpy(dest, src, src_size);
+    } else {
+      std::memcpy(dest, src, size);
+    }
   }
 
   /** @brief Utility function that deallocates all C-Vectors inside the vector.
@@ -153,40 +193,22 @@ public:
   template <typename T>
   void deallocate(std::vector<T*>& dPtr, AMSResourceType resource)
   {
-    for (auto* I : dPtr)
-      RMAllocators[resource]->deallocate(I);
-  }
-
-  void init()
-  {
-    DBG(ResourceManager, "Default initialization of allocators");
-    if (!RMAllocators[AMSResourceType::HOST])
-      setAllocator("HOST", AMSResourceType::HOST);
-#ifdef __ENABLE_CUDA__
-    if (!RMAllocators[AMSResourceType::DEVICE])
-      setAllocator("DEVICE", AMSResourceType::DEVICE);
-
-    if (!RMAllocators[AMSResourceType::PINNED])
-      setAllocator("PINNED", AMSResourceType::PINNED);
-#endif
-  }
-
-  void setAllocator(std::string alloc_name, AMSResourceType resource)
-  {
-    if (RMAllocators[resource]) {
-      delete RMAllocators[resource];
+    for (auto* I : dPtr) {
+      auto dest_it = activePointers.find(I);
+      if (dest_it == activePointers.end()) {
+        THROW(std::runtime_error, "Cannot find allocation in activePoints");
+      }
+      activePointers.erase(I);
+      free(I);
     }
-
-    RMAllocators[resource] = new AMSAllocator(alloc_name);
-    DBG(ResourceManager,
-        "Set Allocator [%d] to pool with name : %s",
-        resource,
-        RMAllocators[resource]->getName().c_str());
+    //RMAllocators[resource]->deallocate(I);
   }
 
-  bool isActive(AMSResourceType resource){
-    return RMAllocators[resource] != nullptr;
-  }
+  void init() {}
+
+  void setAllocator(std::string alloc_name, AMSResourceType resource) {}
+
+  bool isActive(AMSResourceType resource) { return true; }
 
   /** @brief Returns the memory consumption of the given resource as measured from Umpire.
    *  @param[in] resource The memory pool to get the consumption from.
@@ -196,11 +218,16 @@ public:
    *  @return void.
    */
   void getAllocatorStats(AMSResourceType resource,
-                                size_t& wm,
-                                size_t& cs,
-                                size_t& as)
+                         size_t& wm,
+                         size_t& cs,
+                         size_t& as)
   {
-    RMAllocators[resource]->getAllocatorStats(wm, cs, as);
+    as = 0;
+    cs = 0;
+    wm = 0;
+    for (auto KV : activePointers) {
+      if (KV.second.resource == resource) as += KV.second.size;
+    }
     return;
   }
   //! ------------------------------------------------------------------------
