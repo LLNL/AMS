@@ -67,6 +67,20 @@ public:
       return "deltaUQ (max)";
     return "Unknown";
   }
+
+  static AMSUQPolicy getUQType(std::string type)
+  {
+    if (type.compare("deltaUQ") == 0) {
+      return AMSUQPolicy::DeltaUQ_Mean;
+    } else if (type.compare("faiss") == 0) {
+      return AMSUQPolicy::FAISS_Mean;
+    } else if (type.compare("random") == 0) {
+      return AMSUQPolicy::Random;
+    } else {
+      THROW(std::runtime_error, "Unknown uq type " + type);
+    }
+    return AMSUQPolicy::AMSUQPolicy_END;
+  }
 };
 
 template <typename FPTypeValue>

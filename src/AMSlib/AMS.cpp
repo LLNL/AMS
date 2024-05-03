@@ -38,9 +38,7 @@ private:
   void dumpEnv()
   {
     for (auto &KV : ams_candidate_models) {
-      DBG(AMS,
-          "=================================================================")
-      DBG(AMS, "Model: %s", KV.first.c_str());
+      DBG(AMS, "\t\t\t Model: %s", KV.first.c_str());
       if (KV.second.SPath)
         DBG(AMS, "Surrogate Model Path: %s", KV.second.SPath);
       if (KV.second.UQPath) DBG(AMS, "UQ-Model: %s", KV.second.UQPath);
@@ -51,23 +49,6 @@ private:
           KV.second.uqPolicy,
           KV.second.nClusters);
     }
-    DBG(AMS,
-        "=================================================================")
-  }
-
-
-  static AMSDBType getDBType(std::string type)
-  {
-    if (type.compare("hdf5") == 0) {
-      return AMSDBType::HDF5;
-    } else if (type.compare("csv") == 0) {
-      return AMSDBType::CSV;
-    } else if (type.compare("redis") == 0) {
-      return AMSDBType::REDIS;
-    } else if (type.compare("rmq") == 0) {
-      return AMSDBType::RMQ;
-    }
-    return AMSDBType::None;
   }
 
   static UQAggrType getUQAggregate(std::string policy)
@@ -77,20 +58,6 @@ private:
     else if (policy.compare("max"))
       return UQAggrType::Max;
     return UQAggrType::Unknown;
-  }
-
-  static AMSUQPolicy getUQType(std::string type)
-  {
-    if (type.compare("deltaUQ") == 0) {
-      return AMSUQPolicy::DeltaUQ_Mean;
-    } else if (type.compare("faiss") == 0) {
-      return AMSUQPolicy::FAISS_Mean;
-    } else if (type.compare("random") == 0) {
-      return AMSUQPolicy::Random;
-    } else {
-      THROW(std::runtime_error, "Unknown uq type " + type);
-    }
-    return AMSUQPolicy::AMSUQPolicy_END;
   }
 
   static char *getStringValue(std::string str)
@@ -138,7 +105,7 @@ private:
   {
     AMSUQPolicy policy = AMSUQPolicy::AMSUQPolicy_END;
     if (value.contains("uq_type")) {
-      policy = getUQType(value["uq_type"].get<std::string>());
+      policy = BaseUQ::getUQType(value["uq_type"].get<std::string>());
     } else {
       THROW(std::runtime_error, "Model must specify the UQ type");
     }
@@ -250,6 +217,29 @@ private:
     DBG(AMS, "Parsing Data Base Fields")
     if (jRoot.contains("db")) {
       auto entry = jRoot["db"];
+      if (!entry.contains("dbType"))
+        THROW(std::runtime_error,
+              "JSON file instantiates db-fields without defining a \"dbType\" "
+              "entry");
+      auto dbStrType = entry["dbType"].get<std::string>();
+      DBG(AMS, "DB Type is: %s", dbStrType.c_str())
+      AMSDBType dbType = ams::db::getDBType(dbStrType);
+      if (dbType == None) return;
+
+      if (dbType == AMSDBType::CSV || dbType == AMSDBType::HDF5) {
+        if (!entry.contains("fs_path"))
+          THROW(std::runtime_error,
+                "JSON db-fiels does not provide file system path");
+
+        std::string db_path = entry["fs_path"].get<std::string>();
+        auto &DB = ams::db::DBManager::getInstance();
+        DB.instantiate_fs_db(dbType, db_path);
+        DBG(AMS,
+            "Configured AMS File system database to point to %s using file "
+            "type %s",
+            db_path.c_str(),
+            dbStrType.c_str());
+      }
     }
   }
 
@@ -313,6 +303,7 @@ public:
       parseDomainModels(data, domain_mapping);
       mergeCandidatesWithDomain(models, domain_mapping);
     }
+
     dumpEnv();
   }
 
@@ -396,7 +387,6 @@ AMSExecutor AMSCreateExecutor(const AMSConfig config)
                                      config.UQPath,
                                      config.SPath,
                                      config.DBPath,
-                                     config.dbType,
                                      config.device,
                                      config.threshold,
                                      config.uqPolicy,
@@ -413,7 +403,6 @@ AMSExecutor AMSCreateExecutor(const AMSConfig config)
                                     config.UQPath,
                                     config.SPath,
                                     config.DBPath,
-                                    config.dbType,
                                     config.device,
                                     static_cast<float>(config.threshold),
                                     config.uqPolicy,

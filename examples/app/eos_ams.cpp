@@ -5,9 +5,9 @@
  * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
  */
 
-#include "eos_ams.hpp"
-
 #include <vector>
+
+#include "eos_ams.hpp"
 
 template <typename FPType>
 void callBack(void *cls,
@@ -44,7 +44,6 @@ AMSEOS<FPType>::AMSEOS(EOS<FPType> *model,
   AMSConfig conf = {exec_policy,
                     dtype,
                     res_type,
-                    db_type,
                     callBack<FPType>,
                     (char *)surrogate_path,
                     (char *)uq_path,

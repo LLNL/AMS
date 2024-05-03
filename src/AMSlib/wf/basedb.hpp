@@ -24,7 +24,6 @@
 #include "debug.h"
 #include "resource_manager.hpp"
 #include "wf/debug.h"
-#include "wf/device.hpp"
 #include "wf/resource_manager.hpp"
 #include "wf/utils.hpp"
 
@@ -70,11 +69,16 @@ namespace fs = std::experimental::filesystem;
 
 #endif  // __ENABLE_RMQ__
 
+namespace ams
+{
+namespace db
+{
+
+
 /**
  * @brief A simple pure virtual interface to store data in some
  * persistent storage device
  */
-template <typename TypeValue>
 class BaseDB
 {
   /** @brief unique id of the process running this simulation */
@@ -107,9 +111,15 @@ public:
    * @param[in] outputs Vector of 1-D vectors, each 1-D vectors contains
    * 'num_elements'  values to be stored
    */
+
   virtual void store(size_t num_elements,
-                     std::vector<TypeValue*>& inputs,
-                     std::vector<TypeValue*>& outputs) = 0;
+                     std::vector<double*>& inputs,
+                     std::vector<double*>& outputs) = 0;
+
+
+  virtual void store(size_t num_elements,
+                     std::vector<float*>& inputs,
+                     std::vector<float*>& outputs) = 0;
 
   uint64_t getId() const { return id; }
 
@@ -120,8 +130,7 @@ public:
  * @brief A pure virtual interface for data bases storing data using
  * some file format (filesystem DB).
  */
-template <typename TypeValue>
-class FileDB : public BaseDB<TypeValue>
+class FileDB : public BaseDB
 {
 protected:
   /** @brief Path to file to write data to */
@@ -150,8 +159,11 @@ public:
    * @param[in] rId a unique Id for each process taking part in a distributed
    * execution (rank-id)
    * */
-  FileDB(std::string path, const std::string suffix, uint64_t rId)
-      : BaseDB<TypeValue>(rId)
+  FileDB(std::string path,
+         std::string fn,
+         const std::string suffix,
+         uint64_t rId)
+      : BaseDB(rId)
   {
     fs::path Path(path);
     std::error_code ec;
@@ -172,80 +184,31 @@ public:
     fp = Path.string();
 
     // We can now create the filename
-    std::string dbfn("data_");
+    std::string dbfn(fn + "_");
     dbfn += std::to_string(rId) + suffix;
     Path /= fs::path(dbfn);
-    fn = Path.string();
-    DBG(DB, "File System DB writes to file %s", fn.c_str())
+    this->fn = fs::absolute(Path).string();
+    DBG(DB, "File System DB writes to file %s", this->fn.c_str())
   }
 };
 
 
-template <typename TypeValue>
-class csvDB final : public FileDB<TypeValue>
+class csvDB final : public FileDB
 {
 private:
   /** @brief file descriptor */
   bool writeHeader;
   std::fstream fd;
 
-public:
-  csvDB(const csvDB&) = delete;
-  csvDB& operator=(const csvDB&) = delete;
-
-  /**
-   * @brief constructs the class and opens the file to write to
-   * @param[in] fn Name of the file to store data to
-   * @param[in] rId a unique Id for each process taking part in a distributed
-   * execution (rank-id)
-   */
-  csvDB(std::string path, uint64_t rId) : FileDB<TypeValue>(path, ".csv", rId)
-  {
-    writeHeader = !fs::exists(this->fn);
-    fd.open(this->fn, std::ios_base::app | std::ios_base::out);
-    if (!fd.is_open()) {
-      std::cerr << "Cannot open db file: " << this->fn << std::endl;
-    }
-    DBG(DB, "DB Type: %s", type().c_str())
-  }
-
-  /**
-   * @brief deconstructs the class and closes the file
-   */
-  ~csvDB()
-  {
-    DBG(DB, "Closing File: %s %s", type().c_str(), this->fn.c_str())
-    fd.close();
-  }
-
-  /**
-   * @brief Define the type of the DB (File, Redis etc)
-   */
-  std::string type() override { return "csv"; }
-
-  /**
-   * @brief Return the DB enumerationt type (File, Redis etc)
-   */
-  AMSDBType dbType() { return AMSDBType::CSV; };
-
-  /**
-   * @brief Takes an input and an output vector each holding 1-D vectors data, and
-   * store them into a csv file delimited by ':'. This should never be used for
-   * large scale simulations as txt/csv format will be extremely slow.
-   * @param[in] num_elements Number of elements of each 1-D vector
-   * @param[in] inputs Vector of 1-D vectors containing the inputs to bestored
-   * @param[in] inputs Vector of 1-D vectors, each 1-D vectors contains
-   * 'num_elements'  values to be stored
-   * @param[in] outputs Vector of 1-D vectors, each 1-D vectors contains
-   * 'num_elements'  values to be stored
-   */
   PERFFASPECT()
-  virtual void store(size_t num_elements,
-                     std::vector<TypeValue*>& inputs,
-                     std::vector<TypeValue*>& outputs) override
+  template <typename TypeValue>
+  void _store(size_t num_elements,
+              std::vector<TypeValue*>& inputs,
+              std::vector<TypeValue*>& outputs)
   {
     DBG(DB,
-        "DB of type %s stores %ld elements of input/output dimensions (%d, %d)",
+        "DB of type %s stores %ld elements of input/output dimensions (%lu, "
+        "%lu)",
         type().c_str(),
         num_elements,
         inputs.size(),
@@ -274,12 +237,79 @@ public:
       fd << outputs[num_out - 1][i] << "\n";
     }
   }
+
+
+public:
+  csvDB(const csvDB&) = delete;
+  csvDB& operator=(const csvDB&) = delete;
+
+  /**
+   * @brief constructs the class and opens the file to write to
+   * @param[in] fn Name of the file to store data to
+   * @param[in] rId a unique Id for each process taking part in a distributed
+   * execution (rank-id)
+   */
+  csvDB(std::string path, std::string fn, uint64_t rId)
+      : FileDB(path, fn, ".csv", rId)
+  {
+    writeHeader = !fs::exists(this->fn);
+    fd.open(this->fn, std::ios_base::app | std::ios_base::out);
+    if (!fd.is_open()) {
+      std::cerr << "Cannot open db file: " << this->fn << std::endl;
+    }
+    DBG(DB, "DB Type: %s", type().c_str())
+  }
+
+  /**
+   * @brief deconstructs the class and closes the file
+   */
+  ~csvDB()
+  {
+    DBG(DB, "Closing File: %s %s", type().c_str(), this->fn.c_str())
+    fd.close();
+  }
+
+  virtual void store(size_t num_elements,
+                     std::vector<float*>& inputs,
+                     std::vector<float*>& outputs) override
+  {
+    _store(num_elements, inputs, outputs);
+  }
+
+  virtual void store(size_t num_elements,
+                     std::vector<double*>& inputs,
+                     std::vector<double*>& outputs) override
+  {
+    _store(num_elements, inputs, outputs);
+  }
+
+
+  /**
+   * @brief Define the type of the DB (File, Redis etc)
+   */
+  std::string type() override { return "csv"; }
+
+  /**
+   * @brief Return the DB enumerationt type (File, Redis etc)
+   */
+  AMSDBType dbType() override { return AMSDBType::CSV; };
+
+  /**
+   * @brief Takes an input and an output vector each holding 1-D vectors data, and
+   * store them into a csv file delimited by ':'. This should never be used for
+   * large scale simulations as txt/csv format will be extremely slow.
+   * @param[in] num_elements Number of elements of each 1-D vector
+   * @param[in] inputs Vector of 1-D vectors containing the inputs to bestored
+   * @param[in] inputs Vector of 1-D vectors, each 1-D vectors contains
+   * 'num_elements'  values to be stored
+   * @param[in] outputs Vector of 1-D vectors, each 1-D vectors contains
+   * 'num_elements'  values to be stored
+   */
 };
 
 #ifdef __ENABLE_HDF5__
 
-template <typename TypeValue>
-class hdf5DB final : public FileDB<TypeValue>
+class hdf5DB final : public FileDB
 {
 private:
   /** @brief file descriptor */
@@ -297,7 +327,6 @@ private:
   /** @brief Total number of elements we have in our file   */
   hsize_t totalElements;
 
-  /** @brief HDF5 associated data type with specific TypeValue type   */
   hid_t HDType;
 
   /** @brief create or get existing hdf5 dataset with the provided name
@@ -394,6 +423,7 @@ private:
    * to be written in the db.
    * @param[in] numElements The number of elements each vector has
    */
+  template <typename TypeValue>
   void writeDataToDataset(std::vector<hid_t>& dsets,
                           std::vector<TypeValue*>& data,
                           size_t numElements)
@@ -437,6 +467,43 @@ private:
     H5Sclose(fileSpace);
   }
 
+  PERFFASPECT()
+  template <typename TypeValue>
+  void _store(size_t num_elements,
+              std::vector<TypeValue*>& inputs,
+              std::vector<TypeValue*>& outputs)
+  {
+    if (isDouble<TypeValue>::default_value())
+      HDType = H5T_NATIVE_DOUBLE;
+    else
+      HDType = H5T_NATIVE_FLOAT;
+
+
+    DBG(DB,
+        "DB of type %s stores %ld elements of input/output dimensions (%lu, "
+        "%lu)",
+        type().c_str(),
+        num_elements,
+        inputs.size(),
+        outputs.size())
+    const size_t num_in = inputs.size();
+    const size_t num_out = outputs.size();
+
+    if (HDIsets.empty()) {
+      createDataSets(num_elements, num_in, num_out);
+    }
+
+    if (HDIsets.size() != num_in || HDOsets.size() != num_out) {
+      std::cerr << "The data dimensionality is different than the one in the "
+                   "DB\n";
+      exit(-1);
+    }
+
+    writeDataToDataset(HDIsets, inputs, num_elements);
+    writeDataToDataset(HDOsets, outputs, num_elements);
+    totalElements += num_elements;
+  }
+
 public:
   // Delete copy constructors. We do not want to copy the DB around
   hdf5DB(const hdf5DB&) = delete;
@@ -444,16 +511,14 @@ public:
 
   /**
    * @brief constructs the class and opens the hdf5 file to write to
-   * @param[in] fn Name of the file to store data to
+   * @param[in] path path to directory to open/create the file 
+   * @param[in] fn Name of the file to store the data to
    * @param[in] rId a unique Id for each process taking part in a distributed
    * execution (rank-id)
    */
-  hdf5DB(std::string path, uint64_t rId) : FileDB<TypeValue>(path, ".h5", rId)
+  hdf5DB(std::string path, std::string fn, uint64_t rId)
+      : FileDB(path, fn, ".h5", rId)
   {
-    if (isDouble<TypeValue>::default_value())
-      HDType = H5T_NATIVE_DOUBLE;
-    else
-      HDType = H5T_NATIVE_FLOAT;
     std::error_code ec;
     bool exists = fs::exists(this->fn);
     this->checkError(ec);
@@ -465,6 +530,7 @@ public:
           H5Fcreate(this->fn.c_str(), H5F_ACC_EXCL, H5P_DEFAULT, H5P_DEFAULT);
     HDF5_ERROR(HFile);
     totalElements = 0;
+    HDType = -1;
   }
 
   /**
@@ -488,7 +554,7 @@ public:
   /**
    * @brief Return the DB enumerationt type (File, Redis etc)
    */
-  AMSDBType dbType() { return AMSDBType::HDF5; };
+  AMSDBType dbType() override { return AMSDBType::HDF5; };
 
 
   /**
@@ -502,34 +568,46 @@ public:
    * @param[in] outputs Vector of 1-D vectors, each 1-D vectors contains
    * 'num_elements'  values to be stored
    */
-  PERFFASPECT()
-  virtual void store(size_t num_elements,
-                     std::vector<TypeValue*>& inputs,
-                     std::vector<TypeValue*>& outputs) override
+  void store(size_t num_elements,
+             std::vector<float*>& inputs,
+             std::vector<float*>& outputs) override
   {
+    if (HDType == -1) {
+      HDType = H5T_NATIVE_FLOAT;
+    } else if (HDType != H5T_NATIVE_FLOAT) {
+      THROW(std::runtime_error,
+            "Database " + fn +
+                " initialized to work on 'float' received different "
+                "datatypes'");
+    }
+    _store(num_elements, inputs, outputs);
+  }
 
-    DBG(DB,
-        "DB of type %s stores %ld elements of input/output dimensions (%d, %d)",
-        type().c_str(),
-        num_elements,
-        inputs.size(),
-        outputs.size())
-    const size_t num_in = inputs.size();
-    const size_t num_out = outputs.size();
-
-    if (HDIsets.empty()) {
-      createDataSets(num_elements, num_in, num_out);
+  /**
+   * @brief Takes an input and an output vector each holding 1-D vectors data,
+   * and store them into a hdf5 file delimited by ':'. This should never be used
+   * for large scale simulations as txt/hdf5 format will be extremely slow.
+   * @param[in] num_elements Number of elements of each 1-D vector
+   * @param[in] inputs Vector of 1-D vectors containing the inputs to bestored
+   * @param[in] inputs Vector of 1-D vectors, each 1-D vectors contains
+   * 'num_elements'  values to be stored
+   * @param[in] outputs Vector of 1-D vectors, each 1-D vectors contains
+   * 'num_elements'  values to be stored
+   */
+  void store(size_t num_elements,
+             std::vector<double*>& inputs,
+             std::vector<double*>& outputs) override
+  {
+    if (HDType == -1) {
+      HDType = H5T_NATIVE_DOUBLE;
+    } else if (HDType != H5T_NATIVE_DOUBLE) {
+      THROW(std::runtime_error,
+            "Database " + fn +
+                " initialized to work on 'float' received different "
+                "datatypes'");
     }
 
-    if (HDIsets.size() != num_in || HDOsets.size() != num_out) {
-      std::cerr << "The data dimensionality is different than the one in the "
-                   "DB\n";
-      exit(-1);
-    }
-
-    writeDataToDataset(HDIsets, inputs, num_elements);
-    writeDataToDataset(HDOsets, outputs, num_elements);
-    totalElements += num_elements;
+    _store(num_elements, inputs, outputs);
   }
 };
 #endif
@@ -698,14 +776,15 @@ public:
   *   - 1 byte is the size of the header (here 16). Limit max: 255
   *   - 1 byte is the precision (4 for float, 8 for double). Limit max: 255
   *   - 2 bytes are the MPI rank (0 if AMS is not running with MPI). Limit max: 65535
+  *   - 2 bytes To store the size of the MSG domain name. Limit max: 65535
   *   - 4 bytes are the number of elements in the message. Limit max: 2^32 - 1
   *   - 2 bytes are the input dimension. Limit max: 65535
   *   - 2 bytes are the output dimension. Limit max: 65535
-  *   - 4 bytes for padding. Limit max: 2^32 - 1
+  *   - 2 bytes for padding. Limit max: 2^16 - 1
   *
-  * |_Header_|_Datatype_|___Rank___|__#elems__|___InDim___|___OutDim___|_Pad_|.real data.|
-  * ^        ^          ^          ^          ^           ^            ^     ^           ^
-  * | Byte 1 |  Byte 2  | Byte 3-4 | Byte 4-8 | Byte 8-10 | Byte 10-12 |-----| Byte 16-k |
+  * |_Header_|_Datatype_|___Rank___|__DomainSize__|__#elems__|___InDim____|___OutDim___|_Pad_|.real data.|
+  * ^        ^          ^          ^              ^          ^            ^            ^     ^           ^
+  * | Byte 1 |  Byte 2  | Byte 3-4 |  Byte 5-6    |Byte 6-10 | Byte 10-12 | Byte 12-14 |-----| Byte 16-k |
   *
   * where X = datatype * num_element * (InDim + OutDim). Total message size is 16+k. 
   *
@@ -722,6 +801,8 @@ struct AMSMsgHeader {
   uint8_t dtype;
   /** @brief MPI rank */
   uint16_t mpi_rank;
+  /** @brief Domain Name Size */
+  uint16_t domain_size;
   /** @brief Number of elements */
   uint32_t num_elem;
   /** @brief Inputs dimension */
@@ -737,6 +818,7 @@ struct AMSMsgHeader {
    * @param[in]  out_dim      Outputs dimension
    */
   AMSMsgHeader(size_t mpi_rank,
+               size_t domain_size,
                size_t num_elem,
                size_t in_dim,
                size_t out_dim,
@@ -744,6 +826,7 @@ struct AMSMsgHeader {
       : hsize(static_cast<uint8_t>(AMSMsgHeader::size())),
         dtype(static_cast<uint8_t>(type_size)),
         mpi_rank(static_cast<uint16_t>(mpi_rank)),
+        domain_size(static_cast<uint16_t>(domain_size)),
         num_elem(static_cast<uint32_t>(num_elem)),
         in_dim(static_cast<uint16_t>(in_dim)),
         out_dim(static_cast<uint16_t>(out_dim))
@@ -758,6 +841,7 @@ struct AMSMsgHeader {
    * @param[in]  out_dim      Outputs dimension
    */
   AMSMsgHeader(uint16_t mpi_rank,
+               uint16_t domain_size,
                uint32_t num_elem,
                uint16_t in_dim,
                uint16_t out_dim,
@@ -765,6 +849,7 @@ struct AMSMsgHeader {
       : hsize(static_cast<uint8_t>(AMSMsgHeader::size())),
         dtype(type_size),
         mpi_rank(mpi_rank),
+        domain_size(domain_size),
         num_elem(num_elem),
         in_dim(in_dim),
         out_dim(out_dim)
@@ -778,8 +863,8 @@ struct AMSMsgHeader {
   static size_t constexpr size()
   {
     return ((sizeof(hsize) + sizeof(dtype) + sizeof(mpi_rank) +
-             sizeof(num_elem) + sizeof(in_dim) + sizeof(out_dim) +
-             sizeof(double) - 1) /
+             sizeof(domain_size) + sizeof(num_elem) + sizeof(in_dim) +
+             sizeof(out_dim) + sizeof(double) - 1) /
             sizeof(double)) *
            sizeof(double);
   }
@@ -803,6 +888,10 @@ struct AMSMsgHeader {
     // MPI rank (should be 2 bytes)
     std::memcpy(data_blob + current_offset, &(mpi_rank), sizeof(mpi_rank));
     current_offset += sizeof(mpi_rank);
+    // Domain Size (should be 2 bytes)
+    std::memcpy(data_blob + current_offset,
+                &(domain_size),
+                sizeof(domain_size));
     // Num elem (should be 4 bytes)
     std::memcpy(data_blob + current_offset, &(num_elem), sizeof(num_elem));
     current_offset += sizeof(num_elem);
@@ -828,7 +917,7 @@ struct AMSMsgHeader {
     uint8_t new_hsize = data_blob[current_offset];
     CWARNING(AMSMsgHeader,
              new_hsize != AMSMsgHeader::size(),
-             "buffer is likely not a valid AMSMessage (%d / %d)",
+             "buffer is likely not a valid AMSMessage (%d / %ld)",
              new_hsize,
              current_offset)
 
@@ -840,6 +929,12 @@ struct AMSMsgHeader {
     uint16_t new_mpirank =
         (reinterpret_cast<uint16_t*>(data_blob + current_offset))[0];
     current_offset += sizeof(uint16_t);
+
+    // Domain Size (should be 2 bytes)
+    uint16_t new_domain_size =
+        (reinterpret_cast<uint16_t*>(data_blob + current_offset))[0];
+    current_offset += sizeof(uint16_t);
+
     // Num elem (should be 4 bytes)
     uint32_t new_num_elem;
     std::memcpy(&new_num_elem, data_blob + current_offset, sizeof(uint32_t));
@@ -852,8 +947,12 @@ struct AMSMsgHeader {
     uint16_t new_out_dim;
     std::memcpy(&new_out_dim, data_blob + current_offset, sizeof(uint16_t));
 
-    return AMSMsgHeader(
-        new_mpirank, new_num_elem, new_in_dim, new_out_dim, new_dtype);
+    return AMSMsgHeader(new_mpirank,
+                        new_domain_size,
+                        new_num_elem,
+                        new_in_dim,
+                        new_out_dim,
+                        new_dtype);
   }
 };
 
@@ -863,7 +962,7 @@ struct AMSMsgHeader {
  */
 class AMSMessage
 {
-private:
+public:
   /** @brief message ID */
   int _id;
   /** @brief The MPI rank (0 if MPI is not used) */
@@ -918,6 +1017,7 @@ public:
    */
   template <typename TypeValue>
   AMSMessage(int id,
+             std::string& domain_name,
              size_t num_elements,
              const std::vector<TypeValue*>& inputs,
              const std::vector<TypeValue*>& outputs)
@@ -932,14 +1032,23 @@ public:
 #ifdef __ENABLE_MPI__
     MPI_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &_rank));
 #endif
-    AMSMsgHeader header(
-        _rank, _num_elements, _input_dim, _output_dim, sizeof(TypeValue));
+    AMSMsgHeader header(_rank,
+                        domain_name.size(),
+                        _num_elements,
+                        _input_dim,
+                        _output_dim,
+                        sizeof(TypeValue));
 
-    _total_size = AMSMsgHeader::size() + getTotalElements() * sizeof(TypeValue);
+    _total_size = AMSMsgHeader::size() + domain_name.size() +
+                  getTotalElements() * sizeof(TypeValue);
     auto& rm = ams::ResourceManager::getInstance();
     _data = rm.allocate<uint8_t>(_total_size, AMSResourceType::HOST);
 
     size_t current_offset = header.encode(_data);
+    std::memcpy(&_data[current_offset],
+                domain_name.c_str(),
+                domain_name.size());
+    current_offset += domain_name.size();
     current_offset +=
         encode_data(reinterpret_cast<TypeValue*>(_data + current_offset),
                     inputs,
@@ -1091,7 +1200,7 @@ typedef std::tuple<std::string, std::string, std::string, uint64_t, bool>
 /**
  * @brief Specific handler for RabbitMQ connections based on libevent.
  */
-class RMQConsumerHandler : public AMQP::LibEventHandler
+class RMQConsumerHandler final : public AMQP::LibEventHandler
 {
 private:
   /** @brief Path to TLS certificate */
@@ -1144,7 +1253,7 @@ private:
    *  @return     bool            True to proceed / accept the connection, false
    * to break up
    */
-  virtual bool onSecuring(AMQP::TcpConnection* connection, SSL* ssl)
+  virtual bool onSecuring(AMQP::TcpConnection* connection, SSL* ssl) override
   {
     ERR_clear_error();
     unsigned long err;
@@ -1249,7 +1358,7 @@ private:
             _channel->ack(deliveryTag);
             std::string msg(message.body(), message.bodySize());
             DBG(RMQConsumerHandler,
-                "message received [tag=%d] : '%s' of size %d B from "
+                "message received [tag=%lu] : '%s' of size %lu B from "
                 "'%s'/'%s'",
                 deliveryTag,
                 msg.c_str(),
@@ -1456,7 +1565,7 @@ enum RMQConnectionStatus { FAILED, CONNECTED, CLOSED, ERROR };
 /**
  * @brief Specific handler for RabbitMQ connections based on libevent.
  */
-class RMQPublisherHandler : public AMQP::LibEventHandler
+class RMQPublisherHandler final : public AMQP::LibEventHandler
 {
 private:
   /** @brief Path to TLS certificate */
@@ -1672,7 +1781,7 @@ private:
    *  @return     bool            True to proceed / accept the connection, false
    * to break up
    */
-  virtual bool onSecuring(AMQP::TcpConnection* connection, SSL* ssl)
+  virtual bool onSecuring(AMQP::TcpConnection* connection, SSL* ssl) override
   {
     ERR_clear_error();
     unsigned long err;
@@ -2097,12 +2206,8 @@ public:
  * RabbitMQDB creates two RabbitMQ connections per MPI rank, one for publishing data to RMQ and one for consuming data.
  * Each connection has its own I/O loop (based on Libevent) running in a dedicated thread because I/O loop are blocking.
  * Therefore, we have two threads per MPI rank.
- * 
- * 1. Publishing data: When the store() method is being called, it triggers a series of calls:
  *
- *        RabbitMQDB::store() -> RMQPublisher::publish() -> RMQPublisherHandler::publish()
- *
- * Here, RMQPublisherHandler::publish() has access to internal RabbitMQ channels and can publish the message 
+ * Here, RMQInterface::publish() has access to internal RabbitMQ channels and can publish the message 
  * on the outbound queue (rabbitmq-outbound-queue in the JSON configuration).
  * Note that storing data like that is much faster than with writing files as a call to RabbitMQDB::store()
  * is virtually free, the actual data sending part is taking place in a thread and does not slow down
@@ -2120,8 +2225,7 @@ public:
  * For example, we create a channel only if the underlying connection has been succesfuly initiated
  * (see RMQPublisherHandler::onReady()).
  */
-template <typename TypeValue>
-class RabbitMQDB final : public BaseDB<TypeValue>
+class RMQInterface
 {
 private:
   /** @brief Path of the config file (JSON) */
@@ -2134,8 +2238,6 @@ private:
   std::shared_ptr<AMQP::Address> _address;
   /** @brief TLS certificate path */
   std::string _cacert;
-  /** @brief MPI rank (if MPI is used, otherwise 0) */
-  int _rank;
   /** @brief Represent the ID of the last message sent */
   int _msg_tag;
   /** @brief Publisher sending messages to RMQ server */
@@ -2147,122 +2249,189 @@ private:
   /** @brief Thread in charge of the consumer */
   std::thread _consumer_thread;
 
-  /**
-   * @brief Read a JSON and create a hashmap
-   * @param[in] fn Path of the RabbitMQ JSON config file
-   * @return a hashmap (std::unordered_map) of the JSON file
-   */
-  std::unordered_map<std::string, std::string> _read_config(std::string fn)
-  {
-    std::ifstream config;
-    std::unordered_map<std::string, std::string> connection_info = {
-        {"rabbitmq-erlang-cookie", ""},
-        {"rabbitmq-name", ""},
-        {"rabbitmq-password", ""},
-        {"rabbitmq-user", ""},
-        {"rabbitmq-vhost", ""},
-        {"service-port", ""},
-        {"service-host", ""},
-        {"rabbitmq-cert", ""},
-        {"rabbitmq-inbound-queue", ""},
-        {"rabbitmq-outbound-queue", ""},
-    };
-
-    config.open(fn, std::ifstream::in);
-
-    if (config.is_open()) {
-      std::string line;
-      while (std::getline(config, line)) {
-        if (line.find("{") != std::string::npos ||
-            line.find("}") != std::string::npos) {
-          continue;
-        }
-        line.erase(std::remove(line.begin(), line.end(), ' '), line.end());
-        line.erase(std::remove(line.begin(), line.end(), ','), line.end());
-        line.erase(std::remove(line.begin(), line.end(), '"'), line.end());
-
-        std::string key = line.substr(0, line.find(':'));
-        line.erase(0, line.find(":") + 1);
-        connection_info[key] = line;
-      }
-      config.close();
-    } else {
-      std::string err = "Could not open JSON file: " + fn;
-      CFATAL(RabbitMQDB, false, err.c_str());
-    }
-    return connection_info;
-  }
+  bool connected;
 
 public:
-  RabbitMQDB(const RabbitMQDB&) = delete;
-  RabbitMQDB& operator=(const RabbitMQDB&) = delete;
-
-  RabbitMQDB(char* config, uint64_t id)
-      : BaseDB<TypeValue>(id),
-        _rank(0),
-        _msg_tag(0),
-        _config(std::string(config)),
-        _publisher(nullptr),
-        _consumer(nullptr)
+  RMQInterface() : connected(false) {}
+  bool connect(std::string erlang_cookie,
+               std::string rmq_name,
+               std::string rmq_password,
+               std::string rmq_user,
+               std::string rmq_vhost,
+               int service_port,
+               std::string service_host,
+               std::string rmq_cert,
+               std::string inbouund_queue,
+               std::string outbound_queue)
   {
-    std::unordered_map<std::string, std::string> rmq_config =
-        _read_config(_config);
-    _queue_sender =
-        rmq_config["rabbitmq-outbound-queue"];  // Queue to send data to
-    _queue_receiver =
-        rmq_config["rabbitmq-inbound-queue"];  // Queue to receive data from PDS
-    bool is_secure = true;
+    _queue_sender = outbound_queue;
+    _queue_receiver = inbouund_queue;
+    _cacert = rmq_cert;
 
-    if (rmq_config["service-port"].empty()) {
-      CFATAL(RabbitMQDB,
-             false,
-             "service-port is empty, make sure the port number is present in "
-             "the JSON configuration")
-      return;
-    }
-    if (rmq_config["service-host"].empty()) {
-      CFATAL(RabbitMQDB,
-             false,
-             "service-host is empty, make sure the host is present in the "
-             "JSON "
-             "configuration")
-      return;
-    }
-
-    uint16_t port = std::stoi(rmq_config["service-port"]);
-    if (_queue_sender.empty() || _queue_receiver.empty()) {
-      CFATAL(RabbitMQDB,
-             false,
-             "Queues are empty, please check your credentials file and make "
-             "sure rabbitmq-inbound-queue and rabbitmq-outbound-queue exist")
-      return;
-    }
-    _cacert = rmq_config["rabbitmq-cert"];
-
-    AMQP::Login login(rmq_config["rabbitmq-user"],
-                      rmq_config["rabbitmq-password"]);
-    _address = std::make_shared<AMQP::Address>(rmq_config["service-host"],
-                                               port,
+    AMQP::Login login(rmq_user, rmq_password);
+    _address = std::make_shared<AMQP::Address>(service_host,
+                                               service_port,
                                                login,
-                                               rmq_config["rabbitmq-vhost"],
-                                               is_secure);
-
+                                               rmq_vhost,
+                                               /*is_secure*/ true);
     _publisher =
         std::make_shared<RMQPublisher>(*_address, _cacert, _queue_sender);
 
     _publisher_thread = std::thread([&]() { _publisher->start(); });
 
-    bool status = _publisher->waitToEstablish(100, 10);
-    if (!status) {
+    if (!_publisher->waitToEstablish(100, 10)) {
       _publisher->stop();
       _publisher_thread.join();
-      FATAL(RabbitMQDB, "Could not establish connection");
+      FATAL(RabbitMQInterface, "Could not establish connection");
     }
 
-    //_consumer_thread = std::thread([&]() { _consumer->start(); });
-    //_consumer = std::make_shared<RMQConsumer<TypeValue>>(address,
-    //                                                     cacert,
-    //                                                     _queue_receiver);
+    connected = true;
+    return connected;
+  }
+
+  bool isConnected() const { return connected; }
+
+  void restart(int rank)
+  {
+    std::vector<AMSMessage> messages = _publisher->get_buffer_msgs();
+
+    AMSMessage& msg_min =
+        *(std::min_element(messages.begin(),
+                           messages.end(),
+                           [](const AMSMessage& a, const AMSMessage& b) {
+                             return a.id() < b.id();
+                           }));
+
+    DBG(RMQPublisher,
+        "[rank=%d] we have %lu buffered messages that will get re-send "
+        "(starting from msg #%d).",
+        rank,
+        messages.size(),
+        msg_min.id())
+
+    // Stop the faulty publisher
+    _publisher->stop();
+    _publisher_thread.join();
+    _publisher.reset();
+    connected = false;
+
+    _publisher = std::make_shared<RMQPublisher>(*_address,
+                                                _cacert,
+                                                _queue_sender,
+                                                std::move(messages));
+    _publisher_thread = std::thread([&]() { _publisher->start(); });
+    connected = true;
+  }
+
+  template <typename TypeValue>
+  void publish(std::string& domain_name,
+               size_t num_elements,
+               std::vector<TypeValue*>& inputs,
+               std::vector<TypeValue*>& outputs)
+  {
+    DBG(RabbitMQDB,
+        "[tag=%d] stores %ld elements of input/output "
+        "dimensions (%ld, %ld)",
+        _msg_tag,
+        num_elements,
+        inputs.size(),
+        outputs.size())
+
+    AMSMessage msg(_msg_tag, domain_name, num_elements, inputs, outputs);
+
+    if (!_publisher->connection_valid()) {
+      restart(msg._rank);
+      bool status = _publisher->waitToEstablish(100, 10);
+      if (!status) {
+        _publisher->stop();
+        _publisher_thread.join();
+        FATAL(RabbitMQDB, "Could not establish connection");
+      }
+    }
+    _publisher->publish(std::move(msg));
+    _msg_tag++;
+  }
+
+  void close()
+  {
+    if (!_publisher_thread.joinable()) {
+      return;
+    }
+    bool status = _publisher->close(100, 10);
+    CWARNING(RabbitMQDB, !status, "Could not gracefully close TCP connection")
+    DBG(RabbitMQInterface, "Number of messages sent: %d", _msg_tag)
+    DBG(RabbitMQInterface,
+        "Number of unacknowledged messages are %d",
+        _publisher->unacknowledged())
+    _publisher->stop();
+    //_consumer->stop();
+    _publisher_thread.join();
+    //_consumer_thread.join();
+    connected = false;
+  }
+
+
+  ~RMQInterface()
+  {
+    if (connected) close();
+  }
+};
+
+
+class FilesystemInterface
+{
+  std::string dbPath;
+  bool connected;
+
+public:
+  FilesystemInterface() : connected(false) {}
+
+  bool connect(std::string& path)
+  {
+    connected = true;
+    fs::path Path(path);
+    std::error_code ec;
+
+    if (!fs::exists(Path, ec)) {
+      THROW(std::runtime_error, "Path: :" + path + " does not exist");
+      exit(-1);
+    }
+
+    if (ec) {
+      THROW(std::runtime_error, "Error in file:" + ec.message());
+      exit(-1);
+    }
+
+    dbPath = path;
+
+    return true;
+  }
+
+  bool isConnected() const { return connected; }
+  std::string& path() { return dbPath; }
+};
+
+
+/* A class that provides a BaseDB interface to AMS workflow.
+ * When storing data it pushes the data to the RMQ server asynchronously
+*/
+
+class RabbitMQDB final : public BaseDB
+{
+private:
+  /** @brief the application domain that stores the data*/
+  std::string appDomain;
+
+  /** An interface to RMQ to push the data to*/
+  RMQInterface& interface;
+
+public:
+  RabbitMQDB(const RabbitMQDB&) = delete;
+  RabbitMQDB& operator=(const RabbitMQDB&) = delete;
+
+  RabbitMQDB(RMQInterface& interface, std::string& domain, uint64_t id)
+      : BaseDB(id), appDomain(domain), interface(interface)
+  {
   }
 
   /**
@@ -2276,59 +2445,20 @@ public:
    */
   PERFFASPECT()
   void store(size_t num_elements,
-             std::vector<TypeValue*>& inputs,
-             std::vector<TypeValue*>& outputs) override
+             std::vector<double*>& inputs,
+             std::vector<double*>& outputs) override
   {
-    DBG(RabbitMQDB,
-        "[tag=%d] %s stores %ld elements of input/output "
-        "dimensions (%d, %d)",
-        _msg_tag,
-        type().c_str(),
-        num_elements,
-        inputs.size(),
-        outputs.size())
-    if (!_publisher->connection_valid()) {
-      restart();
-      bool status = _publisher->waitToEstablish(100, 10);
-      if (!status) {
-        _publisher->stop();
-        _publisher_thread.join();
-        FATAL(RabbitMQDB, "Could not establish connection");
-      }
-    }
-    _publisher->publish(AMSMessage(_msg_tag, num_elements, inputs, outputs));
-    _msg_tag++;
+    interface.publish(appDomain, num_elements, inputs, outputs);
   }
 
-  void restart()
+  void store(size_t num_elements,
+             std::vector<float*>& inputs,
+             std::vector<float*>& outputs) override
   {
-    std::vector<AMSMessage> messages = _publisher->get_buffer_msgs();
-
-    AMSMessage& msg_min =
-        *(std::min_element(messages.begin(),
-                           messages.end(),
-                           [](const AMSMessage& a, const AMSMessage& b) {
-                             return a.id() < b.id();
-                           }));
-
-    DBG(RMQPublisher,
-        "[rank=%d] we have %d buffered messages that will get re-send "
-        "(starting from msg #%d).",
-        _rank,
-        messages.size(),
-        msg_min.id())
-
-    // Stop the faulty publisher
-    _publisher->stop();
-    _publisher_thread.join();
-    _publisher.reset();
-
-    _publisher = std::make_shared<RMQPublisher>(*_address,
-                                                _cacert,
-                                                _queue_sender,
-                                                std::move(messages));
-    _publisher_thread = std::thread([&]() { _publisher->start(); });
+    interface.publish(appDomain, num_elements, inputs, outputs);
   }
+
+  void restart() {}
 
   /**
    * @brief Return the type of this broker
@@ -2339,105 +2469,101 @@ public:
   /**
    * @brief Return the DB enumerationt type (File, Redis etc)
    */
-  AMSDBType dbType() { return AMSDBType::RMQ; };
+  AMSDBType dbType() override { return AMSDBType::RMQ; };
 
-  void close()
-  {
-    if (!_publisher_thread.joinable()) {
-      return;
-    }
-    bool status = _publisher->close(100, 10);
-    CWARNING(RabbitMQDB, !status, "Could not gracefully close TCP connection")
-    DBG(RabbitMQDB, "Number of messages sent: %d", _msg_tag)
-    DBG(RabbitMQDB,
-        "Number of unacknowledged messages are %d",
-        _publisher->unacknowledged())
-    _publisher->stop();
-    //_consumer->stop();
-    _publisher_thread.join();
-    //_consumer_thread.join();
-  }
-
-  ~RabbitMQDB() { close(); }
+  ~RabbitMQDB() {}
 };  // class RabbitMQDB
 
 #endif  // __ENABLE_RMQ__
 
-namespace ams
-{
 
 /**
  * @brief Class that manages all DB attached to AMS workflows.
  * Each DB can overload its method close() that will get called by 
  * the DB manager when the last workflow using a DB will be destructed.
  */
-template <typename TypeValue>
 class DBManager
 {
+  friend RabbitMQDB;
+
+private:
+  std::unordered_map<std::string, std::shared_ptr<BaseDB>> db_instances;
+  AMSDBType dbType;
+
+  DBManager() : dbType(AMSDBType::None){};
+
+protected:
+  RMQInterface rmq_interface;
+  FilesystemInterface fs_interface;
+
 public:
   static auto& getInstance()
   {
-    static DBManager<TypeValue> instance;
+    static DBManager instance;
     return instance;
   }
-
-private:
-  std::unordered_map<std::string, std::shared_ptr<BaseDB<TypeValue>>>
-      db_instances;
-  DBManager() = default;
 
 public:
   ~DBManager()
   {
     for (auto& e : db_instances) {
       DBG(DBManager,
-          "Closing DB %s (%p) (#client=%d)",
+          "Closing DB %s (%p) (#client=%lu)",
           e.first.c_str(),
           e.second.get(),
           e.second.use_count() - 1);
       if (e.second.use_count() > 0) e.second->close();
     }
+
+    if (rmq_interface.isConnected()) {
+      rmq_interface.close();
+    }
   }
+
   DBManager(const DBManager&) = delete;
   DBManager(DBManager&&) = delete;
   DBManager& operator=(const DBManager&) = delete;
   DBManager& operator=(DBManager&&) = delete;
 
+  bool isInitialized() const
+  {
+    return fs_interface.isConnected() || rmq_interface.isConnected();
+  }
+
   /**
   * @brief Create an object of the respective database.
   * This should never be used for large scale simulations as txt/csv format will
   * be extremely slow.
-  * @param[in] dbPath path to the directory storing the data
+  * @param[in] domainName name of the domain model to store data for
   * @param[in] dbType Type of the database to create
   * @param[in] rId a unique Id for each process taking part in a distributed
   * execution (rank-id)
   */
-  std::shared_ptr<BaseDB<TypeValue>> createDB(char* dbPath,
-                                              AMSDBType dbType,
-                                              uint64_t rId = 0)
+  std::shared_ptr<BaseDB> createDB(std::string& domainName,
+                                   AMSDBType dbType,
+                                   uint64_t rId = 0)
   {
 #ifdef __ENABLE_DB__
     DBG(DBManager, "Instantiating data base");
-    if (dbPath == nullptr) {
-      WARNING(DBManager,
-              "Path of DB is NULL, Please provide a valid path to enable DB.")
-      return nullptr;
+
+    if ((dbType == AMSDBType::CSV || dbType == AMSDBType::HDF5) &&
+        !fs_interface.isConnected()) {
+      THROW(std::runtime_error,
+            "File System is not configured, Please specify output directory");
+    } else if (dbType == AMSDBType::RMQ && !rmq_interface.isConnected()) {
+      THROW(std::runtime_error, "Rabbit MQ data base is not configured");
     }
 
     switch (dbType) {
       case AMSDBType::CSV:
-        return std::make_shared<csvDB<TypeValue>>(dbPath, rId);
-#ifdef __ENABLE_REDIS__
-      case AMSDBType::REDIS:
-        return std::make_shared<RedisDB<TypeValue>>(dbPath, rId);
-#endif
+        return std::make_shared<csvDB>(fs_interface.path(), domainName, rId);
 #ifdef __ENABLE_HDF5__
       case AMSDBType::HDF5:
-        return std::make_shared<hdf5DB<TypeValue>>(dbPath, rId);
+        return std::make_shared<hdf5DB>(fs_interface.path(), domainName, rId);
 #endif
 #ifdef __ENABLE_RMQ__
       case AMSDBType::RMQ:
-        return std::make_shared<RabbitMQDB<TypeValue>>(dbPath, rId);
+        return std::make_shared<RabbitMQDB>(rmq_interface, domainName, rId);
 #endif
       default:
         return nullptr;
@@ -2446,30 +2572,27 @@ public:
     return nullptr;
   }
 
+
   /**
   * @brief get a data base object referred by this string.
   * This should never be used for large scale simulations as txt/csv format will
   * be extremely slow.
-  * @param[in] dbPath path to the directory storing the data
-  * @param[in] dbType Type of the database to create
+  * @param[in] domainName name of the domain model to store data for
   * @param[in] rId a unique Id for each process taking part in a distributed
   * execution (rank-id)
   */
-  std::shared_ptr<BaseDB<TypeValue>> getDB(char* dbPath,
-                                           AMSDBType dbType,
-                                           uint64_t rId = 0)
+  std::shared_ptr<BaseDB> getDB(std::string& domainName, uint64_t rId = 0)
   {
-    if (dbPath == nullptr) {
-      WARNING(DBManager,
-              "Path of DB is NULL, Please provide a valid path to enable DB.")
-      return nullptr;
-    }
 
-    auto db_iter = db_instances.find(std::string(dbPath));
+    if (dbType == AMSDBType::None) return nullptr;
+
+    auto db_iter = db_instances.find(std::string(domainName));
     if (db_iter == db_instances.end()) {
-      auto db = createDB(dbPath, dbType, rId);
-      db_instances.insert(std::make_pair(std::string(dbPath), db));
-      DBG(DBManager, "Creating new Database writting to file: %s", dbPath);
+      auto db = createDB(domainName, dbType, rId);
+      db_instances.insert(std::make_pair(std::string(domainName), db));
+      DBG(DBManager,
+          "Creating new Database writting to file: %s",
+          domainName.c_str());
       return db;
     }
 
@@ -2481,18 +2604,32 @@ public:
     }
 
     if (db->dbType() != dbType) {
-      throw std::runtime_error("Requesting databases of different types");
+      THROW(std::runtime_error, "Requesting databases of different types");
     }
 
     if (db->getId() != rId) {
-      throw std::runtime_error("Requesting databases from different ranks");
+      THROW(std::runtime_error, "Requesting databases from different ranks");
     }
-    DBG(DBManager, "Using existing Database writting to file: %s", dbPath);
+    DBG(DBManager,
+        "Using existing Database writting to file: %s",
+        domainName.c_str());
 
     return db;
   }
+
+  void instantiate_fs_db(AMSDBType type, std::string db_path)
+  {
+    CWARNING(DBManager,
+             dbType != AMSDBType::None,
+             "Setting DBManager default DB when already set")
+    dbType = type;
+    fs_interface.connect(db_path);
+  }
 };
 
+AMSDBType getDBType(std::string type);
+
+}  // namespace db
 }  // namespace ams
 
 #endif  // __AMS_BASE_DB__
