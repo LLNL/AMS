@@ -83,7 +83,6 @@ typedef struct ams_conf {
   const AMSExecPolicy ePolicy;
   const AMSDType dType;
   const AMSResourceType device;
-  const AMSDBType dbType;
   AMSPhysicFn cBack;
   char *SPath;
   char *UQPath;

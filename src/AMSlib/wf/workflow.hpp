@@ -8,6 +8,7 @@
 #ifndef __AMS_WORKFLOW_HPP__
 #define __AMS_WORKFLOW_HPP__
 
+#include "debug.h"
 #ifdef __AMS_ENABLE_CALIPER__
 #include <caliper/cali_macros.h>
 #endif
@@ -52,6 +53,9 @@ class AMSWorkflow
    * execution */
   AMSPhysicFn AppCall;
 
+  /** @brief A string identifier describing the domain-model being solved. */
+  std::string domainName;
+
   /** @brief The module that performs uncertainty quantification (UQ) */
   std::unique_ptr<UQ<FPTypeValue>> UQModel;
 
@@ -60,10 +64,7 @@ class AMSWorkflow
 
   /** @brief The database to store data for which we cannot apply the current
    * model */
-  std::shared_ptr<BaseDB<FPTypeValue>> DB;
-
-  /** @brief The type of the database we will use (HDF5, CSV, etc) */
-  AMSDBType dbType = AMSDBType::None;
+  std::shared_ptr<ams::db::BaseDB> DB;
 
   /** @brief The process id. For MPI runs this is the rank */
   const int rId;
@@ -149,22 +150,15 @@ public:
   AMSWorkflow()
       : AppCall(nullptr),
         DB(nullptr),
-        dbType(AMSDBType::None),
         appDataLoc(AMSResourceType::HOST),
         ePolicy(AMSExecPolicy::UBALANCED)
   {
-#ifdef __ENABLE_DB__
-    auto &dbm = ams::DBManager<FPTypeValue>::getInstance();
-    DB = dbm.createDB("miniApp_data.txt", dbType, 0);
-    CFATAL(WORKFLOW, !DB, "Cannot create database");
-#endif
   }
 
   AMSWorkflow(AMSPhysicFn _AppCall,
               char *uq_path,
               char *surrogate_path,
-              char *db_path,
-              const AMSDBType dbType,
+              char *domain_name,
               AMSResourceType appDataLoc,
               FPTypeValue threshold,
               const AMSUQPolicy uqPolicy,
@@ -173,7 +167,7 @@ public:
               int _wSize = 1,
               AMSExecPolicy policy = AMSExecPolicy::UBALANCED)
       : AppCall(_AppCall),
-        dbType(dbType),
+        domainName(domain_name),
         rId(_pId),
         wSize(_wSize),
         appDataLoc(appDataLoc),
@@ -181,11 +175,9 @@ public:
         ePolicy(policy)
   {
     DB = nullptr;
-    if (db_path) {
-      DBG(Workflow, "Creating Database");
-      auto &dbm = ams::DBManager<FPTypeValue>::getInstance();
-      DB = dbm.getDB(db_path, dbType, rId);
-    }
+    auto &dbm = ams::db::DBManager::getInstance();
+
+    DB = dbm.getDB(domainName, rId);
 
     UQModel = std::make_unique<UQ<FPTypeValue>>(
         appDataLoc, uqPolicy, uq_path, nClusters, surrogate_path, threshold);
@@ -340,8 +332,7 @@ public:
 
 #ifdef __ENABLE_MPI__
       CALIPER(CALI_MARK_BEGIN("LOAD BALANCE MODULE");)
-      AMSLoadBalancer<FPTypeValue> lBalancer(
-          rId, wSize, packedElements, Comm);
+      AMSLoadBalancer<FPTypeValue> lBalancer(rId, wSize, packedElements, Comm);
       if (ePolicy == AMSExecPolicy::BALANCED && Comm) {
         lBalancer.init(inputDim, outputDim, appDataLoc);
         lBalancer.scatterInputs(packedInputs, appDataLoc);
