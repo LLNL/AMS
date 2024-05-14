@@ -48,8 +48,9 @@ int main(int argc, char *argv[])
   using namespace ams;
   auto &ams_rm = ResourceManager::getInstance();
   int use_device = std::atoi(argv[1]);
-  char *model_path = argv[2];
-  char *data_type = argv[3];
+  std::string model_path(argv[2]);
+  std::string data_type(argv[3]);
+  std::string uq_path;
   int num_inputs = std::atoi(argv[4]);
   int num_outputs = std::atoi(argv[5]);
   const AMSUQPolicy uq_policy = static_cast<AMSUQPolicy>(std::atoi(argv[6]));
@@ -57,19 +58,19 @@ int main(int argc, char *argv[])
 
   std::cout << "Executing on device " << use_device << "\n";
 
-  AMSResourceType resource = AMSResourceType::HOST;
+  AMSResourceType resource = AMSResourceType::AMS_HOST;
   if (use_device == 1) {
-    resource = AMSResourceType::DEVICE;
+    resource = AMSResourceType::AMS_DEVICE;
   }
 
   ams_rm.init();
 
 
-  if (std::strcmp("double", data_type) == 0) {
-    UQ<double> UQModel(resource, uq_policy, nullptr, -1, model_path, threshold);
+  if (data_type.compare("double") == 0) {
+    UQ<double> UQModel(resource, uq_policy, uq_path, -1, model_path, threshold);
     model(UQModel, resource, num_inputs, num_outputs);
-  } else if (std::strcmp("single", data_type) == 0) {
-    UQ<float> UQModel(resource, uq_policy, nullptr, -1, model_path, threshold);
+  } else if (data_type.compare("single") == 0) {
+    UQ<float> UQModel(resource, uq_policy, uq_path, -1, model_path, threshold);
     model(UQModel, resource, num_inputs, num_outputs);
   }
 

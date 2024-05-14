@@ -8,6 +8,8 @@
 #ifndef __AMS_SURROGATE_HPP__
 #define __AMS_SURROGATE_HPP__
 
+#include <cmath>
+#include <experimental/filesystem>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -100,7 +102,7 @@ private:
     // Transpose to get continuous memory and
     // perform single memcpy.
     tensor = tensor.transpose(1, 0);
-    if (model_resource == AMSResourceType::HOST) {
+    if (model_resource == AMSResourceType::AMS_HOST) {
       for (long j = 0; j < numCols; j++) {
         auto tmp = tensor[j].contiguous();
         TypeInValue* ptr = tmp.data_ptr<TypeInValue>();
@@ -124,7 +126,7 @@ private:
     // Transpose to get continuous memory and
     // perform single memcpy.
     tensor = tensor.transpose(1, 0);
-    if (model_resource == AMSResourceType::HOST) {
+    if (model_resource == AMSResourceType::AMS_HOST) {
       for (long j = 0; j < numCols; j++) {
         auto tmp = tensor[j].contiguous();
         TypeInValue* ptr = tmp.data_ptr<TypeInValue>();
@@ -211,8 +213,8 @@ private:
       }
     };
 
-    if (uq_policy == AMSUQPolicy::DeltaUQ_Mean) {
-      if (model_resource == AMSResourceType::DEVICE)
+    if (uq_policy == AMSUQPolicy::AMS_DELTAUQ_MEAN) {
+      if (model_resource == AMSResourceType::AMS_DEVICE)
 #ifdef __ENABLE_CUDA__
       {
         DBG(Surrogate, "Compute mean delta uq predicates on device\n");
@@ -232,8 +234,8 @@ private:
         DBG(Surrogate, "Compute mean delta uq predicates on host\n");
         computeDeltaUQMeanPredicatesHost();
       }
-    } else if (uq_policy == AMSUQPolicy::DeltaUQ_Max) {
-      if (model_resource == AMSResourceType::DEVICE)
+    } else if (uq_policy == AMSUQPolicy::AMS_DELTAUQ_MAX) {
+      if (model_resource == AMSResourceType::AMS_DEVICE)
 #ifdef __ENABLE_CUDA__
       {
         DBG(Surrogate, "Compute max delta uq predicates on device\n");
@@ -342,14 +344,24 @@ private:
 
 #endif
 
-  SurrogateModel(const char* model_path,
-                 AMSResourceType resource = AMSResourceType::HOST,
+  SurrogateModel(std::string& model_path,
+                 AMSResourceType resource = AMSResourceType::AMS_HOST,
                  bool is_DeltaUQ = false)
       : model_path(model_path),
         model_resource(resource),
         _is_DeltaUQ(is_DeltaUQ)
   {
-    if (resource != AMSResourceType::DEVICE)
+
+    std::experimental::filesystem::path Path(model_path);
+    std::error_code ec;
+
+    if (!std::experimental::filesystem::exists(Path, ec)) {
+      FATAL(Surrogate,
+            "Path to Surrogate Model (%s) Does not exist",
+            model_path.c_str())
+    }
+
+    if (resource != AMSResourceType::AMS_DEVICE)
       _load<TypeInValue>(model_path, "cpu");
     else
       _load<TypeInValue>(model_path, "cuda");
@@ -380,8 +392,8 @@ public:
   // -------------------------------------------------------------------------
 
   static std::shared_ptr<SurrogateModel<TypeInValue>> getInstance(
-      const char* model_path,
-      AMSResourceType resource = AMSResourceType::HOST,
+      std::string& model_path,
+      AMSResourceType resource = AMSResourceType::AMS_HOST,
       bool is_DeltaUQ = false)
   {
     auto model =
@@ -408,7 +420,7 @@ public:
     }
 
     // Model does not exist. We need to create one
-    DBG(Surrogate, "Generating new model under (%s)", model_path);
+    DBG(Surrogate, "Generating new model under (%s)", model_path.c_str());
     std::shared_ptr<SurrogateModel<TypeInValue>> torch_model =
         std::shared_ptr<SurrogateModel<TypeInValue>>(
             new SurrogateModel<TypeInValue>(model_path, resource, is_DeltaUQ));
@@ -428,7 +440,7 @@ public:
                        size_t num_out,
                        const TypeInValue** inputs,
                        TypeInValue** outputs,
-                       AMSUQPolicy uq_policy = AMSUQPolicy::AMSUQPolicy_BEGIN,
+                       AMSUQPolicy uq_policy = AMSUQPolicy::AMS_UQ_BEGIN,
                        bool* predicates = nullptr,
                        double threshold = 0.0)
   {
@@ -470,7 +482,7 @@ public:
               outputs.size(),
               static_cast<const TypeInValue**>(inputs.data()),
               static_cast<TypeInValue**>(outputs.data()),
-              AMSUQPolicy::AMSUQPolicy_BEGIN,
+              AMSUQPolicy::AMS_UQ_BEGIN,
               nullptr,
               0.0);
   }
@@ -489,7 +501,7 @@ public:
   inline bool is_device() const
   {
 #ifdef __ENABLE_TORCH__
-    return model_resource == AMSResourceType::DEVICE;
+    return model_resource == AMSResourceType::AMS_DEVICE;
 #else
     return false;
 #endif
@@ -508,7 +520,7 @@ public:
      * user. But, in any case we should keep track of which model has been used at which
      * invocation. This is currently not done.
      */
-    if (model_resource != AMSResourceType::DEVICE)
+    if (model_resource != AMSResourceType::AMS_DEVICE)
       _load<TypeInValue>(new_path, "cpu");
     else
       _load<TypeInValue>(new_path, "cuda");

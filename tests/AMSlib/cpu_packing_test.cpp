@@ -54,7 +54,7 @@ int main(int argc, char* argv[])
   auto& rm = ams::ResourceManager::getInstance();
   rm.init();
   if (device == 0) {
-    AMSResourceType resource = AMSResourceType::HOST;
+    AMSResourceType resource = AMSResourceType::AMS_HOST;
     bool* predicate = rm.allocate<bool>(SIZE, resource);
     double* dense = rm.allocate<double>(SIZE, resource);
     double* sparse = rm.allocate<double>(SIZE, resource);
@@ -89,20 +89,16 @@ int main(int argc, char* argv[])
       }
     }
 
-    rm.deallocate(predicate, AMSResourceType::HOST);
-    rm.deallocate(dense, AMSResourceType::HOST);
-    rm.deallocate(sparse, AMSResourceType::HOST);
-    rm.deallocate(rsparse, AMSResourceType::HOST);
+    rm.deallocate(predicate, AMSResourceType::AMS_HOST);
+    rm.deallocate(dense, AMSResourceType::AMS_HOST);
+    rm.deallocate(sparse, AMSResourceType::AMS_HOST);
+    rm.deallocate(rsparse, AMSResourceType::AMS_HOST);
   } else if (device == 1) {
-    AMSResourceType resource = AMSResourceType::DEVICE;
-    bool* h_predicate =
-        rm.allocate<bool>(SIZE, AMSResourceType::HOST);
-    double* h_dense =
-        rm.allocate<double>(SIZE, AMSResourceType::HOST);
-    double* h_sparse =
-        rm.allocate<double>(SIZE, AMSResourceType::HOST);
-    double* h_rsparse =
-        rm.allocate<double>(SIZE, AMSResourceType::HOST);
+    AMSResourceType resource = AMSResourceType::AMS_DEVICE;
+    bool* h_predicate = rm.allocate<bool>(SIZE, AMSResourceType::AMS_HOST);
+    double* h_dense = rm.allocate<double>(SIZE, AMSResourceType::AMS_HOST);
+    double* h_sparse = rm.allocate<double>(SIZE, AMSResourceType::AMS_HOST);
+    double* h_rsparse = rm.allocate<double>(SIZE, AMSResourceType::AMS_HOST);
 
     initPredicate(h_predicate, h_sparse, SIZE);
 
@@ -151,15 +147,15 @@ int main(int argc, char* argv[])
       }
     }
 
-    rm.deallocate(predicate, AMSResourceType::DEVICE);
-    rm.deallocate(h_predicate, AMSResourceType::HOST);
-    rm.deallocate(dense, AMSResourceType::DEVICE);
-    rm.deallocate(h_dense, AMSResourceType::HOST);
-    rm.deallocate(sparse, AMSResourceType::DEVICE);
-    rm.deallocate(h_sparse, AMSResourceType::HOST);
-    rm.deallocate(rsparse, AMSResourceType::DEVICE);
-    rm.deallocate(h_rsparse, AMSResourceType::HOST);
-    rm.deallocate(reindex, AMSResourceType::DEVICE);
+    rm.deallocate(predicate, AMSResourceType::AMS_DEVICE);
+    rm.deallocate(h_predicate, AMSResourceType::AMS_HOST);
+    rm.deallocate(dense, AMSResourceType::AMS_DEVICE);
+    rm.deallocate(h_dense, AMSResourceType::AMS_HOST);
+    rm.deallocate(sparse, AMSResourceType::AMS_DEVICE);
+    rm.deallocate(h_sparse, AMSResourceType::AMS_HOST);
+    rm.deallocate(rsparse, AMSResourceType::AMS_DEVICE);
+    rm.deallocate(h_rsparse, AMSResourceType::AMS_HOST);
+    rm.deallocate(reindex, AMSResourceType::AMS_DEVICE);
   }
 
   return 0;

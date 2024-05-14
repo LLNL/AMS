@@ -68,7 +68,7 @@ class HDCache
   const uint8_t m_dim;
 
   const int m_knbrs = 0;
-  const AMSUQPolicy m_policy = AMSUQPolicy::FAISS_Mean;
+  const AMSUQPolicy m_policy = AMSUQPolicy::AMS_FAISS_MEAN;
 
   AMSResourceType cache_location;
 
@@ -110,7 +110,7 @@ protected:
   {
 #ifdef __ENABLE_CUDA__
     // Copy index to device side
-    if (cache_location == AMSResourceType::DEVICE) {
+    if (cache_location == AMSResourceType::AMS_DEVICE) {
       faiss::gpu::GpuClonerOptions copyOptions;
       faiss::gpu::ToGpuCloner cloner(&res, 0, copyOptions);
       m_index = cloner.clone_Index(m_index);
@@ -195,8 +195,8 @@ public:
       return cache;
     }
 
-    if (uqPolicy != AMSUQPolicy::FAISS_Mean &&
-        uqPolicy != AMSUQPolicy::FAISS_Max)
+    if (uqPolicy != AMSUQPolicy::AMS_FAISS_MEAN &&
+        uqPolicy != AMSUQPolicy::AMS_FAISS_MAX)
       THROW(std::invalid_argument,
             "Invalid UQ policy for hdcache" +
                 std::to_string(static_cast<unsigned int>(uqPolicy)));
@@ -218,7 +218,7 @@ public:
       DBG(UQModule, "Deleting HD-Cache");
       /// TODO: Deleting the cache on device can, and does
       /// result in C++ destructor.
-      if (cache_location != AMSResourceType::DEVICE) {
+      if (cache_location != AMSResourceType::AMS_DEVICE) {
         m_index->reset();
         delete m_index;
       }
@@ -309,7 +309,7 @@ public:
     TypeValue *lin_data =
         data_handler::linearize_features(cache_location, ndata, inputs);
     _add(ndata, lin_data);
-    auto& rm = ams::ResourceManager::getInstance();
+    auto &rm = ams::ResourceManager::getInstance();
     rm.deallocate(lin_data, cache_location);
   }
 
@@ -337,7 +337,7 @@ public:
     TypeValue *lin_data =
         data_handler::linearize_features(cache_location, ndata, inputs);
     _train(ndata, lin_data);
-    auto& rm = ams::ResourceManager::getInstance();
+    auto &rm = ams::ResourceManager::getInstance();
     rm.deallocate(lin_data, cache_location);
   }
 
@@ -365,7 +365,7 @@ public:
 
     _evaluate(ndata, data, is_acceptable);
 
-    if (cache_location == AMSResourceType::DEVICE) {
+    if (cache_location == AMSResourceType::AMS_DEVICE) {
       deviceCheckErrors(__FILE__, __LINE__);
     }
 
@@ -397,7 +397,7 @@ public:
     TypeValue *lin_data =
         data_handler::linearize_features(cache_location, ndata, inputs);
     _evaluate(ndata, lin_data, is_acceptable);
-    auto& rm = ams::ResourceManager::getInstance();
+    auto &rm = ams::ResourceManager::getInstance();
     rm.deallocate(lin_data, cache_location);
     DBG(UQModule, "Done with evalution of uq");
   }
@@ -474,13 +474,9 @@ private:
 
     const size_t knbrs = static_cast<size_t>(m_knbrs);
     static const TypeValue ook = 1.0 / TypeValue(knbrs);
-    auto& rm = ams::ResourceManager::getInstance();
-    TypeValue *kdists =
-        rm.allocate<TypeValue>(ndata * knbrs,
-                                                  cache_location);
-    TypeIndex *kidxs =
-        rm.allocate<TypeIndex>(ndata * knbrs,
-                                                  cache_location);
+    auto &rm = ams::ResourceManager::getInstance();
+    TypeValue *kdists = rm.allocate<TypeValue>(ndata * knbrs, cache_location);
+    TypeIndex *kidxs = rm.allocate<TypeIndex>(ndata * knbrs, cache_location);
 
     // query faiss
     // TODO: This is a HACK. When searching more than 65535
@@ -501,15 +497,15 @@ private:
 #endif
 
     // compute means
-    if (cache_location == AMSResourceType::HOST) {
+    if (cache_location == AMSResourceType::AMS_HOST) {
       for (size_t i = 0; i < ndata; ++i) {
-        if (m_policy == AMSUQPolicy::FAISS_Mean) {
+        if (m_policy == AMSUQPolicy::AMS_FAISS_MEAN) {
           TypeValue mean_dist = std::accumulate(kdists + i * knbrs,
                                                 kdists + (i + 1) * knbrs,
                                                 0.) *
                                 ook;
           is_acceptable[i] = mean_dist < acceptable_error;
-        } else if (m_policy == AMSUQPolicy::FAISS_Max) {
+        } else if (m_policy == AMSUQPolicy::AMS_FAISS_MAX) {
           // Take the furtherst cluster as the distance metric
           TypeValue max_dist =
               *std::max_element(&kdists[i * knbrs],

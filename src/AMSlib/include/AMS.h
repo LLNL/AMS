@@ -43,58 +43,51 @@ extern "C" {
 
 typedef void (*AMSPhysicFn)(void *, long, const void *const *, void *const *);
 
-typedef void *AMSExecutor;
+typedef long AMSExecutor;
+typedef int AMSCAbstrModel;
 
-typedef enum { Single = 0, Double } AMSDType;
+typedef enum { AMS_SINGLE = 0, AMS_DOUBLE } AMSDType;
 
 typedef enum {
-  UNKNOWN = -1,
-  HOST = 0,
-  DEVICE = 1,
-  PINNED = 2,
-  RSEND
+  AMS_UNKNOWN = -1,
+  AMS_HOST = 0,
+  AMS_DEVICE = 1,
+  AMS_PINNED = 2,
+  AMS_RSEND
 } AMSResourceType;
 
-typedef enum { UBALANCED = 0, BALANCED } AMSExecPolicy;
+typedef enum { AMS_UBALANCED = 0, AMS_BALANCED } AMSExecPolicy;
 
-typedef enum { None = 0, CSV, REDIS, HDF5, RMQ } AMSDBType;
+typedef enum { AMS_NONE = 0, AMS_CSV, AMS_REDIS, AMS_HDF5, AMS_RMQ } AMSDBType;
 
-// TODO: create a cleaner interface that separates UQ type (FAISS, DeltaUQ) with policy (max, mean).
 typedef enum {
-  AMSUQPolicy_BEGIN = 0,
-  FAISS_Mean,
-  FAISS_Max,
-  DeltaUQ_Mean,
-  DeltaUQ_Max,
-  Random,
-  AMSUQPolicy_END
+  AMS_UQ_BEGIN = 0,
+  AMS_FAISS_MEAN,
+  AMS_FAISS_MAX,
+  AMS_DELTAUQ_MEAN,
+  AMS_DELTAUQ_MAX,
+  AMS_RANDOM,
+  AMS_UQ_END
 } AMSUQPolicy;
 
-typedef struct ams_env_object {
-  char *SPath;
-  char *UQPath;
-  char *dbLabel;
-  double threshold;
-  AMSUQPolicy uqPolicy;
-  int nClusters;
-} AMSEnvObject;
 
-typedef struct ams_conf {
-  const AMSExecPolicy ePolicy;
-  const AMSDType dType;
-  const AMSResourceType device;
-  AMSPhysicFn cBack;
-  char *SPath;
-  char *UQPath;
-  char *DBPath;
-  double threshold;
-  const AMSUQPolicy uqPolicy;
-  const int nClusters;
-  int pId;
-  int wSize;
-} AMSConfig;
+AMSExecutor AMSCreateExecutor(AMSCAbstrModel model,
+                              AMSExecPolicy exec_policy,
+                              AMSDType data_type,
+                              AMSResourceType resource_type,
+                              AMSPhysicFn call_back,
+                              int process_id,
+                              int world_size);
 
-AMSExecutor AMSCreateExecutor(const AMSConfig config);
+AMSCAbstrModel AMSRegisterAbstractModel(const char *domain_name,
+                                        AMSUQPolicy uq_policy,
+                                        double threshold,
+                                        const char *surrogate_path,
+                                        const char *uq_path,
+                                        const char *db_label,
+                                        int num_clusters);
+
+AMSCAbstrModel AMSQueryModel(const char *domain_model);
 
 #ifdef __AMS_ENABLE_MPI__
 void AMSDistributedExecute(AMSExecutor executor,
@@ -122,6 +115,7 @@ int AMSSetCommunicator(MPI_Comm Comm);
 
 void AMSSetAllocator(AMSResourceType resource, const char *alloc_name);
 const char *AMSGetAllocatorName(AMSResourceType device);
+void configure_ams_fs_database(AMSDBType db_type, const char *db_path);
 
 #ifdef __cplusplus
 }

@@ -41,9 +41,9 @@ bool inference(SurrogateModel<T> &model,
   for (int i = 0; i < 4; i++) {
     T *first_model_out = outputs[i];
     T *second_model_out = outputs[i + 4];
-    if (resource == AMSResourceType::DEVICE) {
-      first_model_out = ams_rm.allocate<T>(SIZE, AMSResourceType::HOST);
-      second_model_out = ams_rm.allocate<T>(SIZE, AMSResourceType::HOST);
+    if (resource == AMSResourceType::AMS_DEVICE) {
+      first_model_out = ams_rm.allocate<T>(SIZE, AMSResourceType::AMS_HOST);
+      second_model_out = ams_rm.allocate<T>(SIZE, AMSResourceType::AMS_HOST);
       ams_rm.copy(outputs[i], first_model_out, SIZE * sizeof(T));
       ams_rm.copy(outputs[i + 4], second_model_out, SIZE * sizeof(T));
     }
@@ -61,9 +61,9 @@ bool inference(SurrogateModel<T> &model,
       }
     }
 
-    if (resource == AMSResourceType::DEVICE) {
-      ams_rm.deallocate(first_model_out, AMSResourceType::HOST);
-      ams_rm.deallocate(second_model_out, AMSResourceType::HOST);
+    if (resource == AMSResourceType::AMS_DEVICE) {
+      ams_rm.deallocate(first_model_out, AMSResourceType::AMS_HOST);
+      ams_rm.deallocate(second_model_out, AMSResourceType::AMS_HOST);
     }
   }
 
@@ -82,24 +82,24 @@ int main(int argc, char *argv[])
   using namespace ams;
   auto &ams_rm = ams::ResourceManager::getInstance();
   int use_device = std::atoi(argv[1]);
-  char *data_type = argv[2];
-  char *zero_model = argv[3];
-  char *one_model = argv[4];
+  std::string data_type(argv[2]);
+  std::string zero_model(argv[3]);
+  std::string one_model(argv[4]);
 
-  AMSResourceType resource = AMSResourceType::HOST;
+  AMSResourceType resource = AMSResourceType::AMS_HOST;
   if (use_device == 1) {
-    resource = AMSResourceType::DEVICE;
+    resource = AMSResourceType::AMS_DEVICE;
   }
 
 
   ams_rm.init();
   int ret = 0;
-  if (std::strcmp("double", data_type) == 0) {
+  if (data_type.compare("double") == 0) {
     std::shared_ptr<SurrogateModel<double>> model =
         SurrogateModel<double>::getInstance(one_model, resource);
     assert(model->is_double());
     ret = inference<double>(*model, resource, zero_model);
-  } else if (std::strcmp("single", data_type) == 0) {
+  } else if (data_type.compare("single") == 0) {
     std::shared_ptr<SurrogateModel<float>> model =
         SurrogateModel<float>::getInstance(one_model, resource);
     assert(!model->is_double());

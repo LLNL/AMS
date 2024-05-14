@@ -109,7 +109,7 @@ inline uint32_t getVerbosityLevel()
     memUsage(vm, rs);                                            \
     DBG(id, "Memory usage at %s is VM:%g RS:%g", phase, vm, rs); \
                                                                  \
-    for (int i = 0; i < AMSResourceType::RSEND; i++) {           \
+    for (int i = 0; i < AMSResourceType::AMS_RSEND; i++) {       \
       if (rm.isActive((AMSResourceType)i)) {                     \
         rm.getAllocatorStats((AMSResourceType)i,                 \
                              watermark,                          \

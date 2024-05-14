@@ -1,5 +1,5 @@
-#include <mpi.h>
 #include <AMS.h>
+#include <mpi.h>
 
 #include <cstring>
 #include <iostream>
@@ -21,7 +21,7 @@ void init(double *data, int elements, double value)
 
 void evaluate(double *data, double *src, int elements)
 {
-  auto& rm = ams::ResourceManager::getInstance();
+  auto &rm = ams::ResourceManager::getInstance();
   rm.copy(src, data, elements * sizeof(double));
 }
 
@@ -35,9 +35,9 @@ int main(int argc, char *argv[])
   using namespace ams;
   int device = std::atoi(argv[1]);
   MPI_Init(&argc, &argv);
-  AMSSetupAllocator(AMSResourceType::HOST);
-  AMSResourceType resource = AMSResourceType::HOST;
-  AMSSetDefaultAllocator(AMSResourceType::HOST);
+  AMSSetupAllocator(AMSResourceType::AMS_HOST);
+  AMSResourceType resource = AMSResourceType::AMS_HOST;
+  AMSSetDefaultAllocator(AMSResourceType::AMS_HOST);
   int rId, wS;
   MPI_Comm_size(MPI_COMM_WORLD, &wS);
   MPI_Comm_rank(MPI_COMM_WORLD, &rId);
@@ -46,28 +46,30 @@ int main(int argc, char *argv[])
   std::normal_distribution<double> distribution(0.5, 0.3);
   srand(rId);
   double threshold;
-  for ( int i = 0; i <= rId; i++){
+  for (int i = 0; i <= rId; i++) {
     threshold = distribution(generator);
   }
 
-  int computeElements = (threshold * SIZE); // / sizeof(double);
+  int computeElements = (threshold * SIZE);  // / sizeof(double);
 
   double *srcData, *destData;
   double *srcHData = srcData =
-      ResourceManager::allocate<double>(computeElements, AMSResourceType::HOST);
+      ResourceManager::allocate<double>(computeElements,
+                                        AMSResourceType::AMS_HOST);
   double *destHData = destData =
-      ResourceManager::allocate<double>(computeElements, AMSResourceType::HOST);
+      ResourceManager::allocate<double>(computeElements,
+                                        AMSResourceType::AMS_HOST);
 
   init(srcHData, computeElements, static_cast<double>(rId));
 
   if (device == 1) {
-    AMSSetupAllocator(AMSResourceType::DEVICE);
-    AMSSetDefaultAllocator(AMSResourceType::DEVICE);
-    resource = AMSResourceType::DEVICE;
+    AMSSetupAllocator(AMSResourceType::AMS_DEVICE);
+    AMSSetDefaultAllocator(AMSResourceType::AMS_DEVICE);
+    resource = AMSResourceType::AMS_DEVICE;
     srcData = ResourceManager::allocate<double>(computeElements,
-                                                AMSResourceType::DEVICE);
+                                                AMSResourceType::AMS_DEVICE);
     destData = ResourceManager::allocate<double>(computeElements,
-                                                 AMSResourceType::DEVICE);
+                                                 AMSResourceType::AMS_DEVICE);
   }
 
   std::vector<double *> inputs({srcData});
@@ -89,14 +91,14 @@ int main(int argc, char *argv[])
     ResourceManager::copy(destData,
                           destHData,
                           computeElements * sizeof(double));
-    ResourceManager::deallocate(destData, AMSResourceType::DEVICE);
-    ResourceManager::deallocate(srcData, AMSResourceType::DEVICE);
+    ResourceManager::deallocate(destData, AMSResourceType::AMS_DEVICE);
+    ResourceManager::deallocate(srcData, AMSResourceType::AMS_DEVICE);
   }
 
   int ret = verify(destHData, srcHData, computeElements, rId);
 
-  ResourceManager::deallocate(destHData, AMSResourceType::HOST);
-  ResourceManager::deallocate(srcHData, AMSResourceType::HOST);
+  ResourceManager::deallocate(destHData, AMSResourceType::AMS_HOST);
+  ResourceManager::deallocate(srcHData, AMSResourceType::AMS_HOST);
 
   MPI_Finalize();
   return ret;

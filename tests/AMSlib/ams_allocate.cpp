@@ -55,9 +55,9 @@ int main(int argc, char* argv[])
   auto& ams_rm = ams::ResourceManager::getInstance();
   ams_rm.init();
   if (device == 1) {
-    if (test_allocation(AMSResourceType::DEVICE, "DEVICE") != 0) return 1;
+    if (test_allocation(AMSResourceType::AMS_DEVICE, "DEVICE") != 0) return 1;
   } else if (device == 0) {
-    if (test_allocation(AMSResourceType::HOST, "HOST") != 0) return 1;
+    if (test_allocation(AMSResourceType::AMS_HOST, "HOST") != 0) return 1;
   }
 
   // Testing with pools
@@ -66,14 +66,15 @@ int main(int argc, char* argv[])
     auto& rm = umpire::ResourceManager::getInstance();
     auto alloc_resource = rm.makeAllocator<umpire::strategy::QuickPool, true>(
         "test-device", rm.getAllocator("DEVICE"));
-    ams_rm.setAllocator("test-device", AMSResourceType::DEVICE);
-    if (test_allocation(AMSResourceType::DEVICE, "test-device") != 0) return 1;
+    ams_rm.setAllocator("test-device", AMSResourceType::AMS_DEVICE);
+    if (test_allocation(AMSResourceType::AMS_DEVICE, "test-device") != 0)
+      return 1;
   } else if (device == 0) {
     auto& rm = umpire::ResourceManager::getInstance();
     auto alloc_resource = rm.makeAllocator<umpire::strategy::QuickPool, true>(
         "test-host", rm.getAllocator("HOST"));
-    ams_rm.setAllocator("test-host", AMSResourceType::HOST);
-    if (test_allocation(AMSResourceType::HOST, "test-host") != 0) return 1;
+    ams_rm.setAllocator("test-host", AMSResourceType::AMS_HOST);
+    if (test_allocation(AMSResourceType::AMS_HOST, "test-host") != 0) return 1;
   }
 
   return 0;
