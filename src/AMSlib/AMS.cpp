@@ -20,9 +20,8 @@
 #include "wf/resource_manager.hpp"
 #include "wf/workflow.hpp"
 
-struct AMSWrap {
-  using json = nlohmann::json;
 
+struct AMSAbstractModel {
   enum UQAggrType {
     Unknown = -1,
     Mean = 0,
@@ -30,25 +29,25 @@ struct AMSWrap {
   };
 
 public:
-  std::vector<std::pair<AMSDType, void *>> executors;
-  std::unordered_map<std::string, AMSEnvObject> ams_candidate_models;
-  AMSDBType dbType = AMSDBType::None;
+  std::string SPath;
+  std::string UQPath;
+  std::string DBLabel;
+  double threshold;
+  AMSUQPolicy uqPolicy;
+  int nClusters;
 
-private:
-  void dumpEnv()
+  static AMSUQPolicy getUQType(std::string type)
   {
-    for (auto &KV : ams_candidate_models) {
-      DBG(AMS, "\t\t\t Model: %s", KV.first.c_str());
-      if (KV.second.SPath)
-        DBG(AMS, "Surrogate Model Path: %s", KV.second.SPath);
-      if (KV.second.UQPath) DBG(AMS, "UQ-Model: %s", KV.second.UQPath);
-      DBG(AMS,
-          "db-Label: %s threshold %f UQ-Policy: %u nClusters: %d",
-          KV.second.dbLabel,
-          KV.second.threshold,
-          KV.second.uqPolicy,
-          KV.second.nClusters);
+    if (type.compare("deltaUQ") == 0) {
+      return AMSUQPolicy::AMS_DELTAUQ_MEAN;
+    } else if (type.compare("faiss") == 0) {
+      return AMSUQPolicy::AMS_FAISS_MEAN;
+    } else if (type.compare("random") == 0) {
+      return AMSUQPolicy::AMS_RANDOM;
+    } else {
+      THROW(std::runtime_error, "Unknown uq type " + type);
     }
+    return AMSUQPolicy::AMS_UQ_END;
   }
 
   static UQAggrType getUQAggregate(std::string policy)
@@ -60,31 +59,42 @@ private:
     return UQAggrType::Unknown;
   }
 
-  static char *getStringValue(std::string str)
+  std::string parseDBLabel(nlohmann::json &value)
   {
-    char *cstr = new char[str.size() + 1];
-    str.copy(cstr, str.size());
-    cstr[str.size()] = '\0';
-    return cstr;
-  }
-
-
-  void parseDomainModels(
-      json &jRoot,
-      std::unordered_map<std::string, std::string> &domain_map)
-  {
-    if (!jRoot.contains("domain_models")) return;
-
-    auto domain_models = jRoot["domain_models"];
-    for (auto &field : domain_models.items()) {
-      auto &name = field.key();
-      auto val = field.value().get<std::string>();
-      domain_map.emplace(name, val);
+    if (!value.contains("db_label")) {
+      THROW(std::runtime_error, "ml model must contain <db_label> entry");
     }
-    return;
+
+    return value["db_label"].get<std::string>();
   }
 
-  int parseClusters(json &value)
+
+  void parseUQPaths(AMSUQPolicy policy, nlohmann::json &jRoot)
+  {
+
+    if (!jRoot.contains("model_path")) {
+      THROW(std::runtime_error, "Model should contain path");
+    }
+
+    SPath = jRoot["model_path"].get<std::string>();
+    std::cout << SPath << "is \n";
+
+    DBG(AMS, "Model Is Random or DeltaUQ %s %u", SPath.c_str(), policy);
+    if (BaseUQ::isRandomUQ(policy) || BaseUQ::isDeltaUQ(policy)) {
+      UQPath = "";
+      return;
+    }
+
+    if (!jRoot.contains("faiss_path")) {
+      THROW(std::runtime_error,
+            "Model is of UQ type 'faiss' and thus expecting a path to FAISS");
+    }
+
+    UQPath = jRoot["faiss_path"].get<std::string>();
+  }
+
+
+  int parseClusters(nlohmann::json &value)
   {
     if (!value.contains("neighbours"))
       THROW(std::runtime_error, "UQ Policy must contain neighbours");
@@ -92,20 +102,12 @@ private:
     return value["neighbours"].get<int>();
   }
 
-  char *parseDBLabel(json &value)
-  {
-    if (!value.contains("db_label")) {
-      THROW(std::runtime_error, "ml model must contain <db_label> entry");
-    }
 
-    return getStringValue(value["db_label"].get<std::string>());
-  }
-
-  AMSUQPolicy parseUQPolicy(json &value)
+  AMSUQPolicy parseUQPolicy(nlohmann::json &value)
   {
-    AMSUQPolicy policy = AMSUQPolicy::AMSUQPolicy_END;
+    AMSUQPolicy policy = AMSUQPolicy::AMS_UQ_END;
     if (value.contains("uq_type")) {
-      policy = BaseUQ::getUQType(value["uq_type"].get<std::string>());
+      policy = getUQType(value["uq_type"].get<std::string>());
     } else {
       THROW(std::runtime_error, "Model must specify the UQ type");
     }
@@ -133,81 +135,156 @@ private:
 
     if (uqAggregate == Max) {
       if (BaseUQ::isDeltaUQ(policy)) {
-        policy = AMSUQPolicy::DeltaUQ_Max;
+        policy = AMSUQPolicy::AMS_DELTAUQ_MAX;
       } else if (BaseUQ::isFaissUQ(policy)) {
-        policy = AMSUQPolicy::FAISS_Max;
+        policy = AMSUQPolicy::AMS_FAISS_MAX;
       }
     } else if (uqAggregate == Mean) {
       if (BaseUQ::isDeltaUQ(policy)) {
-        policy = AMSUQPolicy::DeltaUQ_Mean;
+        policy = AMSUQPolicy::AMS_DELTAUQ_MEAN;
       } else if (BaseUQ::isFaissUQ(policy)) {
-        policy = AMSUQPolicy::FAISS_Mean;
+        policy = AMSUQPolicy::AMS_FAISS_MEAN;
       }
     }
     return policy;
   }
 
-  void parseUQPaths(AMSUQPolicy policy, AMSEnvObject &object, json &jRoot)
+
+public:
+  AMSAbstractModel(nlohmann::json &value)
   {
 
-    if (!jRoot.contains("model_path")) {
-      THROW(std::runtime_error, "Model should contain path");
+    uqPolicy = parseUQPolicy(value);
+
+    if (BaseUQ::isFaissUQ(uqPolicy)) {
+      nClusters = parseClusters(value);
     }
 
-    object.SPath = getStringValue(jRoot["model_path"].get<std::string>());
-
-    DBG(AMS, "Model Is Random or DeltaUQ %s %u", object.SPath, policy);
-    if (BaseUQ::isRandomUQ(policy) || BaseUQ::isDeltaUQ(policy)) {
-      object.UQPath = nullptr;
-      return;
-    }
-
-    if (!jRoot.contains("faiss_path")) {
+    if (!value.contains("threshold")) {
       THROW(std::runtime_error,
-            "Model is of UQ type 'faiss' and thus expecting a path to FAISS");
+            "Model must define threshold value (threshold < 0 always "
+            "performs original code, threshold=1e30 always use the "
+            "model)");
     }
-
-    object.UQPath = getStringValue(jRoot["faiss_path"].get<std::string>());
+    threshold = value["threshold"].get<float>();
+    parseUQPaths(uqPolicy, value);
+    DBLabel = parseDBLabel(value);
   }
 
 
+  AMSAbstractModel(AMSUQPolicy uq_policy,
+                   const char *surrogate_path,
+                   const char *uq_path,
+                   const char *db_label,
+                   double threshold,
+                   int num_clusters)
+  {
+    if (db_label == nullptr)
+      FATAL(AMS, "registering model without a database identifier\n");
+
+    DBLabel = std::string(db_label);
+
+    if (!BaseUQ::isUQPolicy(uq_policy)) {
+      FATAL(AMS, "Invalid UQ policy %d", uq_policy)
+    }
+
+    uqPolicy = uq_policy;
+
+    if (surrogate_path != nullptr) SPath = std::string(surrogate_path);
+
+    if (uq_path != nullptr) UQPath = std::string(uq_path);
+
+    this->threshold = threshold;
+    num_clusters = num_clusters;
+    DBG(AMS,
+        "Registered Model %s %g",
+        BaseUQ::UQPolicyToStr(uqPolicy).c_str(),
+        threshold);
+  }
+
+
+  void dump()
+  {
+    if (!SPath.empty()) DBG(AMS, "Surrogate Model Path: %s", SPath.c_str());
+    if (!UQPath.empty()) DBG(AMS, "UQ-Model: %s", UQPath.c_str());
+    DBG(AMS,
+        "db-Label: %s threshold %f UQ-Policy: %u nClusters: %d",
+        DBLabel.c_str(),
+        threshold,
+        uqPolicy,
+        nClusters);
+  }
+};
+
+
+class AMSWrap
+{
+  using json = nlohmann::json;
+
+public:
+  std::vector<std::pair<AMSDType, void *>> executors;
+  std::vector<AMSAbstractModel> registered_models;
+  std::unordered_map<std::string, int> ams_candidate_models;
+  AMSDBType dbType = AMSDBType::AMS_NONE;
+
+private:
+  void dumpEnv()
+  {
+    for (auto &KV : ams_candidate_models) {
+      DBG(AMS,
+          "\t\t\t Model: %s With AMSAbstractID: %d",
+          KV.first.c_str(),
+          KV.second);
+      if (KV.second >= ams_candidate_models.size()) {
+        FATAL(AMS,
+              "Candidate model mapped to AMSAbstractID that does not exist "
+              "(%d)",
+              KV.second);
+      }
+      auto &abstract_model = registered_models[KV.second];
+      abstract_model.dump();
+    }
+  }
+
+  void parseDomainModels(
+      json &jRoot,
+      std::unordered_map<std::string, std::string> &domain_map)
+  {
+    if (!jRoot.contains("domain_models")) return;
+
+    auto domain_models = jRoot["domain_models"];
+    for (auto &field : domain_models.items()) {
+      auto &name = field.key();
+      auto val = field.value().get<std::string>();
+      domain_map.emplace(val, name);
+    }
+    return;
+  }
+
   void parseCandidateAMSModels(
       json &jRoot,
-      std::unordered_map<std::string, AMSEnvObject> &registered_models)
+      std::unordered_map<std::string, std::string> ml_domain_mapping)
   {
     if (jRoot.contains("ml_models")) {
       auto models = jRoot["ml_models"];
       for (auto &field : models.items()) {
-        AMSEnvObject object = {
-            nullptr, nullptr, nullptr, -1, AMSUQPolicy::AMSUQPolicy_END, -1};
-        auto entry = registered_models.find(field.key());
-        if (entry != registered_models.end()) {
+        // We skip models not registered to respective domains. We will not use
+        // those.
+        auto &key = field.key();
+        if (ml_domain_mapping.find(key) == ml_domain_mapping.end()) continue;
+
+        if (ams_candidate_models.find(ml_domain_mapping[key]) !=
+            ams_candidate_models.end()) {
           FATAL(AMS,
-                "There are multiple models (%s) with the same name. "
-                "Overriding "
-                "previous entry",
-                field.key().c_str());
+                "Domain Model %s has multiple ml model mappings",
+                ml_domain_mapping[key].c_str())
         }
 
-        auto value = field.value();
-        object.uqPolicy = parseUQPolicy(value);
-
-        if (BaseUQ::isFaissUQ(object.uqPolicy)) {
-          object.nClusters = parseClusters(value);
-        }
-
-        if (!value.contains("threshold")) {
-          THROW(std::runtime_error,
-                "Model must define threshold value (threshold < 0 always "
-                "performs original code, threshold=1e30 always use the "
-                "model)");
-        }
-
-        object.threshold = value["threshold"].get<float>();
-        parseUQPaths(object.uqPolicy, object, value);
-        object.dbLabel = parseDBLabel(value);
-        DBG(AMS, "Adding Env Entry");
-        registered_models.emplace(field.key(), object);
+        registered_models.push_back(AMSAbstractModel(field.value()));
+        // We add the value of the domain mappings, as the application can
+        // only query based on these.
+        ams_candidate_models.emplace(ml_domain_mapping[key],
+                                     registered_models.size() - 1);
       }
     }
   }
@@ -219,14 +296,15 @@ private:
       auto entry = jRoot["db"];
       if (!entry.contains("dbType"))
         THROW(std::runtime_error,
-              "JSON file instantiates db-fields without defining a \"dbType\" "
+              "JSON file instantiates db-fields without defining a "
+              "\"dbType\" "
               "entry");
       auto dbStrType = entry["dbType"].get<std::string>();
       DBG(AMS, "DB Type is: %s", dbStrType.c_str())
       AMSDBType dbType = ams::db::getDBType(dbStrType);
-      if (dbType == None) return;
+      if (dbType == AMSDBType::AMS_NONE) return;
 
-      if (dbType == AMSDBType::CSV || dbType == AMSDBType::HDF5) {
+      if (dbType == AMSDBType::AMS_CSV || dbType == AMSDBType::AMS_HDF5) {
         if (!entry.contains("fs_path"))
           THROW(std::runtime_error,
                 "JSON db-fiels does not provide file system path");
@@ -243,86 +321,77 @@ private:
     }
   }
 
-  void mergeCandidatesWithDomain(
-      std::unordered_map<std::string, AMSEnvObject> &mlModels,
-      const std::unordered_map<std::string, std::string> &domainModels)
-  {
-    /* We need to match the domain key with the ml-model value (AMSEnvObject) 
-     * Conceptually, the domainModels-keys are what application domain scientists are using
-     * as existing solvers. And the domainModels-Value is the ml-model that the application scientist
-     * decides to assign on the specific solver. We need now to point the domainModels-Key (application-scientist)
-     * with the ML scientist model implementation (mlModels->Value) to bridge those independent stake-holders
-     */
-    for (auto &domainModel : domainModels) {
-      auto ml_model = domainModel.second;
-      auto registered_model = mlModels.find(ml_model);
-      if (registered_model == mlModels.end()) {
-        THROW(std::runtime_error,
-              "Requesting model: " + ml_model +
-                  " which is not registered undel <ml_models> entries");
-        return;
-      }
-      ams_candidate_models.emplace(ml_model, registered_model->second);
-    }
-
-    /* Here ams_candidate_models contains all the models that the applicatin can use now.
-     * We are pessimistic here and we will find which models are not accessible by the application
-     * and delete this entries.
-     */
-
-    for (auto it = mlModels.begin(); it != mlModels.end();) {
-      auto ml_key = it->first;
-      auto ams_it = ams_candidate_models.find(ml_key);
-      if (ams_it == mlModels.end()) {
-        releaseEnvObject(ams_it->second);
-        it = mlModels.erase(it);
-      } else {
-        it++;
-      }
-    }
-  }
-
-  void releaseEnvObject(AMSEnvObject &object)
-  {
-    if (object.SPath) delete[] object.SPath;
-    if (object.UQPath) delete[] object.UQPath;
-    if (object.dbLabel) delete[] object.dbLabel;
-  }
-
 public:
   AMSWrap()
   {
     if (const char *object_descr = std::getenv("AMS_OBJECTS")) {
       DBG(AMS, "Opening env file %s", object_descr);
-      std::unordered_map<std::string, AMSEnvObject> models;
-      std::unordered_map<std::string, std::string> domain_mapping;
       std::ifstream json_file(object_descr);
       json data = json::parse(json_file);
-      parseCandidateAMSModels(data, models);
-      parseDatabase(data);
+      /* We first parse domain models. Domain models can be potentially 
+       * queried and returned to the main application using the "key" value
+       * as query parameter. This redirection only applies for ml-models 
+       * registered by the application itself.
+       */
+      std::unordered_map<std::string, std::string> domain_mapping;
       parseDomainModels(data, domain_mapping);
-      mergeCandidatesWithDomain(models, domain_mapping);
+      parseCandidateAMSModels(data, domain_mapping);
+      parseDatabase(data);
     }
 
     dumpEnv();
+  }
+
+  int register_model(const char *domain_name,
+                     AMSUQPolicy uq_policy,
+                     double threshold,
+                     const char *surrogate_path,
+                     const char *uq_path,
+                     const char *db_label,
+                     int num_clusters)
+  {
+    auto model = ams_candidate_models.find(domain_name);
+    if (model != ams_candidate_models.end()) {
+      FATAL(AMS,
+            "Trying to register model on domain: %s but model already exists "
+            "%s",
+            domain_name,
+            registered_models[model->second].SPath.c_str());
+    }
+    registered_models.push_back(AMSAbstractModel(
+        uq_policy, surrogate_path, uq_path, db_label, threshold, num_clusters));
+    ams_candidate_models.emplace(std::string(domain_name),
+                                 registered_models.size() - 1);
+    return registered_models.size() - 1;
+  }
+
+  int get_model_index(const char *domain_name)
+  {
+    auto model = ams_candidate_models.find(domain_name);
+    if (model == ams_candidate_models.end()) return -1;
+
+    return model->second;
+  }
+
+  AMSAbstractModel &get_model(int index)
+  {
+    if (index >= registered_models.size()) {
+      FATAL(AMS, "Model id: %d does not exist", index);
+    }
+
+    return registered_models[index];
   }
 
   ~AMSWrap()
   {
     for (auto E : executors) {
       if (E.second != nullptr) {
-        if (E.first == AMSDType::Double) {
+        if (E.first == AMSDType::AMS_DOUBLE) {
           delete reinterpret_cast<ams::AMSWorkflow<double> *>(E.second);
         } else {
           delete reinterpret_cast<ams::AMSWorkflow<float> *>(E.second);
         }
       }
-    }
-
-    for (auto it = ams_candidate_models.begin();
-         it != ams_candidate_models.end();) {
-      releaseEnvObject(it->second);
-      it = ams_candidate_models.erase(it);
     }
   }
 };
@@ -338,12 +407,12 @@ void _AMSExecute(AMSExecutor executor,
                  int outputDim,
                  MPI_Comm Comm = 0)
 {
-  uint64_t index = reinterpret_cast<uint64_t>(executor);
+  long index = static_cast<long>(executor);
   if (index >= _amsWrap.executors.size())
     throw std::runtime_error("AMS Executor identifier does not exist\n");
   auto currExec = _amsWrap.executors[index];
 
-  if (currExec.first == AMSDType::Double) {
+  if (currExec.first == AMSDType::AMS_DOUBLE) {
     ams::AMSWorkflow<double> *dWF =
         reinterpret_cast<ams::AMSWorkflow<double> *>(currExec.second);
     dWF->evaluate(probDescr,
@@ -353,7 +422,7 @@ void _AMSExecute(AMSExecutor executor,
                   inputDim,
                   outputDim,
                   Comm);
-  } else if (currExec.first == AMSDType::Single) {
+  } else if (currExec.first == AMSDType::AMS_SINGLE) {
     ams::AMSWorkflow<float> *sWF =
         reinterpret_cast<ams::AMSWorkflow<float> *>(currExec.second);
     sWF->evaluate(probDescr,
@@ -373,7 +442,13 @@ void _AMSExecute(AMSExecutor executor,
 extern "C" {
 #endif
 
-AMSExecutor AMSCreateExecutor(const AMSConfig config)
+AMSExecutor AMSCreateExecutor(AMSCAbstrModel model,
+                              AMSExecPolicy exec_policy,
+                              AMSDType data_type,
+                              AMSResourceType resource_type,
+                              AMSPhysicFn call_back,
+                              int process_id,
+                              int world_size)
 {
   static std::once_flag flag;
   std::call_once(flag, [&]() {
@@ -381,41 +456,43 @@ AMSExecutor AMSCreateExecutor(const AMSConfig config)
     rm.init();
   });
 
-  if (config.dType == Double) {
+  AMSAbstractModel &model_descr = _amsWrap.get_model(model);
+
+  if (data_type == AMSDType::AMS_DOUBLE) {
     ams::AMSWorkflow<double> *dWF =
-        new ams::AMSWorkflow<double>(config.cBack,
-                                     config.UQPath,
-                                     config.SPath,
-                                     config.DBPath,
-                                     config.device,
-                                     config.threshold,
-                                     config.uqPolicy,
-                                     config.nClusters,
-                                     config.pId,
-                                     config.wSize,
-                                     config.ePolicy);
+        new ams::AMSWorkflow<double>(call_back,
+                                     model_descr.UQPath,
+                                     model_descr.SPath,
+                                     model_descr.DBLabel,
+                                     resource_type,
+                                     model_descr.threshold,
+                                     model_descr.uqPolicy,
+                                     model_descr.nClusters,
+                                     process_id,
+                                     world_size,
+                                     exec_policy);
     _amsWrap.executors.push_back(
-        std::make_pair(config.dType, static_cast<void *>(dWF)));
-    return reinterpret_cast<AMSExecutor>(_amsWrap.executors.size() - 1L);
-  } else if (config.dType == AMSDType::Single) {
+        std::make_pair(data_type, static_cast<void *>(dWF)));
+    return static_cast<AMSExecutor>(_amsWrap.executors.size()) - 1L;
+  } else if (data_type == AMSDType::AMS_SINGLE) {
     ams::AMSWorkflow<float> *sWF =
-        new ams::AMSWorkflow<float>(config.cBack,
-                                    config.UQPath,
-                                    config.SPath,
-                                    config.DBPath,
-                                    config.device,
-                                    static_cast<float>(config.threshold),
-                                    config.uqPolicy,
-                                    config.nClusters,
-                                    config.pId,
-                                    config.wSize,
-                                    config.ePolicy);
+        new ams::AMSWorkflow<float>(call_back,
+                                    model_descr.UQPath,
+                                    model_descr.SPath,
+                                    model_descr.DBLabel,
+                                    resource_type,
+                                    model_descr.threshold,
+                                    model_descr.uqPolicy,
+                                    model_descr.nClusters,
+                                    process_id,
+                                    world_size,
+                                    exec_policy);
     _amsWrap.executors.push_back(
-        std::make_pair(config.dType, static_cast<void *>(sWF)));
-    return reinterpret_cast<AMSExecutor>(_amsWrap.executors.size() - 1L);
+        std::make_pair(data_type, static_cast<void *>(sWF)));
+    return static_cast<AMSExecutor>(_amsWrap.executors.size()) - 1L;
   } else {
     throw std::invalid_argument("Data type is not supported by AMSLib!");
-    return reinterpret_cast<AMSExecutor>(-1L);
+    return static_cast<AMSExecutor>(-1);
   }
 }
 
@@ -438,14 +515,14 @@ void AMSExecute(AMSExecutor executor,
 
 void AMSDestroyExecutor(AMSExecutor executor)
 {
-  uint64_t index = reinterpret_cast<uint64_t>(executor);
+  long index = static_cast<long>(executor);
   if (index >= _amsWrap.executors.size())
     throw std::runtime_error("AMS Executor identifier does not exist\n");
   auto currExec = _amsWrap.executors[index];
 
-  if (currExec.first == AMSDType::Double) {
+  if (currExec.first == AMSDType::AMS_DOUBLE) {
     delete reinterpret_cast<ams::AMSWorkflow<double> *>(currExec.second);
-  } else if (currExec.first == AMSDType::Single) {
+  } else if (currExec.first == AMSDType::AMS_SINGLE) {
     delete reinterpret_cast<ams::AMSWorkflow<float> *>(currExec.second);
   } else {
     throw std::invalid_argument("Data type is not supported by AMSLib!");
@@ -477,13 +554,44 @@ void AMSDistributedExecute(AMSExecutor executor,
 const char *AMSGetAllocatorName(AMSResourceType device)
 {
   auto &rm = ams::ResourceManager::getInstance();
-  return std::move(rm.getAllocatorName(device)).c_str();
+  return rm.getAllocatorName(device).c_str();
 }
 
 void AMSSetAllocator(AMSResourceType resource, const char *alloc_name)
 {
   auto &rm = ams::ResourceManager::getInstance();
   rm.setAllocator(std::string(alloc_name), resource);
+}
+
+AMSCAbstrModel AMSRegisterAbstractModel(const char *domain_name,
+                                        AMSUQPolicy uq_policy,
+                                        double threshold,
+                                        const char *surrogate_path,
+                                        const char *uq_path,
+                                        const char *db_label,
+                                        int num_clusters)
+{
+  int id = _amsWrap.register_model(domain_name,
+                                   uq_policy,
+                                   threshold,
+                                   surrogate_path,
+                                   uq_path,
+                                   db_label,
+                                   num_clusters);
+
+  return id;
+}
+
+
+AMSCAbstrModel AMSQueryModel(const char *domain_model)
+{
+  return _amsWrap.get_model_index(domain_model);
+}
+
+void configure_ams_fs_database(AMSDBType db_type, const char *db_path)
+{
+  auto &db_instance = ams::db::DBManager::getInstance();
+  db_instance.instantiate_fs_db(db_type, std::string(db_path));
 }
 
 #ifdef __cplusplus

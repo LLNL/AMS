@@ -60,7 +60,7 @@ class AMSWorkflow
   std::unique_ptr<UQ<FPTypeValue>> UQModel;
 
   /** The metric/type of UQ we will use to select between physics and ml computations **/
-  const AMSUQPolicy uqPolicy = AMSUQPolicy::AMSUQPolicy_END;
+  const AMSUQPolicy uqPolicy = AMSUQPolicy::AMS_UQ_END;
 
   /** @brief The database to store data for which we cannot apply the current
    * model */
@@ -107,13 +107,13 @@ class AMSWorkflow
 
     std::vector<FPTypeValue *> hInputs, hOutputs;
 
-    if (appDataLoc == AMSResourceType::HOST)
+    if (appDataLoc == AMSResourceType::AMS_HOST)
       return DB->store(num_elements, inputs, outputs);
 
     // Compute number of elements that fit inside the buffer
     size_t bElements = bSize / sizeof(FPTypeValue);
     FPTypeValue *pPtr =
-        rm.allocate<FPTypeValue>(bElements, AMSResourceType::PINNED);
+        rm.allocate<FPTypeValue>(bElements, AMSResourceType::AMS_PINNED);
     // Total inner vector dimensions (inputs and outputs)
     size_t totalDims = inputs.size() + outputs.size();
     // Compute number of elements of each outer dimension that fit in buffer
@@ -141,7 +141,7 @@ class AMSWorkflow
       // Store to database
       DB->store(actualElems, hInputs, hOutputs);
     }
-    rm.deallocate(pPtr, AMSResourceType::PINNED);
+    rm.deallocate(pPtr, AMSResourceType::AMS_PINNED);
 
     return;
   }
@@ -150,22 +150,22 @@ public:
   AMSWorkflow()
       : AppCall(nullptr),
         DB(nullptr),
-        appDataLoc(AMSResourceType::HOST),
-        ePolicy(AMSExecPolicy::UBALANCED)
+        appDataLoc(AMSResourceType::AMS_HOST),
+        ePolicy(AMSExecPolicy::AMS_UBALANCED)
   {
   }
 
   AMSWorkflow(AMSPhysicFn _AppCall,
-              char *uq_path,
-              char *surrogate_path,
-              char *domain_name,
+              std::string &uq_path,
+              std::string &surrogate_path,
+              std::string &domain_name,
               AMSResourceType appDataLoc,
               FPTypeValue threshold,
               const AMSUQPolicy uqPolicy,
               const int nClusters,
               int _pId = 0,
               int _wSize = 1,
-              AMSExecPolicy policy = AMSExecPolicy::UBALANCED)
+              AMSExecPolicy policy = AMSExecPolicy::AMS_UBALANCED)
       : AppCall(_AppCall),
         domainName(domain_name),
         rId(_pId),
@@ -333,7 +333,7 @@ public:
 #ifdef __ENABLE_MPI__
       CALIPER(CALI_MARK_BEGIN("LOAD BALANCE MODULE");)
       AMSLoadBalancer<FPTypeValue> lBalancer(rId, wSize, packedElements, Comm);
-      if (ePolicy == AMSExecPolicy::BALANCED && Comm) {
+      if (ePolicy == AMSExecPolicy::AMS_BALANCED && Comm) {
         lBalancer.init(inputDim, outputDim, appDataLoc);
         lBalancer.scatterInputs(packedInputs, appDataLoc);
         iPtr = reinterpret_cast<void **>(lBalancer.inputs());
@@ -352,7 +352,7 @@ public:
 
 #ifdef __ENABLE_MPI__
       CALIPER(CALI_MARK_BEGIN("LOAD BALANCE MODULE");)
-      if (ePolicy == AMSExecPolicy::BALANCED && Comm) {
+      if (ePolicy == AMSExecPolicy::AMS_BALANCED && Comm) {
         lBalancer.gatherOutputs(packedOutputs, appDataLoc);
       }
       CALIPER(CALI_MARK_END("LOAD BALANCE MODULE");)

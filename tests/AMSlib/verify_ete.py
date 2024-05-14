@@ -1,0 +1,118 @@
+import sys
+from pathlib import Path
+import pandas as pd
+import h5py
+import numpy as np
+
+
+def get_suffix(db_type):
+    if db_type == "csv":
+        return "csv"
+    if db_type == "none":
+        return "none"
+    if db_type == "hdf5":
+        return "h5"
+    return "unknown"
+
+
+def verify_data_collection(fs_path, db_type, num_inputs, num_outputs, name="test"):
+    if not Path(fs_path).exists():
+        print("Expecting output directory to exist")
+        return None, 1
+
+    suffix = get_suffix(db_type)
+    if suffix == "none":
+        return None, 0
+
+    fn = f"test_0.{suffix}"
+    fp = Path(f"{fs_path}/{fn}")
+
+    if not fp.exists():
+        print(f"File path {fn} does not exist")
+        return None, 1
+
+    if db_type == "csv":
+        df = pd.read_csv(str(fp), sep=":")
+        assert len(df.columns) == (num_inputs + num_outputs), "Expected equal number of inputs/outputs"
+
+        inputs = sum(1 for s in df.columns if "input" in s)
+        assert inputs == num_inputs, "Expected equal number of inputs"
+        outputs = sum(1 for s in df.columns if "output" in s)
+        assert outputs == num_outputs, "Expected equal number of outputs"
+        input_data = df[[f"input_{i}" for i in range(inputs)]].to_numpy()
+        output_data = df[[f"output_{i}" for i in range(outputs)]].to_numpy()
+        fp.unlink()
+        return (input_data, output_data), 0
+    elif db_type == "hdf5":
+        with h5py.File(fp, "r") as fd:
+            dsets = fd.keys()
+            assert len(dsets) == (num_inputs + num_outputs), "Expected equal number of inputs/outputs"
+            inputs = sum(1 for s in dsets if "input" in s)
+            assert inputs == num_inputs, "Expected equal number of inputs"
+            outputs = sum(1 for s in dsets if "output" in s)
+            assert outputs == num_outputs, "Expected equal number of outputs"
+            input_data = [[] for _ in range(num_inputs)]
+            output_data = [[] for _ in range(num_outputs)]
+            for d in dsets:
+                loc = int(d.split("_")[1])
+                if len(fd[d]):
+                    if "input" in d:
+                        input_data[loc] = fd[d][:]
+                    elif "output" in d:
+                        output_data[loc] = fd[d][:]
+            input_data = np.array(input_data)
+            output_data = np.array(output_data)
+            fp.unlink()
+            return (input_data.T, output_data.T), 0
+    else:
+        return None, 1
+
+
+def main():
+    use_device = int(sys.argv[1])
+    num_inputs = int(sys.argv[2])
+    num_outputs = int(sys.argv[3])
+
+    model_path = sys.argv[4]
+    data_type = sys.argv[5]
+    uq_name = sys.argv[6]
+    threshold = float(sys.argv[7])
+
+    num_iterations = int(sys.argv[8])
+    num_elements = int(sys.argv[9])
+    db_type = sys.argv[10]
+    fs_path = sys.argv[11]
+
+    if db_type != "none":
+        data, correct = verify_data_collection(fs_path, db_type, num_inputs, num_outputs)
+        if correct:
+            return 1
+
+        inputs = data[0]
+        outputs = data[1]
+
+        if db_type == "hdf5":
+            if "data_type" == "double":
+                assert inputs.dtype == np.float64, "Data types do not match"
+            elif "data_type" == "float":
+                assert inputs.dtype == np.float32, "Data types do not match"
+        if threshold == 0.0:
+            assert (
+                len(inputs) == num_elements and len(outputs) == num_elements
+            ), "Num elements should be the same as experiment"
+
+        elif uq_name == "random" and threshold == 1.0:
+            assert len(inputs) == 0 and len(outputs) == 0, "Num elements should be zero"
+        elif uq_name == "random":
+            lb = num_elements * threshold - num_elements * 0.05
+            ub = num_elements * threshold + num_elements * 0.05
+            print(lb, ub)
+            assert len(inputs) > lb and len(inputs) < ub, "Not in the bounds of correct items"
+            assert len(outputs) > lb and len(outputs) < ub, "Not in the bounds of correct items"
+    else:
+        return 0
+
+    return 0
+
+    sys.exit(main())
+    sys.exit(main())

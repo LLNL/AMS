@@ -265,11 +265,12 @@ public:
           "Total data %d Data per rank %d",
           globalLoad,
           balancedLoad);
-    if (displs) rm.deallocate(displs, AMSResourceType::HOST);
-    if (dataElements) rm.deallocate(dataElements, AMSResourceType::HOST);
+    if (displs) rm.deallocate(displs, AMSResourceType::AMS_HOST);
+    if (dataElements) rm.deallocate(dataElements, AMSResourceType::AMS_HOST);
     if (balancedElements)
-      rm.deallocate(balancedElements, AMSResourceType::HOST);
-    if (balancedDispls) rm.deallocate(balancedDispls, AMSResourceType::HOST);
+      rm.deallocate(balancedElements, AMSResourceType::AMS_HOST);
+    if (balancedDispls)
+      rm.deallocate(balancedDispls, AMSResourceType::AMS_HOST);
 
     for (int i = 0; i < distOutputs.size(); i++)
       rm.deallocate(distOutputs[i], resource);
@@ -294,8 +295,8 @@ public:
     auto &rm = ams::ResourceManager::getInstance();
     // We need to store information
     if (rId == root) {
-      dataElements = rm.allocate<int>(worldSize, AMSResourceType::HOST);
-      displs = rm.allocate<int>(worldSize + 1, AMSResourceType::HOST);
+      dataElements = rm.allocate<int>(worldSize, AMSResourceType::AMS_HOST);
+      displs = rm.allocate<int>(worldSize + 1, AMSResourceType::AMS_HOST);
     }
 
     // Gather the the number of items from each rank
@@ -323,9 +324,11 @@ public:
 
     if (rId == root) {
       balancedElements =
-          rm.ResourceManager::allocate<int>(worldSize, AMSResourceType::HOST);
+          rm.ResourceManager::allocate<int>(worldSize,
+                                            AMSResourceType::AMS_HOST);
       balancedDispls =
-          rm.ResourceManager::allocate<int>(worldSize, AMSResourceType::HOST);
+          rm.ResourceManager::allocate<int>(worldSize,
+                                            AMSResourceType::AMS_HOST);
       for (int i = 0; i < worldSize; i++) {
         balancedElements[i] = (globalLoad / worldSize) +
                               static_cast<int>(i < (globalLoad % worldSize));

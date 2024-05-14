@@ -22,15 +22,15 @@ std::vector<const T *> generate_vectors(const int num_clusters,
                                         int dims)
 {
   std::vector<const T *> v_data;
-  auto& rm = ams::ResourceManager::getInstance();
+  auto &rm = ams::ResourceManager::getInstance();
   // This are fixed to mimic the way the faiss was generated
   // The code below generates data values that are either within
   // the distance of the faiss index or just outside of it.
   const T distance = 10.0;
   const T offset = 5.0;
   for (int i = 0; i < dims; i++) {
-    T *data = rm.allocate<T>(num_clusters * elements,
-                                                AMSResourceType::HOST);
+    T *data =
+        rm.allocate<T>(num_clusters * elements, AMSResourceType::AMS_HOST);
     for (int j = 0; j < elements; j++) {
       // Generate a value for every cluster center
       for (int k = 0; k < num_clusters; k++) {
@@ -89,18 +89,16 @@ bool do_faiss(std::shared_ptr<HDCache<T>> &index,
   std::vector<const T *> orig_data =
       generate_vectors<T>(nClusters, nElements, nDims);
   std::vector<const T *> data = orig_data;
-  auto& rm = ams::ResourceManager::getInstance();
+  auto &rm = ams::ResourceManager::getInstance();
 
-  bool *predicates =
-      rm.allocate<bool>(nClusters * nElements, resource);
+  bool *predicates = rm.allocate<bool>(nClusters * nElements, resource);
 
-  if (resource == AMSResourceType::DEVICE) {
+  if (resource == AMSResourceType::AMS_DEVICE) {
     for (int i = 0; i < orig_data.size(); i++) {
-      T *d_data =
-          rm.allocate<T>(nClusters * nElements, resource);
+      T *d_data = rm.allocate<T>(nClusters * nElements, resource);
       rm.copy(const_cast<T *>(orig_data[i]),
-                                 d_data,
-                                 nClusters * nElements * sizeof(T));
+              d_data,
+              nClusters * nElements * sizeof(T));
       data[i] = d_data;
     }
   }
@@ -110,25 +108,23 @@ bool do_faiss(std::shared_ptr<HDCache<T>> &index,
 
   bool *h_predicates = predicates;
 
-  if (resource == AMSResourceType::DEVICE) {
-    h_predicates = rm.allocate<bool>(nClusters * nElements,
-                                                        AMSResourceType::HOST);
+  if (resource == AMSResourceType::AMS_DEVICE) {
+    h_predicates =
+        rm.allocate<bool>(nClusters * nElements, AMSResourceType::AMS_HOST);
     rm.copy(predicates, h_predicates, nClusters * nElements);
     for (auto d : data) {
-      rm.deallocate(const_cast<T *>(d),
-                                       AMSResourceType::DEVICE);
+      rm.deallocate(const_cast<T *>(d), AMSResourceType::AMS_DEVICE);
     }
-    rm.deallocate(predicates, AMSResourceType::DEVICE);
+    rm.deallocate(predicates, AMSResourceType::AMS_DEVICE);
   }
 
 
   for (auto h_d : orig_data)
-    rm.deallocate(const_cast<T *>(h_d),
-                                     AMSResourceType::HOST);
+    rm.deallocate(const_cast<T *>(h_d), AMSResourceType::AMS_HOST);
 
   bool res = validate(nClusters, nElements, h_predicates);
 
-  rm.deallocate(h_predicates, AMSResourceType::HOST);
+  rm.deallocate(h_predicates, AMSResourceType::AMS_HOST);
   return res;
 }
 
@@ -155,10 +151,10 @@ int main(int argc, char *argv[])
   int nDims = std::atoi(argv[7]);
   int nElements = std::atoi(argv[8]);
 
-  AMSResourceType resource = AMSResourceType::HOST;
-  if (use_device == 1) resource = AMSResourceType::DEVICE;
+  AMSResourceType resource = AMSResourceType::AMS_HOST;
+  if (use_device == 1) resource = AMSResourceType::AMS_DEVICE;
 
-  auto& ams_rm = ResourceManager::getInstance();
+  auto &ams_rm = ResourceManager::getInstance();
   ams_rm.init();
 
   if (std::strcmp("double", data_type) == 0) {

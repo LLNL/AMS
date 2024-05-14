@@ -164,11 +164,11 @@ public:
   void init()
   {
     DBG(ResourceManager, "Default initialization of allocators");
-    if (!RMAllocators[AMSResourceType::HOST])
-      setAllocator("HOST", AMSResourceType::HOST);
+    if (!RMAllocators[AMSResourceType::AMS_HOST])
+      setAllocator("HOST", AMSResourceType::AMS_HOST);
 #ifdef __ENABLE_CUDA__
-    if (!RMAllocators[AMSResourceType::DEVICE])
-      setAllocator("DEVICE", AMSResourceType::DEVICE);
+    if (!RMAllocators[AMSResourceType::AMS_DEVICE])
+      setAllocator("DEVICE", AMSResourceType::AMS_DEVICE);
 
     if (!RMAllocators[AMSResourceType::PINNED])
       setAllocator("PINNED", AMSResourceType::PINNED);

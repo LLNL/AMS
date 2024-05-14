@@ -74,6 +74,8 @@ namespace ams
 namespace db
 {
 
+AMSDBType getDBType(std::string type);
+std::string getDBTypeAsStr(AMSDBType type);
 
 /**
  * @brief A simple pure virtual interface to store data in some
@@ -292,7 +294,7 @@ public:
   /**
    * @brief Return the DB enumerationt type (File, Redis etc)
    */
-  AMSDBType dbType() override { return AMSDBType::CSV; };
+  AMSDBType dbType() override { return AMSDBType::AMS_CSV; };
 
   /**
    * @brief Takes an input and an output vector each holding 1-D vectors data, and
@@ -337,9 +339,7 @@ private:
    * @param[in] Chunk chunk size of dataset used by HDF5.
    * @reval dataset HDF5 key value
    */
-  hid_t getDataSet(hid_t group,
-                   std::string dName,
-                   const size_t Chunk = 32L * 1024L * 1024L)
+  hid_t getDataSet(hid_t group, std::string dName, const size_t Chunk = 1024L)
   {
     // Our datasets a.t.m are 1-D vectors
     const int nDims = 1;
@@ -554,7 +554,7 @@ public:
   /**
    * @brief Return the DB enumerationt type (File, Redis etc)
    */
-  AMSDBType dbType() override { return AMSDBType::HDF5; };
+  AMSDBType dbType() override { return AMSDBType::AMS_HDF5; };
 
 
   /**
@@ -1042,7 +1042,7 @@ public:
     _total_size = AMSMsgHeader::size() + domain_name.size() +
                   getTotalElements() * sizeof(TypeValue);
     auto& rm = ams::ResourceManager::getInstance();
-    _data = rm.allocate<uint8_t>(_total_size, AMSResourceType::HOST);
+    _data = rm.allocate<uint8_t>(_total_size, AMSResourceType::AMS_HOST);
 
     size_t current_offset = header.encode(_data);
     std::memcpy(&_data[current_offset],
@@ -1963,7 +1963,7 @@ private:
     auto& msg = *it;
     auto& rm = ams::ResourceManager::getInstance();
     try {
-      rm.deallocate(msg.data(), AMSResourceType::HOST);
+      rm.deallocate(msg.data(), AMSResourceType::AMS_HOST);
     } catch (const umpire::util::Exception& e) {
       FATAL(RMQPublisherHandler,
             "Failed to deallocate #%d (%p)",
@@ -1985,7 +1985,7 @@ private:
     for (auto& dp : buffer) {
       DBG(RMQPublisherHandler, "deallocate msg #%d (%p)", dp.id(), dp.data())
       try {
-        rm.deallocate(dp.data(), AMSResourceType::HOST);
+        rm.deallocate(dp.data(), AMSResourceType::AMS_HOST);
       } catch (const umpire::util::Exception& e) {
         FATAL(RMQPublisherHandler,
               "Failed to deallocate msg #%d (%p)",
@@ -2469,7 +2469,7 @@ public:
   /**
    * @brief Return the DB enumerationt type (File, Redis etc)
    */
-  AMSDBType dbType() override { return AMSDBType::RMQ; };
+  AMSDBType dbType() override { return AMSDBType::AMS_RMQ; };
 
   ~RabbitMQDB() {}
 };  // class RabbitMQDB
@@ -2490,7 +2490,7 @@ private:
   std::unordered_map<std::string, std::shared_ptr<BaseDB>> db_instances;
   AMSDBType dbType;
 
-  DBManager() : dbType(AMSDBType::None){};
+  DBManager() : dbType(AMSDBType::AMS_NONE){};
 
 protected:
   RMQInterface rmq_interface;
@@ -2546,23 +2546,23 @@ public:
 #ifdef __ENABLE_DB__
     DBG(DBManager, "Instantiating data base");
 
-    if ((dbType == AMSDBType::CSV || dbType == AMSDBType::HDF5) &&
+    if ((dbType == AMSDBType::AMS_CSV || dbType == AMSDBType::AMS_HDF5) &&
         !fs_interface.isConnected()) {
       THROW(std::runtime_error,
             "File System is not configured, Please specify output directory");
-    } else if (dbType == AMSDBType::RMQ && !rmq_interface.isConnected()) {
+    } else if (dbType == AMSDBType::AMS_RMQ && !rmq_interface.isConnected()) {
       THROW(std::runtime_error, "Rabbit MQ data base is not configured");
     }
 
     switch (dbType) {
-      case AMSDBType::CSV:
+      case AMSDBType::AMS_CSV:
         return std::make_shared<csvDB>(fs_interface.path(), domainName, rId);
 #ifdef __ENABLE_HDF5__
-      case AMSDBType::HDF5:
+      case AMSDBType::AMS_HDF5:
         return std::make_shared<hdf5DB>(fs_interface.path(), domainName, rId);
 #endif
 #ifdef __ENABLE_RMQ__
-      case AMSDBType::RMQ:
+      case AMSDBType::AMS_RMQ:
         return std::make_shared<RabbitMQDB>(rmq_interface, domainName, rId);
 #endif
       default:
@@ -2583,8 +2583,14 @@ public:
   */
   std::shared_ptr<BaseDB> getDB(std::string& domainName, uint64_t rId = 0)
   {
+    DBG(DBManager,
+        "Requested DB Under Name: '%s' DB Configured to operate with '%s'",
+        domainName.c_str(),
+        getDBTypeAsStr(dbType).c_str())
 
-    if (dbType == AMSDBType::None) return nullptr;
+    if (dbType == AMSDBType::AMS_NONE) return nullptr;
+
+    if (domainName.empty()) return nullptr;
 
     auto db_iter = db_instances.find(std::string(domainName));
     if (db_iter == db_instances.end()) {
@@ -2620,14 +2626,17 @@ public:
   void instantiate_fs_db(AMSDBType type, std::string db_path)
   {
     CWARNING(DBManager,
-             dbType != AMSDBType::None,
+             isInitialized(),
+             "Data Base is already initialized. Reconfiguring can result into "
+             "issues")
+
+    CWARNING(DBManager,
+             dbType != AMSDBType::AMS_NONE,
              "Setting DBManager default DB when already set")
     dbType = type;
     fs_interface.connect(db_path);
   }
 };
-
-AMSDBType getDBType(std::string type);
 
 }  // namespace db
 }  // namespace ams

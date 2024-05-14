@@ -48,12 +48,12 @@ int main(int argc, char *argv[])
   using namespace ams;
   auto &ams_rm = ams::ResourceManager::getInstance();
   int use_device = std::atoi(argv[1]);
-  char *model_path = argv[2];
+  std::string model_path(argv[2]);
   char *data_type = argv[3];
 
-  AMSResourceType resource = AMSResourceType::HOST;
+  AMSResourceType resource = AMSResourceType::AMS_HOST;
   if (use_device == 1) {
-    resource = AMSResourceType::DEVICE;
+    resource = AMSResourceType::AMS_DEVICE;
   }
 
   ams_rm.init();

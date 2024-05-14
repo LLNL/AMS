@@ -24,7 +24,7 @@ public:
   PERFFASPECT()
   inline void evaluate(const size_t ndata, bool *is_acceptable)
   {
-    if (resourceLocation == AMSResourceType::DEVICE) {
+    if (resourceLocation == AMSResourceType::AMS_DEVICE) {
 #ifdef __ENABLE_CUDA__
       //TODO: Move all of this code on device.cpp and provide better logic regarding
       // number of threads
