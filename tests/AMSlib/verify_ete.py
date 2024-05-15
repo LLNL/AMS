@@ -87,7 +87,6 @@ def main():
         data, correct = verify_data_collection(fs_path, db_type, num_inputs, num_outputs)
         if correct:
             return 1
-
         inputs = data[0]
         outputs = data[1]
 
@@ -101,18 +100,57 @@ def main():
                 len(inputs) == num_elements and len(outputs) == num_elements
             ), "Num elements should be the same as experiment"
 
-        elif uq_name == "random" and threshold == 1.0:
+        elif threshold == 1.0:
             assert len(inputs) == 0 and len(outputs) == 0, "Num elements should be zero"
-        elif uq_name == "random":
+            # There is nothing else we can check here
+            return 0
+        else:
             lb = num_elements * threshold - num_elements * 0.05
             ub = num_elements * threshold + num_elements * 0.05
             print(lb, ub)
             assert len(inputs) > lb and len(inputs) < ub, "Not in the bounds of correct items"
             assert len(outputs) > lb and len(outputs) < ub, "Not in the bounds of correct items"
+
+        if "delta" in uq_name:
+            assert "mean" in uq_name or "max" in uq_name, "unknown Delta UQ mechanism"
+            d_type = np.float32
+            if data_type == "double":
+                d_type = np.float64
+
+            if "mean" in uq_name:
+                verify_inputs = np.zeros((len(inputs), num_inputs), dtype=d_type)
+                if threshold == 0.0:
+                    step = 1
+                elif threshold == 0.5:
+                    verify_inputs[0] = np.ones(num_inputs, dtype=d_type)
+                    step = 2
+                for i in range(1, len(inputs)):
+                    verify_inputs[i] = verify_inputs[i - 1] + step
+                diff_sum = np.sum(np.abs(verify_inputs - inputs))
+                assert np.isclose(diff_sum, 0.0), "Input data do not match"
+                verify_output = np.sum(inputs, axis=1).T * num_outputs
+                outputs = np.sum(outputs, axis=1)
+                diff_sum = np.sum(np.abs(outputs - verify_output))
+                assert np.isclose(diff_sum, 0.0), "Output data do not match"
+            elif "max" in uq_name:
+                verify_inputs = np.zeros((len(inputs), num_inputs), dtype=d_type)
+                if threshold == 0.0:
+                    step = 1
+                elif threshold == 0.5:
+                    step = 2
+                for i in range(1, len(inputs)):
+                    verify_inputs[i] = verify_inputs[i - 1] + step
+                diff_sum = np.sum(np.abs(verify_inputs - inputs))
+                assert np.isclose(diff_sum, 0.0), "Input data do not match"
+                verify_output = np.sum(inputs, axis=1).T * num_outputs
+                outputs = np.sum(outputs, axis=1)
+                diff_sum = np.sum(np.abs(outputs - verify_output))
+                assert np.isclose(diff_sum, 0.0), "Output data do not match"
     else:
         return 0
 
     return 0
 
-    sys.exit(main())
+
+if __name__ == "__main__":
     sys.exit(main())

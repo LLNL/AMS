@@ -43,29 +43,100 @@ if(WITH_TORCH)
   add_test(NAME AMSExampleDoubleRandomUQ::HOST COMMAND ams_example --precision double --uqtype random -S ${CMAKE_CURRENT_SOURCE_DIR}/debug_model.pt -e 100)
 endif()
 
-  #
+# These are integration tests. Try to use an end to end AMS run and realize issues between multiple pieces
   BUILD_TEST(ams_end_to_end ams_ete.cpp)
+
+
+  #######################################################
+  # TEST: output format 
+  # UQ: Random
+  #######################################################
+
+
   # Test EndToEnd Double Precision, Random, All Model
-  add_test(NAME AMSEndToEnd::Double::DB::OnlyPhysics::None::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 0.0 1 1024 \"none\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 0.0 1 1024 \"none\" \"./\"")
-  add_test(NAME AMSEndToEnd::Double::DB::OnlyModel::None::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 0.0 1 1024 \"none\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 1.0 1 1024 \"none\" \"./\"")
+  add_test(NAME AMSEndToEnd::Random::Double::DB::OnlyPhysics::None::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 0.0 1 1024 \"none\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 0.0 1 1024 \"none\" \"./\"")
+  add_test(NAME AMSEndToEnd::Random::Double::DB::OnlyModel::None::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 0.0 1 1024 \"none\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 1.0 1 1024 \"none\" \"./\"")
+
+
+  #######################################################
+  # TEST: CSV output format 
+  # UQ: Random
+  # 3 Thresholds: 0, 0.5, 1.0
+  #######################################################
 
   # Test EndToEnd Double Precision, Random, All Model CSV
-  add_test(NAME AMSEndToEnd::Double::DB::OnlyPhysics::CSV::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 0.0 1 1024 \"csv\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 0.0 1 1024 \"csv\" \"./\"")
-  add_test(NAME AMSEndToEnd::Double::DB::OnlyModel::CSV::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 1.0 1 1024 \"csv\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 1.0 1 1024 \"csv\" \"./\"")
-  add_test(NAME AMSEndToEnd::Double::DB::HALF::CSV::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 0.5 1 1024 \"csv\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 0.5 1 1024 \"csv\" \"./\"")
+  add_test(NAME AMSEndToEnd::Random::Double::DB::OnlyPhysics::CSV::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 0.0 1 1024 \"csv\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 0.0 1 1024 \"csv\" \"./\"")
+  add_test(NAME AMSEndToEnd::Random::Double::DB::OnlyModel::CSV::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 1.0 1 1024 \"csv\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 1.0 1 1024 \"csv\" \"./\"")
+  add_test(NAME AMSEndToEnd::Random::Double::DB::HALF::CSV::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 0.5 1 1024 \"csv\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 0.5 1 1024 \"csv\" \"./\"")
 
 
   if (WITH_HDF5)
-    add_test(NAME AMSEndToEnd::Double::DB::OnlyPhysics::HDF5::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 0.0 1 1024 \"hdf5\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 0.0 1 1024 \"hdf5\" \"./\"")
-    add_test(NAME AMSEndToEnd::Double::DB::OnlyModel::HDF5::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 1.0 1 1024 \"hdf5\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 1.0 1 1024 \"hdf5\" \"./\"")
-    add_test(NAME AMSEndToEnd::Double::DB::HALF::HDF5::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 0.5 1 1024 \"hdf5\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 0.5 1 1024 \"hdf5\" \"./\"")
+  #######################################################
+  # TEST: hdf5 output format 
+  # UQ: Random
+  # 3 Thresholds: 0, 0.5, 1.0
+  # precision: double
+  #######################################################
 
-    add_test(NAME AMSEndToEnd::Single::DB::OnlyPhysics::HDF5::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"float\" \"random\" 0.0 1 1024 \"hdf5\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"float\" \"random\" 0.0 1 1024 \"hdf5\" \"./\"")
-    add_test(NAME AMSEndToEnd::Single::DB::OnlyModel::HDF5::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"float\" \"random\" 1.0 1 1024 \"hdf5\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"float\" \"random\" 1.0 1 1024 \"hdf5\" \"./\"")
-    add_test(NAME AMSEndToEnd::Single::DB::HALF::HDF5::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"float\" \"random\" 0.5 1 1024 \"hdf5\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"float\" \"random\" 0.5 1 1024 \"hdf5\" \"./\"")
+    add_test(NAME AMSEndToEnd::Random::Double::DB::OnlyPhysics::HDF5::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 0.0 1 1024 \"hdf5\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 0.0 1 1024 \"hdf5\" \"./\"")
+    add_test(NAME AMSEndToEnd::Random::Double::DB::OnlyModel::HDF5::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 1.0 1 1024 \"hdf5\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 1.0 1 1024 \"hdf5\" \"./\"")
+    add_test(NAME AMSEndToEnd::Random::Double::DB::HALF::HDF5::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 0.5 1 1024 \"hdf5\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"double\" \"random\" 0.5 1 1024 \"hdf5\" \"./\"")
+
+  #######################################################
+  # TEST: hdf5 output format 
+  # UQ: Random
+  # 3 Thresholds: 0, 0.5, 1.0
+  # precision: single
+  #######################################################
 
 
+    add_test(NAME AMSEndToEnd::Random::Single::DB::OnlyPhysics::HDF5::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"float\" \"random\" 0.0 1 1024 \"hdf5\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"float\" \"random\" 0.0 1 1024 \"hdf5\" \"./\"")
+    add_test(NAME AMSEndToEnd::Random::Single::DB::OnlyModel::HDF5::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"float\" \"random\" 1.0 1 1024 \"hdf5\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"float\" \"random\" 1.0 1 1024 \"hdf5\" \"./\"")
+    add_test(NAME AMSEndToEnd::Random::Single::DB::HALF::HDF5::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"float\" \"random\" 0.5 1 1024 \"hdf5\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/linear_scripted_cpu.pt \"float\" \"random\" 0.5 1 1024 \"hdf5\" \"./\"")
   endif()
+
+
+  #######################################################
+  # TEST: hdf5 output format 
+  # UQ: deltauq-mean
+  # 3 Thresholds: 0, 0.5, 1.0
+  # precision: double
+  #######################################################
+  add_test(NAME AMSEndToEnd::DeltaUQMean::Double::DB::OnlyPhysics::HDF5::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/uq_mean_double_cpu.pt \"double\" \"deltaUQ (mean)\" 0.0 1 1024 \"hdf5\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/uq_mean_double_cpu.pt \"double\" \"deltaUQ (mean)\" 0.0 1 1024 \"hdf5\" \"./\"")
+  add_test(NAME AMSEndToEnd::DeltaUQMean::Double::DB::OnlyModel::HDF5::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/uq_mean_double_cpu.pt \"double\" \"deltaUQ (mean)\" 1.0 1 1024 \"hdf5\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/uq_mean_double_cpu.pt \"double\" \"deltaUQ (mean)\" 1.0 1 1024 \"hdf5\" \"./\"")
+  add_test(NAME AMSEndToEnd::DeltaUQMean::Double::DB::HALF::HDF5::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/uq_mean_double_cpu.pt \"double\" \"deltaUQ (mean)\" 0.5 1 1024 \"hdf5\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/uq_mean_double_cpu.pt \"double\" \"deltaUQ (mean)\" 0.5 1 1024 \"hdf5\" \"./\"")
+
+  #######################################################
+  # TEST: hdf5 output format 
+  # UQ: deltauq-mean
+  # 3 Thresholds: 0, 0.5, 1.0
+  # precision: single
+  #######################################################
+  add_test(NAME AMSEndToEnd::DeltaUQMean::Single::DB::OnlyPhysics::HDF5::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/uq_mean_single_cpu.pt \"float\" \"deltaUQ (mean)\" 0.0 1 1024 \"hdf5\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/uq_mean_single_cpu.pt \"float\" \"deltaUQ (mean)\" 0.0 1 1024 \"hdf5\" \"./\"")
+  add_test(NAME AMSEndToEnd::DeltaUQMean::Single::DB::OnlyModel::HDF5::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/uq_mean_single_cpu.pt \"float\" \"deltaUQ (mean)\" 1.0 1 1024 \"hdf5\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/uq_mean_single_cpu.pt \"float\" \"deltaUQ (mean)\" 1.0 1 1024 \"hdf5\" \"./\"")
+  add_test(NAME AMSEndToEnd::DeltaUQMean::Single::DB::HALF::HDF5::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/uq_mean_single_cpu.pt \"float\" \"deltaUQ (mean)\" 0.5 1 1024 \"hdf5\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/uq_mean_single_cpu.pt \"float\" \"deltaUQ (mean)\" 0.5 1 1024 \"hdf5\" \"./\"")
+
+  #######################################################
+  # TEST: hdf5 output format 
+  # UQ: deltauq-max
+  # 3 Thresholds: 0, 0.5, 1.0
+  # precision: double
+  #######################################################
+  add_test(NAME AMSEndToEnd::DeltaUQMax::Double::DB::OnlyPhysics::HDF5::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/uq_max_double_cpu.pt \"double\" \"deltaUQ (max)\" 0.0 1 1024 \"hdf5\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/uq_max_double_cpu.pt \"double\" \"deltaUQ (max)\" 0.0 1 1024 \"hdf5\" \"./\"")
+  add_test(NAME AMSEndToEnd::DeltaUQMax::Double::DB::OnlyModel::HDF5::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/uq_max_double_cpu.pt \"double\" \"deltaUQ (max)\" 1.0 1 1024 \"hdf5\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/uq_max_double_cpu.pt \"double\" \"deltaUQ (max)\" 1.0 1 1024 \"hdf5\" \"./\"")
+  add_test(NAME AMSEndToEnd::DeltaUQMax::Double::DB::HALF::HDF5::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/uq_max_double_cpu.pt \"double\" \"deltaUQ (max)\" 0.5 1 1024 \"hdf5\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/uq_max_double_cpu.pt \"double\" \"deltaUQ (max)\" 0.5 1 1024 \"hdf5\" \"./\"")
+
+ #######################################################
+  # TEST: hdf5 output format 
+  # UQ: deltauq-max
+  # 3 Thresholds: 0, 0.5, 1.0
+  # precision: single
+  #######################################################
+  add_test(NAME AMSEndToEnd::DeltaUQMax::Single::DB::OnlyPhysics::HDF5::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/uq_max_single_cpu.pt \"float\" \"deltaUQ (max)\" 0.0 1 1024 \"hdf5\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/uq_max_single_cpu.pt \"float\" \"deltaUQ (max)\" 0.0 1 1024 \"hdf5\" \"./\"")
+  add_test(NAME AMSEndToEnd::DeltaUQMax::Single::DB::OnlyModel::HDF5::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/uq_max_single_cpu.pt \"float\" \"deltaUQ (max)\" 1.0 1 1024 \"hdf5\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/uq_max_single_cpu.pt \"float\" \"deltaUQ (max)\" 1.0 1 1024 \"hdf5\" \"./\"")
+  add_test(NAME AMSEndToEnd::DeltaUQMax::Single::DB::HALF::HDF5::HOST COMMAND bash -c "${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/uq_max_single_cpu.pt \"float\" \"deltaUQ (max)\" 0.5 1 1024 \"hdf5\" \"./\"; python ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 ${CMAKE_CURRENT_SOURCE_DIR}/uq_max_single_cpu.pt \"float\" \"deltaUQ (max)\" 0.5 1 1024 \"hdf5\" \"./\"")
+
+
 
   # UQ Tests
   BUILD_TEST(ams_delta_uq_test ams_uq_model.cpp)
