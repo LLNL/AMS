@@ -71,6 +71,7 @@ typedef enum {
 } AMSUQPolicy;
 
 
+#warning "I need to remove the exec policy when creating the executor"
 AMSExecutor AMSCreateExecutor(AMSCAbstrModel model,
                               AMSExecPolicy exec_policy,
                               AMSDType data_type,

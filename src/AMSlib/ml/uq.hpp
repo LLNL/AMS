@@ -89,12 +89,12 @@ class UQ : public BaseUQ
 {
 public:
   UQ(AMSResourceType resourceLocation,
-     const AMSUQPolicy uqPolicy,
+     const AMSUQPolicy uq_policy,
      std::string &uqPath,
      const int nClusters,
      std::string &surrogatePath,
      FPTypeValue threshold)
-      : uqPolicy(uqPolicy), threshold(threshold)
+      : uqPolicy(uq_policy), threshold(threshold)
   {
     if (surrogatePath.empty()) {
       surrogate = nullptr;
@@ -103,7 +103,13 @@ public:
       return;
     }
 
-    if (!isUQPolicy(uqPolicy))
+    DBG(UQ,
+        "START: UQ Model is of type (%s, %d) with threshold %f",
+        BaseUQ::UQPolicyToStr(uqPolicy).c_str(),
+        uqPolicy,
+        threshold)
+
+    if (!isUQPolicy(uq_policy))
       THROW(std::runtime_error, "Invalid UQ policy, value is out-of-bounds");
 
 
@@ -125,8 +131,9 @@ public:
       randomUQ = std::make_unique<RandomUQ>(resourceLocation, threshold);
 
     DBG(UQ,
-        "UQ Model is of type %s with threshold %f",
+        "UQ Model is of type (%s, %d) with threshold %f",
         BaseUQ::UQPolicyToStr(uqPolicy).c_str(),
+        uqPolicy,
         threshold)
   }
 

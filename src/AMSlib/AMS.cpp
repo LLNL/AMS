@@ -52,9 +52,9 @@ public:
 
   static UQAggrType getUQAggregate(std::string policy)
   {
-    if (policy.compare("mean"))
+    if (policy.compare("mean") == 0)
       return UQAggrType::Mean;
-    else if (policy.compare("max"))
+    else if (policy.compare("max") == 0)
       return UQAggrType::Max;
     return UQAggrType::Unknown;
   }
@@ -72,12 +72,17 @@ public:
   void parseUQPaths(AMSUQPolicy policy, nlohmann::json &jRoot)
   {
 
+    /* 
+     * Empth models can exist in cases were the user annotates
+     * the code without having data to train a model. In such a case,
+     * the user deploys withou specifying the model and lib AMS will
+     * collect everything
+     */
     if (!jRoot.contains("model_path")) {
-      THROW(std::runtime_error, "Model should contain path");
+      SPath = "";
+    } else {
+      SPath = jRoot["model_path"].get<std::string>();
     }
-
-    SPath = jRoot["model_path"].get<std::string>();
-    std::cout << SPath << "is \n";
 
     DBG(AMS, "Model Is Random or DeltaUQ %s %u", SPath.c_str(), policy);
     if (BaseUQ::isRandomUQ(policy) || BaseUQ::isDeltaUQ(policy)) {
@@ -112,9 +117,6 @@ public:
       THROW(std::runtime_error, "Model must specify the UQ type");
     }
 
-    std::cout << "UQ Policy is " << BaseUQ::UQPolicyToStr(policy);
-    DBG(AMS, "UQ Policy is %s", BaseUQ::UQPolicyToStr(policy).c_str())
-
     if (!BaseUQ::isUQPolicy(policy)) {
       THROW(std::runtime_error, "UQ Policy is not supported");
     }
@@ -146,6 +148,7 @@ public:
         policy = AMSUQPolicy::AMS_FAISS_MEAN;
       }
     }
+    DBG(AMS, "UQ Policy is %s", BaseUQ::UQPolicyToStr(policy).c_str())
     return policy;
   }
 
@@ -231,6 +234,7 @@ private:
   void dumpEnv()
   {
     for (auto &KV : ams_candidate_models) {
+      DBG(AMS, "\n")
       DBG(AMS,
           "\t\t\t Model: %s With AMSAbstractID: %d",
           KV.first.c_str(),
@@ -457,6 +461,8 @@ AMSExecutor AMSCreateExecutor(AMSCAbstrModel model,
   });
 
   AMSAbstractModel &model_descr = _amsWrap.get_model(model);
+  std::cout << "Returing and creating executor from model\n";
+  model_descr.dump();
 
   if (data_type == AMSDType::AMS_DOUBLE) {
     ams::AMSWorkflow<double> *dWF =
