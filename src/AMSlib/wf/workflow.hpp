@@ -159,9 +159,9 @@ public:
               std::string &uq_path,
               std::string &surrogate_path,
               std::string &domain_name,
-              AMSResourceType appDataLoc,
+              AMSResourceType app_data_loc,
               FPTypeValue threshold,
-              const AMSUQPolicy uqPolicy,
+              const AMSUQPolicy uq_policy,
               const int nClusters,
               int _pId = 0,
               int _wSize = 1,
@@ -170,15 +170,14 @@ public:
         domainName(domain_name),
         rId(_pId),
         wSize(_wSize),
-        appDataLoc(appDataLoc),
-        uqPolicy(uqPolicy),
+        appDataLoc(app_data_loc),
+        uqPolicy(uq_policy),
         ePolicy(policy)
   {
     DB = nullptr;
     auto &dbm = ams::db::DBManager::getInstance();
 
     DB = dbm.getDB(domainName, rId);
-
     UQModel = std::make_unique<UQ<FPTypeValue>>(
         appDataLoc, uqPolicy, uq_path, nClusters, surrogate_path, threshold);
   }
