@@ -71,14 +71,23 @@ typedef enum {
 } AMSUQPolicy;
 
 
-#warning "I need to remove the exec policy when creating the executor"
 AMSExecutor AMSCreateExecutor(AMSCAbstrModel model,
-                              AMSExecPolicy exec_policy,
                               AMSDType data_type,
                               AMSResourceType resource_type,
                               AMSPhysicFn call_back,
                               int process_id,
                               int world_size);
+
+#ifdef __AMS_ENABLE_MPI__
+AMSExecutor AMSCreateDistributedExecutor(AMSCAbstrModel model,
+                                         AMSDType data_type,
+                                         AMSResourceType resource_type,
+                                         AMSPhysicFn call_back,
+                                         MPI_Comm comm,
+                                         int process_id,
+                                         int world_size);
+#endif
+
 
 AMSCAbstrModel AMSRegisterAbstractModel(const char *domain_name,
                                         AMSUQPolicy uq_policy,
@@ -90,16 +99,6 @@ AMSCAbstrModel AMSRegisterAbstractModel(const char *domain_name,
 
 AMSCAbstrModel AMSQueryModel(const char *domain_model);
 
-#ifdef __AMS_ENABLE_MPI__
-void AMSDistributedExecute(AMSExecutor executor,
-                           MPI_Comm Comm,
-                           void *probDescr,
-                           const int numElements,
-                           const void **input_data,
-                           void **output_data,
-                           int inputDim,
-                           int outputDim);
-#endif
 void AMSExecute(AMSExecutor executor,
                 void *probDescr,
                 const int numElements,
@@ -110,13 +109,9 @@ void AMSExecute(AMSExecutor executor,
 
 void AMSDestroyExecutor(AMSExecutor executor);
 
-#ifdef __AMS_ENABLE_MPI__
-int AMSSetCommunicator(MPI_Comm Comm);
-#endif
-
 void AMSSetAllocator(AMSResourceType resource, const char *alloc_name);
 const char *AMSGetAllocatorName(AMSResourceType device);
-void configure_ams_fs_database(AMSDBType db_type, const char *db_path);
+void AMSConfigureFSDatabase(AMSDBType db_type, const char *db_path);
 
 #ifdef __cplusplus
 }
