@@ -408,8 +408,7 @@ void _AMSExecute(AMSExecutor executor,
                  const void **input_data,
                  void **output_data,
                  int inputDim,
-                 int outputDim,
-                 MPI_Comm Comm = 0)
+                 int outputDim)
 {
   long index = static_cast<long>(executor);
   if (index >= _amsWrap.executors.size())
@@ -424,8 +423,7 @@ void _AMSExecute(AMSExecutor executor,
                   reinterpret_cast<const double **>(input_data),
                   reinterpret_cast<double **>(output_data),
                   inputDim,
-                  outputDim,
-                  Comm);
+                  outputDim);
   } else if (currExec.first == AMSDType::AMS_SINGLE) {
     ams::AMSWorkflow<float> *sWF =
         reinterpret_cast<ams::AMSWorkflow<float> *>(currExec.second);
@@ -434,25 +432,20 @@ void _AMSExecute(AMSExecutor executor,
                   reinterpret_cast<const float **>(input_data),
                   reinterpret_cast<float **>(output_data),
                   inputDim,
-                  outputDim,
-                  Comm);
+                  outputDim);
   } else {
     throw std::invalid_argument("Data type is not supported by AMSLib!");
     return;
   }
 }
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-AMSExecutor AMSCreateExecutor(AMSCAbstrModel model,
-                              AMSExecPolicy exec_policy,
-                              AMSDType data_type,
-                              AMSResourceType resource_type,
-                              AMSPhysicFn call_back,
-                              int process_id,
-                              int world_size)
+template <typename FPTypeValue>
+ams::AMSWorkflow<FPTypeValue> *_AMSCreateExecutor(AMSCAbstrModel model,
+                                                  AMSDType data_type,
+                                                  AMSResourceType resource_type,
+                                                  AMSPhysicFn call_back,
+                                                  int process_id,
+                                                  int world_size)
 {
   static std::once_flag flag;
   std::call_once(flag, [&]() {
@@ -461,46 +454,83 @@ AMSExecutor AMSCreateExecutor(AMSCAbstrModel model,
   });
 
   AMSAbstractModel &model_descr = _amsWrap.get_model(model);
-  std::cout << "Returing and creating executor from model\n";
-  model_descr.dump();
 
+  ams::AMSWorkflow<FPTypeValue> *WF =
+      new ams::AMSWorkflow<FPTypeValue>(call_back,
+                                        model_descr.UQPath,
+                                        model_descr.SPath,
+                                        model_descr.DBLabel,
+                                        resource_type,
+                                        model_descr.threshold,
+                                        model_descr.uqPolicy,
+                                        model_descr.nClusters,
+                                        process_id,
+                                        world_size);
+  return WF;
+}
+
+template <typename FPTypeValue>
+AMSExecutor _AMSRegisterExecutor(AMSDType data_type,
+                                 ams::AMSWorkflow<FPTypeValue> *workflow)
+{
+  _amsWrap.executors.push_back(
+      std::make_pair(data_type, static_cast<void *>(workflow)));
+  return static_cast<AMSExecutor>(_amsWrap.executors.size()) - 1L;
+}
+
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+AMSExecutor AMSCreateExecutor(AMSCAbstrModel model,
+                              AMSDType data_type,
+                              AMSResourceType resource_type,
+                              AMSPhysicFn call_back,
+                              int process_id,
+                              int world_size)
+{
   if (data_type == AMSDType::AMS_DOUBLE) {
-    ams::AMSWorkflow<double> *dWF =
-        new ams::AMSWorkflow<double>(call_back,
-                                     model_descr.UQPath,
-                                     model_descr.SPath,
-                                     model_descr.DBLabel,
-                                     resource_type,
-                                     model_descr.threshold,
-                                     model_descr.uqPolicy,
-                                     model_descr.nClusters,
-                                     process_id,
-                                     world_size,
-                                     exec_policy);
-    _amsWrap.executors.push_back(
-        std::make_pair(data_type, static_cast<void *>(dWF)));
-    return static_cast<AMSExecutor>(_amsWrap.executors.size()) - 1L;
+    auto *dWF = _AMSCreateExecutor<double>(
+        model, data_type, resource_type, call_back, process_id, world_size);
+    return _AMSRegisterExecutor(data_type, dWF);
+
   } else if (data_type == AMSDType::AMS_SINGLE) {
-    ams::AMSWorkflow<float> *sWF =
-        new ams::AMSWorkflow<float>(call_back,
-                                    model_descr.UQPath,
-                                    model_descr.SPath,
-                                    model_descr.DBLabel,
-                                    resource_type,
-                                    model_descr.threshold,
-                                    model_descr.uqPolicy,
-                                    model_descr.nClusters,
-                                    process_id,
-                                    world_size,
-                                    exec_policy);
-    _amsWrap.executors.push_back(
-        std::make_pair(data_type, static_cast<void *>(sWF)));
-    return static_cast<AMSExecutor>(_amsWrap.executors.size()) - 1L;
+    auto *sWF = _AMSCreateExecutor<float>(
+        model, data_type, resource_type, call_back, process_id, world_size);
+    return _AMSRegisterExecutor(data_type, sWF);
   } else {
     throw std::invalid_argument("Data type is not supported by AMSLib!");
     return static_cast<AMSExecutor>(-1);
   }
 }
+
+#ifdef __AMS_ENABLE_MPI__
+AMSExecutor AMSCreateDistributedExecutor(AMSCAbstrModel model,
+                                         AMSDType data_type,
+                                         AMSResourceType resource_type,
+                                         AMSPhysicFn call_back,
+                                         MPI_Comm Comm,
+                                         int process_id,
+                                         int world_size)
+{
+  if (data_type == AMSDType::AMS_DOUBLE) {
+    auto *dWF = _AMSCreateExecutor<double>(
+        model, data_type, resource_type, call_back, process_id, world_size);
+    dWF->set_communicator(Comm);
+    return _AMSRegisterExecutor(data_type, dWF);
+
+  } else if (data_type == AMSDType::AMS_SINGLE) {
+    auto *sWF = _AMSCreateExecutor<float>(
+        model, data_type, resource_type, call_back, process_id, world_size);
+    sWF->set_communicator(Comm);
+    return _AMSRegisterExecutor(data_type, sWF);
+  } else {
+    throw std::invalid_argument("Data type is not supported by AMSLib!");
+    return static_cast<AMSExecutor>(-1);
+  }
+}
+#endif
 
 void AMSExecute(AMSExecutor executor,
                 void *probDescr,
@@ -536,26 +566,6 @@ void AMSDestroyExecutor(AMSExecutor executor)
   }
 }
 
-#ifdef __ENABLE_MPI__
-void AMSDistributedExecute(AMSExecutor executor,
-                           MPI_Comm Comm,
-                           void *probDescr,
-                           const int numElements,
-                           const void **input_data,
-                           void **output_data,
-                           int inputDim,
-                           int outputDim)
-{
-  _AMSExecute(executor,
-              probDescr,
-              numElements,
-              input_data,
-              output_data,
-              inputDim,
-              outputDim,
-              Comm);
-}
-#endif
 
 const char *AMSGetAllocatorName(AMSResourceType device)
 {
@@ -594,7 +604,7 @@ AMSCAbstrModel AMSQueryModel(const char *domain_model)
   return _amsWrap.get_model_index(domain_model);
 }
 
-void configure_ams_fs_database(AMSDBType db_type, const char *db_path)
+void AMSConfigureFSDatabase(AMSDBType db_type, const char *db_path)
 {
   auto &db_instance = ams::db::DBManager::getInstance();
   db_instance.instantiate_fs_db(db_type, std::string(db_path));

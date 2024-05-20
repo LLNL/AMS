@@ -8,6 +8,8 @@
 #ifndef __AMS_WORKFLOW_HPP__
 #define __AMS_WORKFLOW_HPP__
 
+#include <mpi.h>
+
 #include "debug.h"
 #ifdef __AMS_ENABLE_CALIPER__
 #include <caliper/cali_macros.h>
@@ -77,7 +79,16 @@ class AMSWorkflow
   AMSResourceType appDataLoc;
 
   /** @brief execution policy of the distributed system. Load balance or not. */
-  const AMSExecPolicy ePolicy;
+  AMSExecPolicy ePolicy;
+
+#ifdef __AMS_ENABLE_MPI__
+  /** @brief MPI Communicator for all ranks that call collectively the evaluate function **/
+  MPI_Comm comm;
+#endif
+
+
+  /** @brief Is the evaluate a distributed execution **/
+  bool isDistributed;
 
   /** \brief Store the data in the database and copies
    * data from the GPU to the CPU and then to the database.
@@ -151,6 +162,9 @@ public:
       : AppCall(nullptr),
         DB(nullptr),
         appDataLoc(AMSResourceType::AMS_HOST),
+#ifdef __AMS_ENABLE_MPI__
+        comm(MPI_COMM_NULL),
+#endif
         ePolicy(AMSExecPolicy::AMS_UBALANCED)
   {
   }
@@ -164,15 +178,18 @@ public:
               const AMSUQPolicy uq_policy,
               const int nClusters,
               int _pId = 0,
-              int _wSize = 1,
-              AMSExecPolicy policy = AMSExecPolicy::AMS_UBALANCED)
+              int _wSize = 1)
       : AppCall(_AppCall),
         domainName(domain_name),
         rId(_pId),
         wSize(_wSize),
         appDataLoc(app_data_loc),
         uqPolicy(uq_policy),
-        ePolicy(policy)
+#ifdef __AMS_ENABLE_MPI__
+        comm(MPI_COMM_NULL),
+#endif
+        ePolicy(AMSExecPolicy::AMS_UBALANCED)
+
   {
     DB = nullptr;
     auto &dbm = ams::db::DBManager::getInstance();
@@ -183,6 +200,19 @@ public:
   }
 
   void set_physics(AMSPhysicFn _AppCall) { AppCall = _AppCall; }
+
+  void set_communicator(MPI_Comm communicator) { comm = communicator; }
+
+  void set_exec_policy(AMSExecPolicy policy) { ePolicy = policy; }
+
+  bool should_load_balance() const
+  {
+#ifdef __AMS_ENABLE_MPI__
+    return (comm != MPI_COMM_NULL && ePolicy == AMSExecPolicy::AMS_BALANCED);
+#else
+    return false;
+#endif
+  }
 
   ~AMSWorkflow() { DBG(Workflow, "Destroying Workflow Handler"); }
 
@@ -237,8 +267,7 @@ public:
                 const FPTypeValue **inputs,
                 FPTypeValue **outputs,
                 int inputDim,
-                int outputDim,
-                MPI_Comm Comm = nullptr)
+                int outputDim)
   {
     CALIPER(CALI_MARK_BEGIN("AMSEvaluate");)
 
@@ -329,10 +358,14 @@ public:
       void **oPtr = reinterpret_cast<void **>(packedOutputs.data());
       long lbElements = packedElements;
 
+      // FIXME: I don't like the way we separate code here.
+      // Simple modification can make it easier to read.
+      // if (should_load_balance)  -> Code for load balancing
+      // else -> current code
 #ifdef __ENABLE_MPI__
       CALIPER(CALI_MARK_BEGIN("LOAD BALANCE MODULE");)
-      AMSLoadBalancer<FPTypeValue> lBalancer(rId, wSize, packedElements, Comm);
-      if (ePolicy == AMSExecPolicy::AMS_BALANCED && Comm) {
+      AMSLoadBalancer<FPTypeValue> lBalancer(rId, wSize, packedElements, comm);
+      if (should_load_balance()) {
         lBalancer.init(inputDim, outputDim, appDataLoc);
         lBalancer.scatterInputs(packedInputs, appDataLoc);
         iPtr = reinterpret_cast<void **>(lBalancer.inputs());
@@ -351,7 +384,7 @@ public:
 
 #ifdef __ENABLE_MPI__
       CALIPER(CALI_MARK_BEGIN("LOAD BALANCE MODULE");)
-      if (ePolicy == AMSExecPolicy::AMS_BALANCED && Comm) {
+      if (should_load_balance()) {
         lBalancer.gatherOutputs(packedOutputs, appDataLoc);
       }
       CALIPER(CALI_MARK_END("LOAD BALANCE MODULE");)

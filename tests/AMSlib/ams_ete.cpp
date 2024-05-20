@@ -164,7 +164,7 @@ int main(int argc, char **argv)
   AMSResourceType resource = AMSResourceType::AMS_HOST;
   srand(time(NULL));
 
-  configure_ams_fs_database(db_type, fs_path.c_str());
+  AMSConfigureFSDatabase(db_type, fs_path.c_str());
 
   std::cout << "UQ policy is" << uq_name << " " << uq_policy << "\n";
 
@@ -183,7 +183,6 @@ int main(int argc, char **argv)
     Problem<float> prob(num_inputs, num_outputs);
 
     AMSExecutor wf = AMSCreateExecutor(model_descr,
-                                       AMSExecPolicy::AMS_UBALANCED,
                                        AMSDType::AMS_SINGLE,
                                        resource,
                                        (AMSPhysicFn)callBackSingle,
@@ -194,7 +193,6 @@ int main(int argc, char **argv)
   } else {
     Problem<double> prob(num_inputs, num_outputs);
     AMSExecutor wf = AMSCreateExecutor(model_descr,
-                                       AMSExecPolicy::AMS_UBALANCED,
                                        AMSDType::AMS_DOUBLE,
                                        resource,
                                        (AMSPhysicFn)callBackDouble,
