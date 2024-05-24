@@ -290,17 +290,17 @@ int compact(bool cond,
 {
   int numBlocks = divup(length, blockSize);
   auto& rm = ams::ResourceManager::getInstance();
-  int* d_BlocksCount = rm.allocate<int>(numBlocks, AMSResourceType::DEVICE);
-  int* d_BlocksOffset = rm.allocate<int>(numBlocks, AMSResourceType::DEVICE);
+  int* d_BlocksCount = rm.allocate<int>(numBlocks, AMSResourceType::AMS_DEVICE);
+  int* d_BlocksOffset = rm.allocate<int>(numBlocks, AMSResourceType::AMS_DEVICE);
   // determine number of elements in the compacted list
-  int* h_BlocksCount = rm.allocate<int>(numBlocks, AMSResourceType::HOST);
-  int* h_BlocksOffset = rm.allocate<int>(numBlocks, AMSResourceType::HOST);
+  int* h_BlocksCount = rm.allocate<int>(numBlocks, AMSResourceType::AMS_HOST);
+  int* h_BlocksOffset = rm.allocate<int>(numBlocks, AMSResourceType::AMS_HOST);
 
-  T** d_dense = rm.allocate<T*>(dims, AMSResourceType::DEVICE);
-  T** d_sparse = rm.allocate<T*>(dims, AMSResourceType::DEVICE);
+  T** d_dense = rm.allocate<T*>(dims, AMSResourceType::AMS_DEVICE);
+  T** d_sparse = rm.allocate<T*>(dims, AMSResourceType::AMS_DEVICE);
 
-  rm.registerExternal(dense, sizeof(T*) * dims, AMSResourceType::HOST);
-  rm.registerExternal(sparse, sizeof(T*) * dims, AMSResourceType::HOST);
+  rm.registerExternal(dense, sizeof(T*) * dims, AMSResourceType::AMS_HOST);
+  rm.registerExternal(sparse, sizeof(T*) * dims, AMSResourceType::AMS_HOST);
   rm.copy(dense, d_dense);
   rm.copy(const_cast<T**>(sparse), d_sparse);
   thrust::device_ptr<int> thrustPrt_bCount(d_BlocksCount);
@@ -336,14 +336,14 @@ int compact(bool cond,
   int compact_length =
       h_BlocksOffset[numBlocks - 1] + thrustPrt_bCount[numBlocks - 1];
 
-  rm.deallocate(d_BlocksCount, AMSResourceType::DEVICE);
-  rm.deallocate(d_BlocksOffset, AMSResourceType::DEVICE);
+  rm.deallocate(d_BlocksCount, AMSResourceType::AMS_DEVICE);
+  rm.deallocate(d_BlocksOffset, AMSResourceType::AMS_DEVICE);
 
-  rm.deallocate(h_BlocksCount, AMSResourceType::HOST);
-  rm.deallocate(h_BlocksOffset, AMSResourceType::HOST);
+  rm.deallocate(h_BlocksCount, AMSResourceType::AMS_HOST);
+  rm.deallocate(h_BlocksOffset, AMSResourceType::AMS_HOST);
 
-  rm.deallocate(d_dense, AMSResourceType::DEVICE);
-  rm.deallocate(d_sparse, AMSResourceType::DEVICE);
+  rm.deallocate(d_dense, AMSResourceType::AMS_DEVICE);
+  rm.deallocate(d_sparse, AMSResourceType::AMS_DEVICE);
 
   rm.deregisterExternal(dense);
   rm.deregisterExternal(sparse);
@@ -427,7 +427,7 @@ void cuda_rand_init(bool* predicate, const size_t length, T threshold)
   int numBlocks = divup(TS, BS);
   auto& rm = ams::ResourceManager::getInstance();
   if (!dev_random) {
-    dev_random = rm.allocate<curandState>(4096, AMSResourceType::DEVICE);
+    dev_random = rm.allocate<curandState>(4096, AMSResourceType::AMS_DEVICE);
     srand_dev<<<numBlocks, BS>>>(dev_random, TS);
   }
 

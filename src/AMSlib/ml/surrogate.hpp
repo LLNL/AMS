@@ -8,7 +8,6 @@
 #ifndef __AMS_SURROGATE_HPP__
 #define __AMS_SURROGATE_HPP__
 
-#include <cmath>
 #include <experimental/filesystem>
 #include <memory>
 #include <stdexcept>

@@ -43,7 +43,7 @@ extern "C" {
 
 typedef void (*AMSPhysicFn)(void *, long, const void *const *, void *const *);
 
-typedef long AMSExecutor;
+typedef int64_t AMSExecutor;
 typedef int AMSCAbstrModel;
 
 typedef enum { AMS_SINGLE = 0, AMS_DOUBLE } AMSDType;
@@ -60,7 +60,7 @@ typedef enum { AMS_UBALANCED = 0, AMS_BALANCED } AMSExecPolicy;
 
 typedef enum { AMS_NONE = 0, AMS_CSV, AMS_REDIS, AMS_HDF5, AMS_RMQ } AMSDBType;
 
-typedef enum {
+enum struct AMSUQPolicy {
   AMS_UQ_BEGIN = 0,
   AMS_FAISS_MEAN,
   AMS_FAISS_MAX,
@@ -68,7 +68,7 @@ typedef enum {
   AMS_DELTAUQ_MAX,
   AMS_RANDOM,
   AMS_UQ_END
-} AMSUQPolicy;
+};
 
 
 AMSExecutor AMSCreateExecutor(AMSCAbstrModel model,

@@ -188,6 +188,8 @@ int run(const char *device_name,
     dbType = AMSDBType::AMS_RMQ;
   }
 
+  if (db_config == nullptr) dbType = AMSDBType::AMS_NONE;
+
 
   if (dbType != AMSDBType::AMS_RMQ) {
     AMSConfigureFSDatabase(dbType, db_config);

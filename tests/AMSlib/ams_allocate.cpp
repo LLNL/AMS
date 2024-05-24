@@ -7,6 +7,9 @@
 
 #include <AMS.h>
 
+constexpr int ERROR = 1;
+constexpr int SUCCESS = 0;
+
 #include <cstring>
 #include <iostream>
 #include <umpire/ResourceManager.hpp>
@@ -34,15 +37,6 @@ int test_allocation(AMSResourceType resource, std::string pool_name)
     return 1;
   }
 
-  //  found_allocator = rm.getAllocator(data);
-  //  if (ams_rm.getAllocatorName(resource) !=
-  //      found_allocator.getName().data()) {
-  //    std::cout << "Device Allocator Name"
-  //              << ams_rm.getAllocatorName(resource)
-  //              << "Actual Allocation " << found_allocator.getName() << "\n";
-  //    return 3;
-  //  }
-
   ams_rm.deallocate(data, resource);
   return 0;
 }
@@ -68,13 +62,17 @@ int main(int argc, char* argv[])
         "test-device", rm.getAllocator("DEVICE"));
     ams_rm.setAllocator("test-device", AMSResourceType::AMS_DEVICE);
     if (test_allocation(AMSResourceType::AMS_DEVICE, "test-device") != 0)
-      return 1;
+      return ERROR;
   } else if (device == 0) {
     auto& rm = umpire::ResourceManager::getInstance();
     auto alloc_resource = rm.makeAllocator<umpire::strategy::QuickPool, true>(
         "test-host", rm.getAllocator("HOST"));
     ams_rm.setAllocator("test-host", AMSResourceType::AMS_HOST);
-    if (test_allocation(AMSResourceType::AMS_HOST, "test-host") != 0) return 1;
+    if (test_allocation(AMSResourceType::AMS_HOST, "test-host") != 0)
+      return ERROR;
+  } else {
+    std::cout << "Unknown device type " << device
+              << "should be either 1 for GPU device or 0 for HOST\n";
   }
 
   return 0;

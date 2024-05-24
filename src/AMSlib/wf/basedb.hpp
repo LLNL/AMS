@@ -2378,40 +2378,6 @@ public:
 };
 
 
-class FilesystemInterface
-{
-  std::string dbPath;
-  bool connected;
-
-public:
-  FilesystemInterface() : connected(false) {}
-
-  bool connect(std::string& path)
-  {
-    connected = true;
-    fs::path Path(path);
-    std::error_code ec;
-
-    if (!fs::exists(Path, ec)) {
-      THROW(std::runtime_error, "Path: :" + path + " does not exist");
-      exit(-1);
-    }
-
-    if (ec) {
-      THROW(std::runtime_error, "Error in file:" + ec.message());
-      exit(-1);
-    }
-
-    dbPath = path;
-
-    return true;
-  }
-
-  bool isConnected() const { return connected; }
-  std::string& path() { return dbPath; }
-};
-
-
 /* A class that provides a BaseDB interface to AMS workflow.
  * When storing data it pushes the data to the RMQ server asynchronously
 */
@@ -2474,7 +2440,59 @@ public:
   ~RabbitMQDB() {}
 };  // class RabbitMQDB
 
+#else
+
+class RMQInterface
+{
+  const bool connected;
+
+public:
+  RMQInterface() : connected(false) {}
+  bool connect()
+  {
+    FATAL(RMQInterface, "RMQ Disabled yet we are Requesting to connect")
+    return false;
+  }
+
+  bool isConnected() const { return false; }
+
+  void close() {}
+};
+
 #endif  // __ENABLE_RMQ__
+
+class FilesystemInterface
+{
+  std::string dbPath;
+  bool connected;
+
+public:
+  FilesystemInterface() : connected(false) {}
+
+  bool connect(std::string& path)
+  {
+    connected = true;
+    fs::path Path(path);
+    std::error_code ec;
+
+    if (!fs::exists(Path, ec)) {
+      THROW(std::runtime_error, "Path: :'" + path + "' does not exist");
+      exit(-1);
+    }
+
+    if (ec) {
+      THROW(std::runtime_error, "Error in file:" + ec.message());
+      exit(-1);
+    }
+
+    dbPath = path;
+
+    return true;
+  }
+
+  bool isConnected() const { return connected; }
+  std::string& path() { return dbPath; }
+};
 
 
 /**
@@ -2484,7 +2502,10 @@ public:
  */
 class DBManager
 {
+
+#ifdef __ENABLE_RMQ__
   friend RabbitMQDB;
+#endif
 
 private:
   std::unordered_map<std::string, std::shared_ptr<BaseDB>> db_instances;
@@ -2634,7 +2655,7 @@ public:
              dbType != AMSDBType::AMS_NONE,
              "Setting DBManager default DB when already set")
     dbType = type;
-    fs_interface.connect(db_path);
+    if (dbType != AMSDBType::AMS_NONE) fs_interface.connect(db_path);
   }
 };
 

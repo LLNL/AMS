@@ -183,6 +183,9 @@ find_package(UMPIRE REQUIRED
 list(APPEND AMS_APP_LIBRARIES umpire)
 list(APPEND AMS_APP_INCLUDES ${UMPIRE_INCLUDE_DIR})
 
+find_package(nlohmann_json REQUIRED)
+list(APPEND AMS_APP_LIBRARIES nlohmann_json::nlohmann_json)
+
 # ------------------------------------------------------------------------------
 find_package(Threads REQUIRED)
 

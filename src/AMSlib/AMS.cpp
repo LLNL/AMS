@@ -73,9 +73,9 @@ public:
   {
 
     /* 
-     * Empth models can exist in cases were the user annotates
+     * Empty models can exist in cases were the user annotates
      * the code without having data to train a model. In such a case,
-     * the user deploys withou specifying the model and lib AMS will
+     * the user deploys without specifying the model and lib AMS will
      * collect everything
      */
     if (!jRoot.contains("model_path")) {
@@ -198,7 +198,7 @@ public:
     if (uq_path != nullptr) UQPath = std::string(uq_path);
 
     this->threshold = threshold;
-    num_clusters = num_clusters;
+    nClusters = num_clusters;
     DBG(AMS,
         "Registered Model %s %g",
         BaseUQ::UQPolicyToStr(uqPolicy).c_str(),
@@ -269,59 +269,57 @@ private:
       json &jRoot,
       std::unordered_map<std::string, std::string> ml_domain_mapping)
   {
-    if (jRoot.contains("ml_models")) {
-      auto models = jRoot["ml_models"];
-      for (auto &field : models.items()) {
-        // We skip models not registered to respective domains. We will not use
-        // those.
-        auto &key = field.key();
-        if (ml_domain_mapping.find(key) == ml_domain_mapping.end()) continue;
+    if (!jRoot.contains("ml_models")) return;
+    auto models = jRoot["ml_models"];
+    for (auto &field : models.items()) {
+      // We skip models not registered to respective domains. We will not use
+      // those.
+      auto &key = field.key();
+      if (ml_domain_mapping.find(key) == ml_domain_mapping.end()) continue;
 
-        if (ams_candidate_models.find(ml_domain_mapping[key]) !=
-            ams_candidate_models.end()) {
-          FATAL(AMS,
-                "Domain Model %s has multiple ml model mappings",
-                ml_domain_mapping[key].c_str())
-        }
-
-        registered_models.push_back(AMSAbstractModel(field.value()));
-        // We add the value of the domain mappings, as the application can
-        // only query based on these.
-        ams_candidate_models.emplace(ml_domain_mapping[key],
-                                     registered_models.size() - 1);
+      if (ams_candidate_models.find(ml_domain_mapping[key]) !=
+          ams_candidate_models.end()) {
+        FATAL(AMS,
+              "Domain Model %s has multiple ml model mappings",
+              ml_domain_mapping[key].c_str())
       }
+
+      registered_models.push_back(AMSAbstractModel(field.value()));
+      // We add the value of the domain mappings, as the application can
+      // only query based on these.
+      ams_candidate_models.emplace(ml_domain_mapping[key],
+                                   registered_models.size() - 1);
     }
   }
 
   void parseDatabase(json &jRoot)
   {
     DBG(AMS, "Parsing Data Base Fields")
-    if (jRoot.contains("db")) {
-      auto entry = jRoot["db"];
-      if (!entry.contains("dbType"))
+    if (!jRoot.contains("db")) return;
+    auto entry = jRoot["db"];
+    if (!entry.contains("dbType"))
+      THROW(std::runtime_error,
+            "JSON file instantiates db-fields without defining a "
+            "\"dbType\" "
+            "entry");
+    auto dbStrType = entry["dbType"].get<std::string>();
+    DBG(AMS, "DB Type is: %s", dbStrType.c_str())
+    AMSDBType dbType = ams::db::getDBType(dbStrType);
+    if (dbType == AMSDBType::AMS_NONE) return;
+
+    if (dbType == AMSDBType::AMS_CSV || dbType == AMSDBType::AMS_HDF5) {
+      if (!entry.contains("fs_path"))
         THROW(std::runtime_error,
-              "JSON file instantiates db-fields without defining a "
-              "\"dbType\" "
-              "entry");
-      auto dbStrType = entry["dbType"].get<std::string>();
-      DBG(AMS, "DB Type is: %s", dbStrType.c_str())
-      AMSDBType dbType = ams::db::getDBType(dbStrType);
-      if (dbType == AMSDBType::AMS_NONE) return;
+              "JSON db-fiels does not provide file system path");
 
-      if (dbType == AMSDBType::AMS_CSV || dbType == AMSDBType::AMS_HDF5) {
-        if (!entry.contains("fs_path"))
-          THROW(std::runtime_error,
-                "JSON db-fiels does not provide file system path");
-
-        std::string db_path = entry["fs_path"].get<std::string>();
-        auto &DB = ams::db::DBManager::getInstance();
-        DB.instantiate_fs_db(dbType, db_path);
-        DBG(AMS,
-            "Configured AMS File system database to point to %s using file "
-            "type %s",
-            db_path.c_str(),
-            dbStrType.c_str());
-      }
+      std::string db_path = entry["fs_path"].get<std::string>();
+      auto &DB = ams::db::DBManager::getInstance();
+      DB.instantiate_fs_db(dbType, db_path);
+      DBG(AMS,
+          "Configured AMS File system database to point to %s using file "
+          "type %s",
+          db_path.c_str(),
+          dbStrType.c_str());
     }
   }
 
@@ -410,7 +408,7 @@ void _AMSExecute(AMSExecutor executor,
                  int inputDim,
                  int outputDim)
 {
-  long index = static_cast<long>(executor);
+  int64_t index = static_cast<int64_t>(executor);
   if (index >= _amsWrap.executors.size())
     throw std::runtime_error("AMS Executor identifier does not exist\n");
   auto currExec = _amsWrap.executors[index];
@@ -551,7 +549,7 @@ void AMSExecute(AMSExecutor executor,
 
 void AMSDestroyExecutor(AMSExecutor executor)
 {
-  long index = static_cast<long>(executor);
+  int64_t index = static_cast<int64_t>(executor);
   if (index >= _amsWrap.executors.size())
     throw std::runtime_error("AMS Executor identifier does not exist\n");
   auto currExec = _amsWrap.executors[index];
@@ -587,13 +585,16 @@ AMSCAbstrModel AMSRegisterAbstractModel(const char *domain_name,
                                         const char *db_label,
                                         int num_clusters)
 {
-  int id = _amsWrap.register_model(domain_name,
-                                   uq_policy,
-                                   threshold,
-                                   surrogate_path,
-                                   uq_path,
-                                   db_label,
-                                   num_clusters);
+  auto id = _amsWrap.get_model_index(domain_name);
+  if (id == -1) {
+    id = _amsWrap.register_model(domain_name,
+                                 uq_policy,
+                                 threshold,
+                                 surrogate_path,
+                                 uq_path,
+                                 db_label,
+                                 num_clusters);
+  }
 
   return id;
 }

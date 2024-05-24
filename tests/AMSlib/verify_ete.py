@@ -18,6 +18,8 @@ def get_suffix(db_type):
 
 
 def verify_data_collection(fs_path, db_type, num_inputs, num_outputs, name="test"):
+    # Returns a tuple of the input/ouput data and 0/1 for correct incorrect file.
+    # Checks whether the files also have the right number of columns
     if not Path(fs_path).exists():
         print("Expecting output directory to exist")
         return None, 1
@@ -90,10 +92,12 @@ def verify(
     fs_path,
     name="test",
 ):
+    # When AMS has no model path it always calls the domain solution.
+    # As such it behaves identically with threshold 0
     if model_path == None or model_path == "":
         threshold = 0.0
 
-    # We don't want any data.
+    # Name maps to the db-name. When empty it means we did not want to collect any data
     if name == "":
         threshold = 1.0
 
@@ -107,21 +111,28 @@ def verify(
         if (model_path == None or model_path == "") and name == "":
             return 0
 
+        # Check data type.
         if db_type == "hdf5":
             if "data_type" == "double":
                 assert inputs.dtype == np.float64, "Data types do not match"
             elif "data_type" == "float":
                 assert inputs.dtype == np.float32, "Data types do not match"
+
         if threshold == 0.0:
+            # Threshold 0 means collect all data. Verify the sizes.
             assert (
                 len(inputs) == num_elements and len(outputs) == num_elements
             ), f"Num elements should be the same as experiment {len(inputs)} {num_elements}"
 
         elif threshold == 1.0:
+            # Threshold 1.0 means to not collect any data. Verify the sizes.
             assert len(inputs) == 0 and len(outputs) == 0, "Num elements should be zero"
             # There is nothing else we can check here
             return 0
         else:
+            # Compute a theoritical range of possible values in the db.
+            # The duq/faiss tests have specific settings. The random one can have a
+            # bound. This checks for all these cases
             lb = num_elements * (1 - threshold) - num_elements * 0.05
             ub = num_elements * (1 - threshold) + num_elements * 0.05
             assert (
@@ -138,6 +149,8 @@ def verify(
                 d_type = np.float64
 
             if "mean" in uq_name:
+                # Our DUQ-mean model skips odd evaluations.
+                # Here we set on verify_inputs the inputs of those evaluations
                 verify_inputs = np.zeros((len(inputs), num_inputs), dtype=d_type)
                 if threshold == 0.0:
                     step = 1
@@ -146,6 +159,7 @@ def verify(
                     step = 2
                 for i in range(1, len(inputs)):
                     verify_inputs[i] = verify_inputs[i - 1] + step
+                # Compare whether the results match our base function.
                 diff_sum = np.sum(np.abs(verify_inputs - inputs))
                 assert np.isclose(diff_sum, 0.0), "Mean Input data do not match"
                 verify_output = np.sum(inputs, axis=1).T * num_outputs
@@ -153,6 +167,8 @@ def verify(
                 diff_sum = np.sum(np.abs(outputs - verify_output))
                 assert np.isclose(diff_sum, 0.0), "Mean Output data do not match"
             elif "max" in uq_name:
+                # Our DUQ-max model skips even evaluations.
+                # Here we set on verify_inputs the inputs of those evaluations
                 verify_inputs = np.zeros((len(inputs), num_inputs), dtype=d_type)
                 if threshold == 0.0:
                     step = 1
