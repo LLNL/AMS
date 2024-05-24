@@ -170,8 +170,8 @@ public:
     if (!RMAllocators[AMSResourceType::AMS_DEVICE])
       setAllocator("DEVICE", AMSResourceType::AMS_DEVICE);
 
-    if (!RMAllocators[AMSResourceType::PINNED])
-      setAllocator("PINNED", AMSResourceType::PINNED);
+    if (!RMAllocators[AMSResourceType::AMS_PINNED])
+      setAllocator("PINNED", AMSResourceType::AMS_PINNED);
 #endif
   }
 

@@ -515,7 +515,7 @@ private:
       }
     } else {
       CFATAL(UQModule,
-             m_policy == AMSUQPolicy::FAISS_Max,
+             m_policy == AMSUQPolicy::AMS_FAISS_MAX,
              "FAISS Max on device is not supported yet");
 
       ams::Device::computePredicate(

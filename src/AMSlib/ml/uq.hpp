@@ -17,8 +17,6 @@
 #include "ml/surrogate.hpp"
 #include "wf/resource_manager.hpp"
 
-static inline bool isNullOrEmpty(const char *p) { return (!p || p[0] == '\0'); }
-
 class BaseUQ
 {
 public:
@@ -203,7 +201,6 @@ public:
   }
 
   bool hasSurrogate() { return (surrogate ? true : false); }
-
 
 private:
   AMSUQPolicy uqPolicy;

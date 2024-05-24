@@ -13,6 +13,8 @@
 #include "utils/allocator.hpp"
 #include "utils/utils_data.hpp"
 
+// All allocations and operations will happen on top of this 'SIZE'. 
+// Keep a small value for test to be 'fast'.
 #define SIZE (3280)
 
 void initPredicate(bool* ptr, double* data, int size)

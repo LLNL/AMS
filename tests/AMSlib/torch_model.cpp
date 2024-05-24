@@ -46,6 +46,12 @@ void inference(SurrogateModel<T> &model, AMSResourceType resource)
 int main(int argc, char *argv[])
 {
   using namespace ams;
+  if (argc != 4) {
+    std::cout << "Wrong cli, correct one: \n";
+    std::cout << argv[0] << " "
+              << "use-device(0|1) model-path data_type('double'|'single') \n";
+  }
+
   auto &ams_rm = ams::ResourceManager::getInstance();
   int use_device = std::atoi(argv[1]);
   std::string model_path(argv[2]);
@@ -68,6 +74,9 @@ int main(int argc, char *argv[])
         SurrogateModel<float>::getInstance(model_path, resource);
     assert(!model->is_double());
     inference<float>(*model, resource);
+  } else {
+    std::cout << "Unknown data type " << data_type << "\n";
+    return 1;
   }
 
   return 0;
