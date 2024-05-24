@@ -37,24 +37,22 @@ AMSEOS<FPType>::AMSEOS(EOS<FPType> *model,
                        const int mpi_nproc,
                        const double threshold,
                        const char *surrogate_path,
-                       const char *uq_path,
-                       const char *db_path)
+                       const char *uq_path)
     : model_(model)
 {
-  AMSConfig conf = {exec_policy,
-                    dtype,
-                    res_type,
-                    callBack<FPType>,
-                    (char *)surrogate_path,
-                    (char *)uq_path,
-                    (char *)db_path,
-                    threshold,
-                    uq_policy,
-                    k_nearest,
-                    mpi_task,
-                    mpi_nproc};
-
-  wf_ = AMSCreateExecutor(conf);
+  AMSCAbstrModel model_descr = AMSRegisterAbstractModel("ideal_gas",
+                                                        uq_policy,
+                                                        threshold,
+                                                        surrogate_path,
+                                                        uq_path,
+                                                        "ideal_gas",
+                                                        k_nearest);
+  wf_ = AMSCreateExecutor(model_descr,
+                          dtype,
+                          res_type,
+                          (AMSPhysicFn)callBack<FPType>,
+                          mpi_task,
+                          mpi_nproc);
 }
 
 template <typename FPType>
@@ -72,16 +70,6 @@ void AMSEOS<FPType>::Eval(const int length,
   std::vector<const FPType *> inputs = {density, energy};
   std::vector<FPType *> outputs = {pressure, soundspeed2, bulkmod, temperature};
 
-#ifdef __ENABLE_MPI__
-  AMSDistributedExecute(wf_,
-                        MPI_COMM_WORLD,
-                        (void *)model_,
-                        length,
-                        reinterpret_cast<const void **>(inputs.data()),
-                        reinterpret_cast<void **>(outputs.data()),
-                        inputs.size(),
-                        outputs.size());
-#else
   AMSExecute(wf_,
              (void *)model_,
              length,
@@ -89,7 +77,6 @@ void AMSEOS<FPType>::Eval(const int length,
              reinterpret_cast<void **>(outputs.data()),
              inputs.size(),
              outputs.size());
-#endif
 }
 
 template class AMSEOS<double>;

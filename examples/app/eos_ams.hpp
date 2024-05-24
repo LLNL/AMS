@@ -31,8 +31,7 @@ public:
          const int mpi_nproc,
          const double threshold,
          const char *surrogate_path,
-         const char *uq_path,
-         const char *db_path);
+         const char *uq_path);
 
   virtual ~AMSEOS() { delete model_; }
 
