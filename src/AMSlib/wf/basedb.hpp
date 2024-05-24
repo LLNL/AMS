@@ -2377,7 +2377,6 @@ public:
   }
 };
 
-
 /* A class that provides a BaseDB interface to AMS workflow.
  * When storing data it pushes the data to the RMQ server asynchronously
 */
