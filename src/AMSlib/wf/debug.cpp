@@ -14,6 +14,7 @@
 
 using namespace std;
 
+
 /** \brief Get the memory usage as reported in /proc/self/stat in terms
    * of used VM and resident memory.
    * @param[out] vm_usage the amount of memory used in virtual memory

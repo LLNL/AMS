@@ -213,9 +213,8 @@ private:
     };
 
     if (uq_policy == AMSUQPolicy::AMS_DELTAUQ_MEAN) {
-      if (model_resource == AMSResourceType::AMS_DEVICE)
+      if (model_resource == AMSResourceType::AMS_DEVICE){
 #ifdef __ENABLE_CUDA__
-      {
         DBG(Surrogate, "Compute mean delta uq predicates on device\n");
         constexpr int block_size = 256;
         int grid_size = divup(nrows, block_size);
@@ -224,19 +223,18 @@ private:
         // TODO: use combined routine when it lands.
         cudaDeviceSynchronize();
         CUDACHECKERROR();
-      }
 #else
         THROW(std::runtime_error,
               "Expected CUDA is enabled when model data are on DEVICE");
 #endif
+      }
       else {
         DBG(Surrogate, "Compute mean delta uq predicates on host\n");
         computeDeltaUQMeanPredicatesHost();
       }
     } else if (uq_policy == AMSUQPolicy::AMS_DELTAUQ_MAX) {
-      if (model_resource == AMSResourceType::AMS_DEVICE)
+      if (model_resource == AMSResourceType::AMS_DEVICE){
 #ifdef __ENABLE_CUDA__
-      {
         DBG(Surrogate, "Compute max delta uq predicates on device\n");
         constexpr int block_size = 256;
         int grid_size = divup(nrows, block_size);
@@ -245,11 +243,11 @@ private:
         // TODO: use combined routine when it lands.
         cudaDeviceSynchronize();
         CUDACHECKERROR();
-      }
 #else
         THROW(std::runtime_error,
               "Expected CUDA is enabled when model data are on DEVICE");
 #endif
+      }
       else {
         DBG(Surrogate, "Compute max delta uq predicates on host\n");
         computeDeltaUQMaxPredicatesHost();
