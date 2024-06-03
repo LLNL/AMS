@@ -9,9 +9,7 @@
 #define __AMS_ALLOCATOR__
 
 #include <cstddef>
-#include <umpire/Allocator.hpp>
-#include <umpire/ResourceManager.hpp>
-#include <umpire/Umpire.hpp>
+#include <vector>
 
 #include "AMS.h"
 #include "wf/debug.h"
@@ -19,43 +17,38 @@
 
 namespace ams
 {
+// Forward decl.
+struct AMSAllocator;
+namespace internal
+{
+void _raw_copy(void* src,
+               AMSResourceType src_dev,
+               void* dest,
+               AMSResourceType dest_dev,
+               size_t num_bytes);
+
+AMSAllocator* _get_allocator(std::string alloc_name, AMSResourceType resource);
+void _release_allocator(AMSAllocator* allocator);
+
+}  // namespace internal
 /**
  * @brief A "utility" class that provides
  * a unified interface to the umpire library for memory allocations
  * and data movements/copies.
  */
 
+
 struct AMSAllocator {
-  int id;
-  umpire::Allocator allocator;
+  std::string name;
+  AMSAllocator(std::string alloc_name) : name(alloc_name) {}
+  virtual ~AMSAllocator() = default;
 
-  AMSAllocator(std::string alloc_name)
-  {
-    auto& rm = umpire::ResourceManager::getInstance();
-    allocator = rm.getAllocator(alloc_name);
-    DBG(AMSAllocator,
-        "in AMSAllocator(%d, %s, %p)",
-        id,
-        alloc_name.c_str(),
-        this)
-  }
-
-  ~AMSAllocator() { DBG(AMSAllocator, "in ~AMSAllocator(%d, %p)", id, this) }
-
-  void* allocate(size_t num_bytes);
-  void deallocate(void* ptr);
+  virtual void* allocate(size_t num_bytes) = 0;
+  virtual void deallocate(void* ptr) = 0;
 
   std::string getName();
-
-  void registerPtr(void* ptr, size_t nBytes);
-  static void deregisterPtr(void* ptr)
-  {
-    auto& rm = umpire::ResourceManager::getInstance();
-    rm.deregisterAllocation(ptr);
-  }
-
-  void getAllocatorStats(size_t& wm, size_t& cs, size_t& as);
 };
+
 
 class ResourceManager
 {
@@ -116,37 +109,26 @@ public:
     RMAllocators[dev]->deallocate(data);
   }
 
-  /** @brief registers an external pointer in the umpire allocation records.
-   *  @param[in] ptr pointer to memory to register.
-   *  @param[in] nBytes number of bytes to register.
-   *  @param[in] dev resource to register the memory to.
-   *  @return void.
-   */
-  PERFFASPECT()
-  void registerExternal(void* ptr, size_t nBytes, AMSResourceType dev)
-  {
-    RMAllocators[dev]->registerPtr(ptr, nBytes);
-  }
-
-  /** @brief removes a registered external pointer from the umpire allocation records.
-   *  @param[in] ptr pointer to memory to de-register.
-   *  @return void.
-   */
-  void deregisterExternal(void* ptr) { AMSAllocator::deregisterPtr(ptr); }
-
   /** @brief copy values from src to destination regardless of their memory location.
    *  @tparam TypeInValue type of pointers
    *  @param[in] src Source memory pointer.
    *  @param[out] dest destination memory pointer.
-   *  @param[in] size number of bytes to copy. (When 0 copies entire allocated area)
+   *  @param[in] size number of values to copy.
    *  @return void.
    */
   template <typename TypeInValue>
   PERFFASPECT()
-  void copy(TypeInValue* src, TypeInValue* dest, size_t size = 0)
+  void copy(TypeInValue* src,
+            AMSResourceType src_dev,
+            TypeInValue* dest,
+            AMSResourceType dest_dev,
+            size_t nvalues)
   {
-    static auto& rm = umpire::ResourceManager::getInstance();
-    rm.copy(dest, src, size);
+    ams::internal::_raw_copy(static_cast<void*>(src),
+                             src_dev,
+                             static_cast<void*>(dest),
+                             dest_dev,
+                             nvalues * sizeof(TypeInValue));
   }
 
   /** @brief Utility function that deallocates all C-Vectors inside the vector.
@@ -163,7 +145,7 @@ public:
 
   void init()
   {
-    DBG(ResourceManager, "Default initialization of allocators");
+    DBG(ResourceManager, "Initialization of allocators");
     if (!RMAllocators[AMSResourceType::AMS_HOST])
       setAllocator("HOST", AMSResourceType::AMS_HOST);
 #ifdef __ENABLE_CUDA__
@@ -181,7 +163,8 @@ public:
       delete RMAllocators[resource];
     }
 
-    RMAllocators[resource] = new AMSAllocator(alloc_name);
+    RMAllocators[resource] =
+        ams::internal::_get_allocator(alloc_name, resource);
     DBG(ResourceManager,
         "Set Allocator [%d] to pool with name : %s",
         resource,
@@ -205,12 +188,12 @@ public:
                          size_t& cs,
                          size_t& as)
   {
-    RMAllocators[resource]->getAllocatorStats(wm, cs, as);
     return;
   }
 
   //! ------------------------------------------------------------------------
 };
+
 
 }  // namespace ams
 

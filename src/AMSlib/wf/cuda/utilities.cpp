@@ -8,8 +8,8 @@
 #ifndef __DEVICE_UTILITIES__
 #define __DEVICE_UTILITIES__
 
-#ifdef __ENABLE_CUDA__
 
+#include <cuda_runtime.h>
 #include <curand.h>
 #include <curand_kernel.h>
 #include <thrust/device_vector.h>
@@ -17,11 +17,14 @@
 
 #include <iostream>
 
+#include "wf/device.hpp"
 #include "wf/resource_manager.hpp"
 
-//#include <stdio.h>
-//#include <stdlib.h>
-//
+namespace ams
+{
+namespace Device
+{
+
 const int warpSize = 32;
 const unsigned int fullMask = 0xffffffff;
 
@@ -168,14 +171,14 @@ __global__ void assignK(T** sparse,
 }
 
 template <typename T>
-__global__ void compactK(bool cond,
-                         T** d_input,
-                         T** d_output,
-                         const bool* predicates,
-                         const size_t length,
-                         int dims,
-                         int* d_BlocksOffset,
-                         bool reverse)
+__global__ void device_compactK(bool cond,
+                                T** d_input,
+                                T** d_output,
+                                const bool* predicates,
+                                const size_t length,
+                                int dims,
+                                int* d_BlocksOffset,
+                                bool reverse)
 {
   int idx = threadIdx.x + blockIdx.x * blockDim.x;
   extern __shared__ int warpTotals[];
@@ -279,19 +282,20 @@ void __global__ compute_predicate(float* data,
 }
 
 template <typename T>
-int compact(bool cond,
-            const T** sparse,
-            T** dense,
-            const bool* dPredicate,
-            const size_t length,
-            int dims,
-            int blockSize,
-            bool isReverse = false)
+int device_compact(bool cond,
+                   const T** sparse,
+                   T** dense,
+                   const bool* dPredicate,
+                   const size_t length,
+                   int dims,
+                   int blockSize,
+                   bool isReverse)
 {
   int numBlocks = divup(length, blockSize);
   auto& rm = ams::ResourceManager::getInstance();
   int* d_BlocksCount = rm.allocate<int>(numBlocks, AMSResourceType::AMS_DEVICE);
-  int* d_BlocksOffset = rm.allocate<int>(numBlocks, AMSResourceType::AMS_DEVICE);
+  int* d_BlocksOffset =
+      rm.allocate<int>(numBlocks, AMSResourceType::AMS_DEVICE);
   // determine number of elements in the compacted list
   int* h_BlocksCount = rm.allocate<int>(numBlocks, AMSResourceType::AMS_HOST);
   int* h_BlocksOffset = rm.allocate<int>(numBlocks, AMSResourceType::AMS_HOST);
@@ -299,10 +303,18 @@ int compact(bool cond,
   T** d_dense = rm.allocate<T*>(dims, AMSResourceType::AMS_DEVICE);
   T** d_sparse = rm.allocate<T*>(dims, AMSResourceType::AMS_DEVICE);
 
-  rm.registerExternal(dense, sizeof(T*) * dims, AMSResourceType::AMS_HOST);
-  rm.registerExternal(sparse, sizeof(T*) * dims, AMSResourceType::AMS_HOST);
-  rm.copy(dense, d_dense);
-  rm.copy(const_cast<T**>(sparse), d_sparse);
+
+  rm.copy(dense,
+          AMSResourceType::AMS_HOST,
+          d_dense,
+          AMSResourceType::AMS_DEVICE,
+          dims);
+  rm.copy(const_cast<T**>(sparse),
+          AMSResourceType::AMS_HOST,
+          d_sparse,
+          AMSResourceType::AMS_DEVICE,
+          dims);
+
   thrust::device_ptr<int> thrustPrt_bCount(d_BlocksCount);
   thrust::device_ptr<int> thrustPrt_bOffset(d_BlocksOffset);
 
@@ -319,20 +331,30 @@ int compact(bool cond,
                          d_BlocksOffset);
 
   //phase 3: compute output offset for each thread in warp and each warp in thread block, then output valid elements
-  compactK<<<numBlocks, blockSize, sizeof(int) * (blockSize / warpSize)>>>(
-      cond,
-      d_sparse,
-      d_dense,
-      dPredicate,
-      length,
-      dims,
-      d_BlocksOffset,
-      isReverse);
+  device_compactK<<<numBlocks,
+                    blockSize,
+                    sizeof(int) * (blockSize / warpSize)>>>(cond,
+                                                            d_sparse,
+                                                            d_dense,
+                                                            dPredicate,
+                                                            length,
+                                                            dims,
+                                                            d_BlocksOffset,
+                                                            isReverse);
   cudaDeviceSynchronize();
   CUDACHECKERROR();
 
-  rm.copy(d_BlocksCount, h_BlocksCount);
-  rm.copy(d_BlocksOffset, h_BlocksOffset);
+  rm.copy(d_BlocksCount,
+          AMSResourceType::AMS_DEVICE,
+          h_BlocksCount,
+          AMSResourceType::AMS_HOST,
+          numBlocks);
+  rm.copy(d_BlocksOffset,
+          AMSResourceType::AMS_DEVICE,
+          h_BlocksOffset,
+          AMSResourceType::AMS_HOST,
+          numBlocks);
+
   int compact_length =
       h_BlocksOffset[numBlocks - 1] + thrustPrt_bCount[numBlocks - 1];
 
@@ -345,8 +367,6 @@ int compact(bool cond,
   rm.deallocate(d_dense, AMSResourceType::AMS_DEVICE);
   rm.deallocate(d_sparse, AMSResourceType::AMS_DEVICE);
 
-  rm.deregisterExternal(dense);
-  rm.deregisterExternal(sparse);
   cudaDeviceSynchronize();
   CUDACHECKERROR();
 
@@ -354,15 +374,15 @@ int compact(bool cond,
 }
 
 template <typename T>
-int compact(bool cond,
-            T** sparse,
-            T** dense,
-            int* indices,
-            const size_t length,
-            int dims,
-            int blockSize,
-            const bool* dPredicate,
-            bool isReverse = false)
+int device_compact(bool cond,
+                   T** sparse,
+                   T** dense,
+                   int* indices,
+                   const size_t length,
+                   int dims,
+                   int blockSize,
+                   const bool* dPredicate,
+                   bool isReverse)
 {
   int numBlocks = divup(length, blockSize);
   size_t sparseElements = length;
@@ -442,6 +462,7 @@ void cuda_rand_init(bool* predicate, const size_t length, T threshold)
   CUDACHECKERROR();
 }
 
+
 void device_compute_predicate(float* data,
                               bool* predicate,
                               size_t nData,
@@ -459,6 +480,289 @@ void device_compute_predicate(float* data,
   CUDACHECKERROR();
 }
 
-#endif
+__global__ void random_uq_device(int seed,
+                                 bool* uq_flags,
+                                 int ndata,
+                                 double acceptable_error)
+{
+
+  /* CUDA's random number library uses curandState_t to keep track of the seed
+     value we will store a random state for every thread  */
+  curandState_t state;
+  int id = threadIdx.x + blockDim.x * blockIdx.x;
+
+  if (id >= ndata) return;
+
+  /* we have to initialize the state */
+  curand_init(
+      seed +
+          id, /* the seed controls the sequence of random values that are produced */
+      0,      /* the sequence number is only important with multiple cores */
+      0, /* the offset is how much extra we advance in the sequence for each
+            call, can be 0 */
+      &state);
+
+  float x = curand_uniform(&state);
+  uq_flags[id] = (x <= acceptable_error);
+}
+
+
+template <typename scalar_t>
+__global__ void computeDeltaUQMeanPredicatesKernel(
+    const scalar_t* __restrict__ outputs_stdev,
+    bool* __restrict__ predicates,
+    const size_t nrows,
+    const size_t ncols,
+    const double threshold)
+{
+
+  size_t idx = blockDim.x * blockIdx.x + threadIdx.x;
+  size_t stride = blockDim.x * gridDim.x;
+  // Compute mean over columns, strided loop.
+  for (size_t i = idx; i < nrows; i += stride) {
+    double mean = 0.0;
+    for (size_t j = 0; j < ncols; ++j)
+      mean += outputs_stdev[j + i * ncols];
+    mean /= ncols;
+
+    predicates[i] = (mean < threshold);
+  }
+}
+
+template <typename scalar_t>
+__global__ void computeDeltaUQMaxPredicatesKernel(
+    const scalar_t* __restrict__ outputs_stdev,
+    bool* __restrict__ predicates,
+    const size_t nrows,
+    const size_t ncols,
+    const double threshold)
+{
+
+  size_t idx = blockDim.x * blockIdx.x + threadIdx.x;
+  size_t stride = blockDim.x * gridDim.x;
+  // Compute max delta uq over columns, strided loop.
+  for (size_t i = idx; i < nrows; i += stride) {
+    predicates[i] = true;
+    for (size_t j = 0; j < ncols; ++j)
+      if (outputs_stdev[j + i * ncols] >= threshold) {
+        predicates[i] = false;
+        break;
+      }
+  }
+}
+
+
+template <typename TypeValue>
+void rand_init(bool* predicate, const size_t n, TypeValue threshold)
+{
+  cuda_rand_init(predicate, n, threshold);
+  return;
+}
+
+template <typename scalar_t>
+void computeDeltaUQMeanPredicatesDevice(
+    const scalar_t* __restrict__ outputs_stdev,
+    bool* __restrict__ predicates,
+    const size_t nrows,
+    const size_t ncols,
+    const double threshold)
+{
+  constexpr int block_size = 256;
+  int grid_size = divup(nrows, block_size);
+  computeDeltaUQMeanPredicatesKernel<<<grid_size, block_size>>>(
+      outputs_stdev, predicates, nrows, ncols, threshold);
+  cudaDeviceSynchronize();
+  CUDACHECKERROR();
+};
+
+template <typename scalar_t>
+void computeDeltaUQMaxPredicatesDevice(
+    const scalar_t* __restrict__ outputs_stdev,
+    bool* __restrict__ predicates,
+    const size_t nrows,
+    const size_t ncols,
+    const double threshold)
+{
+  constexpr int block_size = 256;
+  int grid_size = divup(nrows, block_size);
+  computeDeltaUQMaxPredicatesKernel<<<grid_size, block_size>>>(
+      outputs_stdev, predicates, nrows, ncols, threshold);
+  cudaDeviceSynchronize();
+  CUDACHECKERROR();
+}
+
+
+// Specializations
+
+template void computeDeltaUQMaxPredicatesDevice<float>(
+    const float* __restrict__ outputs_stdev,
+    bool* __restrict__ predicates,
+    const size_t nrows,
+    const size_t ncols,
+    const double threshold);
+
+template void computeDeltaUQMaxPredicatesDevice<double>(
+    const double* __restrict__ outputs_stdev,
+    bool* __restrict__ predicates,
+    const size_t nrows,
+    const size_t ncols,
+    const double threshold);
+
+template void computeDeltaUQMeanPredicatesDevice<float>(
+    const float* __restrict__ outputs_stdev,
+    bool* __restrict__ predicates,
+    const size_t nrows,
+    const size_t ncols,
+    const double threshold);
+
+template void computeDeltaUQMeanPredicatesDevice<double>(
+    const double* __restrict__ outputs_stdev,
+    bool* __restrict__ predicates,
+    const size_t nrows,
+    const size_t ncols,
+    const double threshold);
+
+template void cuda_rand_init<float>(bool* predicate,
+                                    const size_t length,
+                                    float threshold);
+
+template void cuda_rand_init<double>(bool* predicate,
+                                     const size_t length,
+                                     double threshold);
+
+
+template void device_linearize<float, float>(float* output,
+                                             const float* const* inputs,
+                                             size_t dims,
+                                             size_t elements);
+
+template void device_linearize<float, double>(double* output,
+                                              const float* const* inputs,
+                                              size_t dims,
+                                              size_t elements);
+
+template void device_linearize<double, double>(double* output,
+                                               const double* const* inputs,
+                                               size_t dims,
+                                               size_t elements);
+
+template void device_linearize<double, float>(float* output,
+                                              const double* const* inputs,
+                                              size_t dims,
+                                              size_t elements);
+
+template int device_compact<double>(bool cond,
+                                    const double** sparse,
+                                    double** dense,
+                                    const bool* dPredicate,
+                                    const size_t length,
+                                    int dims,
+                                    int blockSize,
+                                    bool isReverse);
+
+template int device_compact<float>(bool cond,
+                                   const float** sparse,
+                                   float** dense,
+                                   const bool* dPredicate,
+                                   const size_t length,
+                                   int dims,
+                                   int blockSize,
+                                   bool isReverse);
+
+template int device_compact<double>(bool cond,
+                                    double** sparse,
+                                    double** dense,
+                                    int* indices,
+                                    const size_t length,
+                                    int dims,
+                                    int blockSize,
+                                    const bool* dPredicate,
+                                    bool isReverse);
+
+template int device_compact<float>(bool cond,
+                                   float** sparse,
+                                   float** dense,
+                                   int* indices,
+                                   const size_t length,
+                                   int dims,
+                                   int blockSize,
+                                   const bool* dPredicate,
+                                   bool isReverse);
+
+
+template void rand_init<double>(bool* predicate,
+                                const size_t n,
+                                double threshold);
+
+template void rand_init<float>(bool* predicate,
+                               const size_t n,
+                               float threshold);
+
+}  // namespace Device
+
+
+void DtoDMemcpy(void* dest, void* src, size_t nBytes)
+{
+  cudaMemcpy(dest, src, nBytes, cudaMemcpyDeviceToDevice);
+}
+
+void HtoHMemcpy(void* dest, void* src, size_t nBytes)
+{
+  std::memcpy(dest, src, nBytes);
+}
+
+void HtoDMemcpy(void* dest, void* src, size_t nBytes)
+{
+  cudaMemcpy(dest, src, nBytes, cudaMemcpyHostToDevice);
+};
+
+void DtoHMemcpy(void* dest, void* src, size_t nBytes)
+{
+  cudaMemcpy(dest, src, nBytes, cudaMemcpyDeviceToHost);
+}
+
+void* DeviceAllocate(size_t nBytes)
+{
+  void* devPtr;
+  cudaMalloc(&devPtr, nBytes);
+  return devPtr;
+}
+
+void DeviceFree(void* ptr)
+{
+  cudaFree(ptr);
+  return;
+}
+
+void* DevicePinnedAlloc(size_t nBytes)
+{
+  void* ptr;
+  cudaHostAlloc(&ptr, nBytes, cudaHostAllocPortable);
+  return ptr;
+}
+
+void DeviceFreePinned(void* ptr) { cudaFreeHost(ptr); }
+
+
+void deviceCheckErrors(const char* file, int line)
+{
+  ams::Device::__cudaCheckError(file, line);
+}
+
+void device_random_uq(int seed,
+                      bool* uq_flags,
+                      int ndata,
+                      double acceptable_error)
+{
+  size_t block_size = 256;
+  size_t blocks = ams::Device::divup(ndata, block_size);
+  ams::Device::random_uq_device<<<blocks, block_size>>>(seed,
+                                                        uq_flags,
+                                                        ndata,
+                                                        acceptable_error);
+}
+
+
+}  // namespace ams
 
 #endif

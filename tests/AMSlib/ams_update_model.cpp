@@ -44,8 +44,16 @@ bool inference(SurrogateModel<T> &model,
     if (resource == AMSResourceType::AMS_DEVICE) {
       first_model_out = ams_rm.allocate<T>(SIZE, AMSResourceType::AMS_HOST);
       second_model_out = ams_rm.allocate<T>(SIZE, AMSResourceType::AMS_HOST);
-      ams_rm.copy(outputs[i], first_model_out, SIZE * sizeof(T));
-      ams_rm.copy(outputs[i + 4], second_model_out, SIZE * sizeof(T));
+      ams_rm.copy(outputs[i],
+                  resource,
+                  first_model_out,
+                  AMSResourceType::AMS_HOST,
+                  SIZE);
+      ams_rm.copy(outputs[i + 4],
+                  resource,
+                  second_model_out,
+                  AMSResourceType::AMS_HOST,
+                  SIZE);
     }
 
     for (int j = 0; j < SIZE; j++) {

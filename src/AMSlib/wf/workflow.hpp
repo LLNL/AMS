@@ -140,12 +140,20 @@ class AMSWorkflow
       size_t actualElems = std::min(elPerDim, num_elements - i);
       // Copy input data to host
       for (int k = 0; k < numIn; k++) {
-        rm.copy(&inputs[k][i], hInputs[k], actualElems * sizeof(FPTypeValue));
+        rm.copy(&inputs[k][i],
+                AMSResourceType::AMS_DEVICE,
+                hInputs[k],
+                AMSResourceType::AMS_HOST,
+                actualElems);
       }
 
       // Copy output data to host
       for (int k = 0; k < numIn; k++) {
-        rm.copy(&outputs[k][i], hOutputs[k], actualElems * sizeof(FPTypeValue));
+        rm.copy(&outputs[k][i],
+                AMSResourceType::AMS_DEVICE,
+                hOutputs[k],
+                AMSResourceType::AMS_HOST,
+                actualElems);
       }
 
       // Store to database

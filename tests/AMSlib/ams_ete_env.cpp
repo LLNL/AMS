@@ -99,12 +99,14 @@ struct Problem {
                  outputs.size());
 
       for (int i = 0; i < num_outputs; i++) {
-        delete outputs[i];
+        delete[] outputs[i];
+        outputs[i] = nullptr;
       }
 
 
       for (int i = 0; i < num_inputs; i++) {
-        delete inputs[i];
+        delete[] inputs[i];
+        inputs[i] = nullptr;
       }
     }
   }
@@ -130,12 +132,6 @@ void callBackSingle(void *cls, long elements, void **inputs, void **outputs)
 
 int main(int argc, char **argv)
 {
-  // Number of ranks in this run
-  int wS = 1;
-  // My Local Id
-  int rId = 0;
-  // Level of Threading provided by MPI
-  int provided = 0;
 
   if (argc != 9) {
     std::cout << "Wrong cli\n";

@@ -8,27 +8,35 @@ file(GLOB_RECURSE MINIAPP_INCLUDES "*.hpp")
 #set global library path to link with tests if necessary
 set(LIBRARY_OUTPUT_PATH ${AMS_LIB_OUT_PATH})
 set(AMS_LIB_SRC ${MINIAPP_INCLUDES} AMS.cpp wf/resource_manager.cpp wf/debug.cpp wf/basedb.cpp wf/logger.cpp)
+
+if (WITH_CUDA)
+  list(APPEND AMS_LIB_SRC wf/cuda/utilities.cpp)
+  message(WARNING "FILES ARE ${AMS_LIB_SRC}")
+endif()
+
+
 # two targets: a shared lib and an exec
 add_library(AMS ${AMS_LIB_SRC} ${MINIAPP_INCLUDES})
 
 # ------------------------------------------------------------------------------
 if (WITH_CUDA)
-    set_target_properties(AMS PROPERTIES CUDA_ARCHITECTURES ${AMS_CUDA_ARCH})
 
-    #    if (BUILD_SHARED_LIBS)
-    #      set_target_properties(AMS PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-    #    else()
-    #      set_target_properties(AMS PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-    #      set_target_properties(AMS PROPERTIES CUDA_RESOLVE_DEVICE_SYMBOLS ON)
-    #    endif()
+  set_target_properties(AMS PROPERTIES CUDA_ARCHITECTURES ${AMS_CUDA_ARCH})
 
-    set_source_files_properties(AMS.cpp PROPERTIES LANGUAGE CUDA)
-    set_source_files_properties(AMS.cpp PROPERTIES CUDA_ARCHITECTURES ${AMS_CUDA_ARCH})
-    set_source_files_properties(AMS.cpp PROPERTIES COMPILE_FLAGS "--expt-extended-lambda")
+  #    if (BUILD_SHARED_LIBS)
+  #      set_target_properties(AMS PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+  #    else()
+  #      set_target_properties(AMS PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+  #      set_target_properties(AMS PROPERTIES CUDA_RESOLVE_DEVICE_SYMBOLS ON)
+  #    endif()
 
-    if (WITH_PERFFLOWASPECT)
-        set_property(SOURCE AMS.cpp APPEND_STRING PROPERTY COMPILE_FLAGS " -Xcompiler=-Xclang -Xcompiler=-load -Xcompiler=-Xclang -Xcompiler=${PERFFLOWASPECT_LIB_DIR}/libWeavePass.so")
-        set_source_files_properties(wf/resource_manager.cpp COMPILE_FLAGS "-Xclang -load -Xclang ${PERFFLOWASPECT_LIB_DIR}/libWeavePass.so")
+  set_source_files_properties(wf/cuda/utilities.cpp PROPERTIES LANGUAGE CUDA)
+  set_source_files_properties(wf/cuda/utilities.cpp PROPERTIES CUDA_ARCHITECTURES ${AMS_CUDA_ARCH})
+  set_source_files_properties(wf/cuda/utilities.cpp PROPERTIES COMPILE_FLAGS "--expt-extended-lambda")
+
+  if (WITH_PERFFLOWASPECT)
+      set_property(SOURCE AMS.cpp APPEND_STRING PROPERTY COMPILE_FLAGS " -Xcompiler=-Xclang -Xcompiler=-load -Xcompiler=-Xclang -Xcompiler=${PERFFLOWASPECT_LIB_DIR}/libWeavePass.so")
+      set_source_files_properties(wf/resource_manager.cpp COMPILE_FLAGS "-Xclang -load -Xclang ${PERFFLOWASPECT_LIB_DIR}/libWeavePass.so")
     endif()
 endif()
 

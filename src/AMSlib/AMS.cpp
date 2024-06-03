@@ -389,8 +389,8 @@ private:
       } else if (log_prefix.find("<PID>") != std::string::npos) {
         pattern = std::string("<PID>");
         id = getpid();
-      }
-      // Combine hostname and pid
+      }  // Combine hostname and pid
+
       std::ostringstream combined;
       combined << "." << hostname << "." << id;
 

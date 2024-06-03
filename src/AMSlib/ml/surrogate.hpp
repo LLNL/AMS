@@ -15,7 +15,7 @@
 #include <unordered_map>
 
 #include "AMS.h"
-#include "wf/cuda/utilities.cuh"
+#include "wf/device.hpp"
 
 #ifdef __ENABLE_TORCH__
 #include <ATen/core/interned_strings.h>
@@ -100,43 +100,12 @@ private:
   {
     // Transpose to get continuous memory and
     // perform single memcpy.
+    auto& rm = ams::ResourceManager::getInstance();
     tensor = tensor.transpose(1, 0);
-    if (model_resource == AMSResourceType::AMS_HOST) {
-      for (long j = 0; j < numCols; j++) {
-        auto tmp = tensor[j].contiguous();
-        TypeInValue* ptr = tmp.data_ptr<TypeInValue>();
-        HtoHMemcpy(array[j], ptr, sizeof(TypeInValue) * numRows);
-      }
-    } else {
-      for (long j = 0; j < numCols; j++) {
-        auto tmp = tensor[j].contiguous();
-        TypeInValue* ptr = tmp.data_ptr<TypeInValue>();
-        DtoDMemcpy(array[j], ptr, sizeof(TypeInValue) * numRows);
-      }
-    }
-  }
-
-  PERFFASPECT()
-  inline void tensorToHostArray(at::Tensor tensor,
-                                long numRows,
-                                long numCols,
-                                TypeInValue** array)
-  {
-    // Transpose to get continuous memory and
-    // perform single memcpy.
-    tensor = tensor.transpose(1, 0);
-    if (model_resource == AMSResourceType::AMS_HOST) {
-      for (long j = 0; j < numCols; j++) {
-        auto tmp = tensor[j].contiguous();
-        TypeInValue* ptr = tmp.data_ptr<TypeInValue>();
-        HtoHMemcpy(array[j], ptr, sizeof(TypeInValue) * numRows);
-      }
-    } else {
-      for (long j = 0; j < numCols; j++) {
-        auto tmp = tensor[j].contiguous();
-        TypeInValue* ptr = tmp.data_ptr<TypeInValue>();
-        DtoHMemcpy(array[j], ptr, sizeof(TypeInValue) * numRows);
-      }
+    for (long j = 0; j < numCols; j++) {
+      auto tmp = tensor[j].contiguous();
+      TypeInValue* ptr = tmp.data_ptr<TypeInValue>();
+      rm.copy(ptr, model_resource, array[j], model_resource, numRows);
     }
   }
 
@@ -216,13 +185,9 @@ private:
       if (model_resource == AMSResourceType::AMS_DEVICE) {
 #ifdef __ENABLE_CUDA__
         DBG(Surrogate, "Compute mean delta uq predicates on device\n");
-        constexpr int block_size = 256;
-        int grid_size = divup(nrows, block_size);
-        computeDeltaUQMeanPredicatesKernel<<<grid_size, block_size>>>(
-            outputs_stdev, predicates, nrows, ncols, threshold);
         // TODO: use combined routine when it lands.
-        cudaDeviceSynchronize();
-        CUDACHECKERROR();
+        ams::Device::computeDeltaUQMeanPredicatesDevice(
+            outputs_stdev, predicates, nrows, ncols, threshold);
 #else
         THROW(std::runtime_error,
               "Expected CUDA is enabled when model data are on DEVICE");
@@ -235,13 +200,9 @@ private:
       if (model_resource == AMSResourceType::AMS_DEVICE) {
 #ifdef __ENABLE_CUDA__
         DBG(Surrogate, "Compute max delta uq predicates on device\n");
-        constexpr int block_size = 256;
-        int grid_size = divup(nrows, block_size);
-        computeDeltaUQMaxPredicatesKernel<<<grid_size, block_size>>>(
-            outputs_stdev, predicates, nrows, ncols, threshold);
         // TODO: use combined routine when it lands.
-        cudaDeviceSynchronize();
-        CUDACHECKERROR();
+        ams::Device::computeDeltaUQMaxPredicatesDevice(
+            outputs_stdev, predicates, nrows, ncols, threshold);
 #else
         THROW(std::runtime_error,
               "Expected CUDA is enabled when model data are on DEVICE");
@@ -306,7 +267,7 @@ private:
     }
 
     if (is_device()) {
-      deviceCheckErrors(__FILE__, __LINE__);
+      ams::deviceCheckErrors(__FILE__, __LINE__);
     }
 
     DBG(Surrogate,

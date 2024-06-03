@@ -1962,14 +1962,8 @@ private:
            msg_id)
     auto& msg = *it;
     auto& rm = ams::ResourceManager::getInstance();
-    try {
-      rm.deallocate(msg.data(), AMSResourceType::AMS_HOST);
-    } catch (const umpire::util::Exception& e) {
-      FATAL(RMQPublisherHandler,
-            "Failed to deallocate #%d (%p)",
-            msg.id(),
-            msg.data());
-    }
+    rm.deallocate(msg.data(), AMSResourceType::AMS_HOST);
+
     DBG(RMQPublisherHandler, "Deallocated msg #%d (%p)", msg.id(), msg.data())
     buf.erase(it);
   }
@@ -1984,14 +1978,7 @@ private:
     auto& rm = ams::ResourceManager::getInstance();
     for (auto& dp : buffer) {
       DBG(RMQPublisherHandler, "deallocate msg #%d (%p)", dp.id(), dp.data())
-      try {
-        rm.deallocate(dp.data(), AMSResourceType::AMS_HOST);
-      } catch (const umpire::util::Exception& e) {
-        FATAL(RMQPublisherHandler,
-              "Failed to deallocate msg #%d (%p)",
-              dp.id(),
-              dp.data());
-      }
+      rm.deallocate(dp.data(), AMSResourceType::AMS_HOST);
     }
     buffer.clear();
   }
