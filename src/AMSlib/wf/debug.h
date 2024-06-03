@@ -72,7 +72,7 @@ void memUsage(double& vm_usage, double& resident_set);
     size_t watermark, current_size, actual_size;                       \
     auto& rm = ams::ResourceManager::getInstance();                    \
     memUsage(vm, rs);                                                  \
-    DBG(MEM : id, "Memory usage at %s is VM:%g RS:%g", phase, vm, rs); \
+    DBG(MEM, "Memory usage at %s is VM:%g RS:%g", phase, vm, rs); \
                                                                        \
     for (int i = 0; i < AMSResourceType::AMS_RSEND; i++) {             \
       if (rm.isActive((AMSResourceType)i)) {                           \
@@ -80,8 +80,7 @@ void memUsage(double& vm_usage, double& resident_set);
                              watermark,                                \
                              current_size,                             \
                              actual_size);                             \
-        DBG(MEM                                                        \
-            : id,                                                      \
+        DBG(MEM,                                                        \
               "Allocator: %s HWM:%lu CS:%lu AS:%lu) ",                 \
               rm.getAllocatorName((AMSResourceType)i).c_str(),         \
               watermark,                                               \

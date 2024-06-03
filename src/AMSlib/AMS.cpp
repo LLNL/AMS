@@ -391,17 +391,21 @@ private:
       CFATAL(AMS, !path_exists(log_dir), "Log Directory does not exist");
 
       int id = 0;
-      if (log_prefix.find("<PID>") != std::string::npos) {
-        pattern = std::string("<PID>");
-        id = getpid();
-      } else if (log_prefix.find("<RID>") != std::string::npos) {
+      if (log_prefix.find("<RID>") != std::string::npos) {
         pattern = std::string("<RID>");
         id = get_rank_id();
+      } else if (log_prefix.find("<PID>") != std::string::npos) {
+        pattern = std::string("<PID>");
+        id = getpid();
+      } else {
+        log_prefix += "<PID>";
+        pattern = std::string("<PID>");
+        id = getpid();
       }
 
       // Combine hostname and pid
       std::ostringstream combined;
-      combined << hostname << "_" << id;
+      combined << "." << hostname << "." << id;
 
       if (!pattern.empty()) {
         log_path =
@@ -409,7 +413,7 @@ private:
             std::regex_replace(log_prefix, std::regex(pattern), combined.str());
       } else {
         log_path =
-            fs::absolute(log_dir).string() + log_prefix + "_" + combined.str();
+            fs::absolute(log_dir).string() + log_prefix + "." + combined.str();
       }
     }
     logger->initialize_std_io_err(enable_log, log_path);
@@ -494,6 +498,7 @@ public:
         }
       }
     }
+    ams::util::close();
   }
 };
 

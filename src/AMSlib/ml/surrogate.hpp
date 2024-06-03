@@ -213,7 +213,7 @@ private:
     };
 
     if (uq_policy == AMSUQPolicy::AMS_DELTAUQ_MEAN) {
-      if (model_resource == AMSResourceType::AMS_DEVICE){
+      if (model_resource == AMSResourceType::AMS_DEVICE) {
 #ifdef __ENABLE_CUDA__
         DBG(Surrogate, "Compute mean delta uq predicates on device\n");
         constexpr int block_size = 256;
@@ -227,13 +227,12 @@ private:
         THROW(std::runtime_error,
               "Expected CUDA is enabled when model data are on DEVICE");
 #endif
-      }
-      else {
+      } else {
         DBG(Surrogate, "Compute mean delta uq predicates on host\n");
         computeDeltaUQMeanPredicatesHost();
       }
     } else if (uq_policy == AMSUQPolicy::AMS_DELTAUQ_MAX) {
-      if (model_resource == AMSResourceType::AMS_DEVICE){
+      if (model_resource == AMSResourceType::AMS_DEVICE) {
 #ifdef __ENABLE_CUDA__
         DBG(Surrogate, "Compute max delta uq predicates on device\n");
         constexpr int block_size = 256;
@@ -247,8 +246,7 @@ private:
         THROW(std::runtime_error,
               "Expected CUDA is enabled when model data are on DEVICE");
 #endif
-      }
-      else {
+      } else {
         DBG(Surrogate, "Compute max delta uq predicates on host\n");
         computeDeltaUQMaxPredicatesHost();
       }
@@ -412,7 +410,7 @@ public:
 
       DBG(Surrogate,
           "Returning existing model represented under (%s)",
-          model_path);
+          model_path.empty() ? "" : model_path.c_str());
       return torch_model;
     }
 

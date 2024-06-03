@@ -108,6 +108,7 @@ void Logger::flush()
 
 void Logger::close()
 {
+
   if (ams_out != nullptr && ams_out != stdout) {
     fclose(ams_out);
     ams_out = nullptr;
@@ -118,6 +119,7 @@ void close()
 {
   auto logger = Logger::getActiveLogger();
   logger->flush();
+  logger->close();
 }
 
 void flush_files()
