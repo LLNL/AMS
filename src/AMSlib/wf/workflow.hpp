@@ -27,6 +27,7 @@
 
 #ifdef __ENABLE_MPI__
 #include <mpi.h>
+
 #include "wf/redist_load.hpp"
 #endif
 
@@ -101,7 +102,8 @@ class AMSWorkflow
    */
   void Store(size_t num_elements,
              std::vector<FPTypeValue *> &inputs,
-             std::vector<FPTypeValue *> &outputs)
+             std::vector<FPTypeValue *> &outputs,
+             bool *predicate = nullptr)
   {
     // 1 MB of buffer size;
     // TODO: Fix magic number
@@ -116,53 +118,53 @@ class AMSWorkflow
     if (!DB) return;
 
     std::vector<FPTypeValue *> hInputs, hOutputs;
+    bool *hPredicate = nullptr;
 
-    if (appDataLoc == AMSResourceType::AMS_HOST)
-      return DB->store(num_elements, inputs, outputs);
-
-    // Compute number of elements that fit inside the buffer
-    size_t bElements = bSize / sizeof(FPTypeValue);
-    FPTypeValue *pPtr =
-        rm.allocate<FPTypeValue>(bElements, AMSResourceType::AMS_PINNED);
-    // Total inner vector dimensions (inputs and outputs)
-    size_t totalDims = inputs.size() + outputs.size();
-    // Compute number of elements of each outer dimension that fit in buffer
-    size_t elPerDim = static_cast<int>(floor(bElements / totalDims));
-
-    for (int i = 0; i < inputs.size(); i++)
-      hInputs.push_back(&pPtr[i * elPerDim]);
-
-    for (int i = 0; i < outputs.size(); i++)
-      hOutputs.push_back(&pPtr[(i + inputs.size()) * elPerDim]);
-
-    // Iterate over all chunks
-    for (int i = 0; i < num_elements; i += elPerDim) {
-      size_t actualElems = std::min(elPerDim, num_elements - i);
-      // Copy input data to host
-      for (int k = 0; k < numIn; k++) {
-        rm.copy(&inputs[k][i],
-                AMSResourceType::AMS_DEVICE,
-                hInputs[k],
-                AMSResourceType::AMS_HOST,
-                actualElems);
-      }
-
-      // Copy output data to host
-      for (int k = 0; k < numIn; k++) {
-        rm.copy(&outputs[k][i],
-                AMSResourceType::AMS_DEVICE,
-                hOutputs[k],
-                AMSResourceType::AMS_HOST,
-                actualElems);
-      }
-
-      // Store to database
-      DB->store(actualElems, hInputs, hOutputs);
+    if (appDataLoc == AMSResourceType::AMS_HOST) {
+      return DB->store(num_elements, inputs, outputs, predicate);
     }
-    rm.deallocate(pPtr, AMSResourceType::AMS_PINNED);
+
+    for (int i = 0; i < inputs.size(); i++) {
+      FPTypeValue *pPtr =
+          rm.allocate<FPTypeValue>(num_elements, AMSResourceType::AMS_HOST);
+      rm.copy(inputs[i], AMS_DEVICE, pPtr, AMS_HOST, num_elements);
+      hInputs.push_back(pPtr);
+    }
+
+    for (int i = 0; i < outputs.size(); i++) {
+      FPTypeValue *pPtr =
+          rm.allocate<FPTypeValue>(num_elements, AMSResourceType::AMS_HOST);
+      rm.copy(outputs[i], AMS_DEVICE, pPtr, AMS_HOST, num_elements);
+      hOutputs.push_back(pPtr);
+    }
+
+    if (predicate) {
+      hPredicate = rm.allocate<bool>(num_elements, AMSResourceType::AMS_HOST);
+      rm.copy(predicate, AMS_DEVICE, hPredicate, AMS_HOST, num_elements);
+    }
+
+    // Store to database
+    DB->store(num_elements, hInputs, hOutputs, hPredicate);
+    rm.deallocate(hInputs, AMSResourceType::AMS_HOST);
+    rm.deallocate(hOutputs, AMSResourceType::AMS_HOST);
+    if (predicate) rm.deallocate(hPredicate, AMSResourceType::AMS_HOST);
 
     return;
   }
+
+  void Store(size_t num_elements,
+             std::vector<const FPTypeValue *> &inputs,
+             std::vector<FPTypeValue *> &outputs,
+             bool *predicate = nullptr)
+  {
+    std::vector<FPTypeValue *> mInputs;
+    for (auto I : inputs) {
+      mInputs.push_back(const_cast<FPTypeValue *>(I));
+    }
+
+    Store(num_elements, mInputs, outputs, predicate);
+  }
+
 
 public:
   AMSWorkflow()
@@ -180,6 +182,7 @@ public:
               std::string &uq_path,
               std::string &surrogate_path,
               std::string &domain_name,
+              bool isDebugDB,
               AMSResourceType app_data_loc,
               FPTypeValue threshold,
               const AMSUQPolicy uq_policy,
@@ -201,7 +204,7 @@ public:
     DB = nullptr;
     auto &dbm = ams::db::DBManager::getInstance();
 
-    DB = dbm.getDB(domainName, rId);
+    DB = dbm.getDB(domainName, rId, isDebugDB);
     UQModel = std::make_unique<UQ<FPTypeValue>>(
         appDataLoc, uqPolicy, uq_path, nClusters, surrogate_path, threshold);
   }
@@ -320,14 +323,14 @@ public:
     }
 
     // The predicate with which we will split the data on a later step
-    bool *p_ml_acceptable = rm.allocate<bool>(totalElements, appDataLoc);
+    bool *predicate = rm.allocate<bool>(totalElements, appDataLoc);
 
     // -------------------------------------------------------------
     // STEP 1: call the UQ module to look at input uncertainties
     //         to decide if making a ML inference makes sense
     // -------------------------------------------------------------
     CALIPER(CALI_MARK_BEGIN("UQ_MODULE");)
-    UQModel->evaluate(totalElements, origInputs, origOutputs, p_ml_acceptable);
+    UQModel->evaluate(totalElements, origInputs, origOutputs, predicate);
     CALIPER(CALI_MARK_END("UQ_MODULE");)
 
     DBG(Workflow, "Computed Predicates")
@@ -343,7 +346,6 @@ public:
 
     DBG(Workflow, "Allocated input resources")
 
-    bool *predicate = p_ml_acceptable;
 
     // -----------------------------------------------------------------
     // STEP 3: call physics module only where predicate = false
@@ -410,10 +412,18 @@ public:
 
     if (DB) {
       CALIPER(CALI_MARK_BEGIN("DBSTORE");)
-      DBG(Workflow,
-          "Storing data (#elements = %d) to database",
-          packedElements);
-      Store(packedElements, packedInputs, packedOutputs);
+      if (!DB->storePredicate()) {
+        DBG(Workflow,
+            "Storing data (#elements = %d) to database",
+            packedElements);
+        Store(packedElements, packedInputs, packedOutputs);
+      } else {
+        DBG(Workflow,
+            "Storing data (#elements = %d) to database including predicates",
+            totalElements);
+        Store(totalElements, origInputs, origOutputs, predicate);
+      }
+
       CALIPER(CALI_MARK_END("DBSTORE");)
     }
 
@@ -425,7 +435,7 @@ public:
     for (int i = 0; i < outputDim; i++)
       rm.deallocate(packedOutputs[i], appDataLoc);
 
-    rm.deallocate(p_ml_acceptable, appDataLoc);
+    rm.deallocate(predicate, appDataLoc);
 
     DBG(Workflow, "Finished AMSExecution")
     CINFO(Workflow,

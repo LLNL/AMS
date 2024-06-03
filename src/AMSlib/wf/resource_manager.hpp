@@ -50,6 +50,7 @@ struct AMSAllocator {
   const std::string getName() const;
 };
 
+
 class ResourceManager
 {
 private:
@@ -196,6 +197,7 @@ public:
 
   //! ------------------------------------------------------------------------
 };
+
 
 }  // namespace ams
 

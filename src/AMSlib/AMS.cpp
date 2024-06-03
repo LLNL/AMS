@@ -49,6 +49,7 @@ public:
   std::string SPath;
   std::string UQPath;
   std::string DBLabel;
+  bool DebugDB;
   double threshold;
   AMSUQPolicy uqPolicy;
   int nClusters;
@@ -83,6 +84,15 @@ public:
     }
 
     return value["db_label"].get<std::string>();
+  }
+
+  bool parseDebugDB(nlohmann::json &value)
+  {
+    if (!value.contains("debug_db")) {
+      return false;
+    }
+
+    return value["debug_db"].get<bool>();
   }
 
 
@@ -189,6 +199,11 @@ public:
     threshold = value["threshold"].get<float>();
     parseUQPaths(uqPolicy, value);
     DBLabel = parseDBLabel(value);
+    DebugDB = parseDebugDB(value);
+    CFATAL(AMS,
+           DebugDB && (SPath.empty()),
+           "To store predicates in dabase, a surrogate model field is "
+           "mandatory");
   }
 
 
@@ -550,6 +565,7 @@ ams::AMSWorkflow<FPTypeValue> *_AMSCreateExecutor(AMSCAbstrModel model,
                                         model_descr.UQPath,
                                         model_descr.SPath,
                                         model_descr.DBLabel,
+                                        model_descr.DebugDB,
                                         resource_type,
                                         model_descr.threshold,
                                         model_descr.uqPolicy,

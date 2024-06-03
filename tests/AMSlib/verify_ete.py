@@ -17,7 +17,7 @@ def get_suffix(db_type):
     return "unknown"
 
 
-def verify_data_collection(fs_path, db_type, num_inputs, num_outputs, name="test"):
+def verify_data_collection(fs_path, db_type, num_inputs, num_outputs, name="test", debug_db=False):
     # Returns a tuple of the input/ouput data and 0/1 for correct incorrect file.
     # Checks whether the files also have the right number of columns
     if not Path(fs_path).exists():
@@ -29,6 +29,12 @@ def verify_data_collection(fs_path, db_type, num_inputs, num_outputs, name="test
         return None, 0
 
     fn = f"{name}_0.{suffix}"
+    if debug_db and db_type != "hdf5":
+        print("Debug DB is only supported on hdf5")
+        return None, 1
+    elif debug_db:
+        fn = f"{name}_0.debug.{suffix}"
+
     fp = Path(f"{fs_path}/{fn}")
 
     if name == "" and fp.exists():
@@ -56,7 +62,7 @@ def verify_data_collection(fs_path, db_type, num_inputs, num_outputs, name="test
     elif db_type == "hdf5":
         with h5py.File(fp, "r") as fd:
             dsets = fd.keys()
-            assert len(dsets) == (num_inputs + num_outputs), "Expected equal number of inputs/outputs"
+            assert len(dsets) == (num_inputs + num_outputs + int(debug_db)), "Expected equal number of inputs/outputs"
             inputs = sum(1 for s in dsets if "input" in s)
             assert inputs == num_inputs, "Expected equal number of inputs"
             outputs = sum(1 for s in dsets if "output" in s)
@@ -64,16 +70,24 @@ def verify_data_collection(fs_path, db_type, num_inputs, num_outputs, name="test
             input_data = [[] for _ in range(num_inputs)]
             output_data = [[] for _ in range(num_outputs)]
             for d in dsets:
+                if d == "predicate":
+                    continue
                 loc = int(d.split("_")[1])
                 if len(fd[d]):
                     if "input" in d:
                         input_data[loc] = fd[d][:]
                     elif "output" in d:
                         output_data[loc] = fd[d][:]
+            predicate = None
+            if debug_db:
+                predicate = np.array(fd["predicate"][:])
             input_data = np.array(input_data)
             output_data = np.array(output_data)
             fp.unlink()
+            if debug_db:
+                return (input_data.T, output_data.T, predicate), 0
             return (input_data.T, output_data.T), 0
+
     else:
         return None, 1
 
@@ -91,7 +105,9 @@ def verify(
     db_type,
     fs_path,
     name="test",
+    debug_db=False,
 ):
+    print("debug db is", debug_db)
     # When AMS has no model path it always calls the domain solution.
     # As such it behaves identically with threshold 0
     if model_path == None or model_path == "":
@@ -102,7 +118,7 @@ def verify(
         threshold = 1.0
 
     if db_type != "none":
-        data, correct = verify_data_collection(fs_path, db_type, num_inputs, num_outputs, name)
+        data, correct = verify_data_collection(fs_path, db_type, num_inputs, num_outputs, name, debug_db)
         if correct:
             return 1
         inputs = data[0]
@@ -118,7 +134,25 @@ def verify(
             elif "data_type" == "float":
                 assert inputs.dtype == np.float32, "Data types do not match"
 
-        if threshold == 0.0:
+        # When debug db is set, we store always all elements
+        if debug_db:
+            predicate = data[2]
+            assert (
+                len(predicate) == num_elements
+            ), f"debug db should always contain all data but now it has {len(predicate)}"
+            assert (
+                len(inputs) == num_elements and len(outputs) == num_elements
+            ), f"Num elements should be the same as experiment {len(inputs)} {num_elements}"
+            # Predicate points to 'true' when we use the model. The sum should be "equal" to
+            # the threshold multiplied by the number of elements
+            arg = sum(predicate)
+            actual_elems = int(threshold * num_elements)
+            assert arg == actual_elems, "Predicate does not accumulate to the expected value"
+            # Over here I pick the values from input/outputs that will be selected for "domain" evaluation
+            # This will allow the code to verify that predicates pick the "right" values
+            inputs = inputs[np.logical_not(predicate)]
+            outputs = outputs[np.logical_not(predicate)]
+        elif threshold == 0.0:
             # Threshold 0 means collect all data. Verify the sizes.
             assert (
                 len(inputs) == num_elements and len(outputs) == num_elements
@@ -252,6 +286,7 @@ def from_json(argv):
         threshold = model["threshold"]
         db_label = model["db_label"]
         model_path = model.get("model_path", None)
+        is_debug = model.get("debug_db", False)
         res = verify(
             use_device,
             num_inputs,
@@ -265,6 +300,7 @@ def from_json(argv):
             db_type,
             fs_path,
             db_label,
+            is_debug,
         )
         if res != 0:
             return res
@@ -276,4 +312,3 @@ if __name__ == "__main__":
     if "AMS_OBJECTS" in os.environ:
         sys.exit(from_json(sys.argv[1:]))
     sys.exit(from_cli(sys.argv[1:]))
-    pass
