@@ -45,7 +45,7 @@ option(WITH_PERFFLOWASPECT "Use PerfFlowAspect for Profiling" OFF)
 option(WITH_WORKFLOW       "Install python drivers used by the outer workflow" OFF)
 option(WITH_AMS_LIB        "Install C++ library to support scientific applications" ON)
 option(WITH_ADIAK          "Use Adiak for recording metadata" OFF)
-option(BUILD_SHARED_LIBS "Build using shared libraries" ON)
+option(BUILD_SHARED_LIBS   "Build using shared libraries" ON)
 
 if (WITH_MPI)
   #  SET(CMAKE_CXX_COMPILER "${MPI_CXX_COMPILER}" CACHE FILEPATH "CXX compiler overridden with MPI C++ wrapper")

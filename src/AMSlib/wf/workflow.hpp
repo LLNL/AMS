@@ -8,8 +8,6 @@
 #ifndef __AMS_WORKFLOW_HPP__
 #define __AMS_WORKFLOW_HPP__
 
-#include <mpi.h>
-
 #include "debug.h"
 #ifdef __AMS_ENABLE_CALIPER__
 #include <caliper/cali_macros.h>
@@ -27,7 +25,8 @@
 #include "resource_manager.hpp"
 #include "wf/basedb.hpp"
 
-#ifdef __ENABLE_MPI__
+#ifdef __AMS_ENABLE_MPI__
+#include <mpi.h>
 #include "wf/redist_load.hpp"
 #endif
 
@@ -201,7 +200,9 @@ public:
 
   void set_physics(AMSPhysicFn _AppCall) { AppCall = _AppCall; }
 
+#ifdef __AMS_ENABLE_MPI__
   void set_communicator(MPI_Comm communicator) { comm = communicator; }
+#endif
 
   void set_exec_policy(AMSExecPolicy policy) { ePolicy = policy; }
 
@@ -362,7 +363,7 @@ public:
       // Simple modification can make it easier to read.
       // if (should_load_balance)  -> Code for load balancing
       // else -> current code
-#ifdef __ENABLE_MPI__
+#ifdef __AMS_ENABLE_MPI__
       CALIPER(CALI_MARK_BEGIN("LOAD BALANCE MODULE");)
       AMSLoadBalancer<FPTypeValue> lBalancer(rId, wSize, packedElements, comm);
       if (should_load_balance()) {
@@ -382,7 +383,7 @@ public:
         CALIPER(CALI_MARK_END("PHYSICS MODULE");)
       }
 
-#ifdef __ENABLE_MPI__
+#ifdef __AMS_ENABLE_MPI__
       CALIPER(CALI_MARK_BEGIN("LOAD BALANCE MODULE");)
       if (should_load_balance()) {
         lBalancer.gatherOutputs(packedOutputs, appDataLoc);

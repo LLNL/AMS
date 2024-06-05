@@ -1029,7 +1029,7 @@ public:
         _data(nullptr),
         _total_size(0)
   {
-#ifdef __ENABLE_MPI__
+#ifdef __AMS_ENABLE_MPI__
     MPI_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &_rank));
 #endif
     AMSMsgHeader header(_rank,
@@ -1072,7 +1072,7 @@ public:
     auto header = AMSMsgHeader::decode(data);
 
     int current_rank = 0;
-#ifdef __ENABLE_MPI__
+#ifdef __AMS_ENABLE_MPI__
     MPI_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &current_rank));
 #endif
     _rank = header.mpi_rank;
@@ -1234,7 +1234,7 @@ public:
         _messages(std::make_shared<std::vector<inbound_msg>>()),
         _channel(nullptr)
   {
-#ifdef __ENABLE_MPI__
+#ifdef __AMS_ENABLE_MPI__
     MPI_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &_rank));
 #endif
   }
@@ -1473,7 +1473,7 @@ public:
               std::string queue)
       : _rank(0), _queue(queue), _cacert(cacert), _handler(nullptr)
   {
-#ifdef __ENABLE_MPI__
+#ifdef __AMS_ENABLE_MPI__
     MPI_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &_rank));
 #endif
 #ifdef EVTHREAD_USE_PTHREADS_IMPLEMENTED
@@ -1618,7 +1618,7 @@ public:
         _channel(nullptr),
         _rchannel(nullptr)
   {
-#ifdef __ENABLE_MPI__
+#ifdef __AMS_ENABLE_MPI__
     MPI_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &_rank));
 #endif
     established = establish_connection.get_future();
@@ -2036,7 +2036,7 @@ public:
         _handler(nullptr),
         _buffer_msg(std::move(msgs_to_send))
   {
-#ifdef __ENABLE_MPI__
+#ifdef __AMS_ENABLE_MPI__
     MPI_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &_rank));
 #endif
 #ifdef EVTHREAD_USE_PTHREADS_IMPLEMENTED

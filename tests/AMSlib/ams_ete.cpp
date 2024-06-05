@@ -1,4 +1,6 @@
+#ifdef __AMS_ENABLE_MPI__
 #include <mpi.h>
+#endif
 #include <unistd.h>
 
 #include <cassert>
