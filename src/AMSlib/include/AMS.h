@@ -20,7 +20,7 @@
 #define CALIPER(stmt)
 #endif
 
-#ifdef __AMS_ENABLE_MPI__
+#ifdef __ENABLE_MPI__
 #include <mpi.h>
 #define MPI_CALL(stmt)                                                         \
   if (stmt != MPI_SUCCESS) {                                                   \
@@ -78,7 +78,7 @@ AMSExecutor AMSCreateExecutor(AMSCAbstrModel model,
                               int process_id,
                               int world_size);
 
-#ifdef __AMS_ENABLE_MPI__
+#ifdef __ENABLE_MPI__
 AMSExecutor AMSCreateDistributedExecutor(AMSCAbstrModel model,
                                          AMSDType data_type,
                                          AMSResourceType resource_type,
