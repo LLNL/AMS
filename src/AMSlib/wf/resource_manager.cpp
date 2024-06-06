@@ -18,6 +18,12 @@
 namespace ams
 {
 
+template<typename T>
+static T roundUp(T num_to_round, int multiple) 
+{
+    return ((num_to_round + multiple- 1) / multiple) * multiple;
+}
+
 std::string AMSAllocator::getName() { return name; }
 
 
@@ -34,7 +40,7 @@ struct AMSDefaultHostAllocator final : AMSAllocator {
   AMSDefaultHostAllocator(std::string name) : AMSAllocator(name) {}
   ~AMSDefaultHostAllocator() = default;
 
-  void *allocate(size_t num_bytes) { return aligned_alloc(8, num_bytes); }
+  void *allocate(size_t num_bytes) { return aligned_alloc(8, roundUp(num_bytes, 8)); }
 
   void deallocate(void *ptr) { free(ptr); }
 };
