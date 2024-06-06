@@ -9,6 +9,7 @@
 #include <algorithm>  // for std::equal
 #include <cctype>     // for std::toupper
 #include <cstdlib>    // for getenv()
+#include <experimental/filesystem>
 #include <fstream>
 #include <iostream>
 #include <ostream>
@@ -24,6 +25,20 @@ namespace ams
 {
 namespace util
 {
+
+static bool path_exists(std::string& path)
+{
+  namespace fs = std::experimental::filesystem;
+  fs::path Path(path);
+  std::error_code ec;
+
+  if (!fs::exists(Path, ec)) {
+    FATAL(AMS, "Path %s does not exist", path.c_str());
+    return false;
+  }
+  return true;
+}
+
 
 // By default AMS prints only errors
 static LogVerbosityLevel defaultLevel = LogVerbosityLevel::Error;
@@ -75,22 +90,27 @@ Logger* Logger::getActiveLogger()
   return &logger;
 }
 
-static inline std::string concat_file_name(const std::string& prefix,
+static inline std::string concat_file_name(const std::string& path,
+                                           const std::string& prefix,
                                            const std::string& suffix)
 {
-  return prefix + "." + suffix;
+  return path + "/" + prefix + "." + suffix;
 }
 
-void Logger::initialize_std_io_err(const bool enable_log, std::string& stdio_fn)
+void Logger::initialize_std_io_err(const bool enable_log,
+                                   std::string& log_path,
+                                   std::string log_fn)
 {
   ams_out = nullptr;
   ams_err = stderr;
 
+  CFATAL(AMS, !path_exists(log_path), "Log Directory does not exist");
+
   if (enable_log) {
     ams_out = stdout;
     // The case we want to just redirect to stdout
-    if (!stdio_fn.empty()) {
-      const std::string log_filename{concat_file_name(stdio_fn, "log")};
+    if (!log_fn.empty()) {
+      const std::string log_filename{concat_file_name(log_path, log_fn, "log")};
       ams_out = fopen(log_filename.c_str(), "a");
       CFATAL(Logger,
              ams_out == nullptr,
