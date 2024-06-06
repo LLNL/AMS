@@ -97,8 +97,10 @@ bool do_faiss(std::shared_ptr<HDCache<T>> &index,
     for (int i = 0; i < orig_data.size(); i++) {
       T *d_data = rm.allocate<T>(nClusters * nElements, resource);
       rm.copy(const_cast<T *>(orig_data[i]),
+              AMSResourceType::AMS_HOST,
               d_data,
-              nClusters * nElements * sizeof(T));
+              AMSResourceType::AMS_DEVICE,
+              nClusters * nElements);
       data[i] = d_data;
     }
   }
@@ -111,7 +113,11 @@ bool do_faiss(std::shared_ptr<HDCache<T>> &index,
   if (resource == AMSResourceType::AMS_DEVICE) {
     h_predicates =
         rm.allocate<bool>(nClusters * nElements, AMSResourceType::AMS_HOST);
-    rm.copy(predicates, h_predicates, nClusters * nElements);
+    rm.copy(predicates,
+            AMSResourceType::AMS_DEVICE,
+            h_predicates,
+            AMSResourceType::AMS_HOST,
+            nClusters * nElements);
     for (auto d : data) {
       rm.deallocate(const_cast<T *>(d), AMSResourceType::AMS_DEVICE);
     }

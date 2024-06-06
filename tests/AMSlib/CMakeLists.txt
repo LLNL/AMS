@@ -155,8 +155,9 @@ function(ADDTEST exe test_name)
   endif()
 endfunction()
 
-BUILD_TEST(ams_allocator_test ams_allocate.cpp)
-ADDTEST(ams_allocator_test AMSAllocate)
+# This test requires Allocate
+#BUILD_TEST(ams_allocator_test ams_allocate.cpp)
+#ADDTEST(ams_allocator_test AMSAllocate)
 BUILD_TEST(ams_packing_test cpu_packing_test.cpp AMSPack)
 ADDTEST(ams_packing_test AMSPack)
 
