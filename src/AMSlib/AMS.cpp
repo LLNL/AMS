@@ -344,25 +344,13 @@ private:
     }
   }
 
-  bool path_exists(std::string &path)
-  {
-    fs::path Path(path);
-    std::error_code ec;
-
-    if (!fs::exists(Path, ec)) {
-      FATAL(AMS, "Path %s does not exist", path.c_str());
-      return false;
-    }
-    return true;
-  }
-
-
   std::pair<bool, std::string> setup_loggers()
   {
-    char *ams_logger_level = std::getenv("AMS_LOG_LEVEL");
-    char *ams_logger_dir = std::getenv("AMS_LOG_DIR");
-    char *ams_log_prefix = std::getenv("AMS_LOG_PREFIX");
-    std::string log_path("");
+    const char *ams_logger_level = std::getenv("AMS_LOG_LEVEL");
+    const char *ams_logger_dir = std::getenv("AMS_LOG_DIR");
+    const char *ams_logger_prefix = std::getenv("AMS_LOG_PREFIX");
+    std::string log_fn("");
+    std::string log_path("./");
 
     auto logger = ams::util::Logger::getActiveLogger();
     bool enable_log = false;
@@ -373,23 +361,26 @@ private:
       enable_log = true;
     }
 
-    if (ams_log_prefix) {
+    // In the case we specify a directory and we do not specify a file
+    // by default we write to a file.
+    if (ams_logger_dir && !ams_logger_prefix) {
+      ams_logger_prefix = "ams";
+    }
+
+    if (ams_logger_prefix) {
       // We are going to redirect stdout to some file
       // By default we store to the current directory
-      std::string log_dir("./");
       std::string pattern("");
-      std::string log_prefix(ams_log_prefix);
+      std::string log_prefix(ams_logger_prefix);
 
       if (ams_logger_dir) {
-        log_dir = std::string(ams_logger_dir);
+        log_path = std::string(ams_logger_dir);
       }
 
       char hostname[HOST_NAME_MAX];
       if (gethostname(hostname, HOST_NAME_MAX) != 0) {
         FATAL(AMS, "Get hostname returns error");
       }
-
-      CFATAL(AMS, !path_exists(log_dir), "Log Directory does not exist");
 
       int id = 0;
       if (log_prefix.find("<RID>") != std::string::npos) {
@@ -398,26 +389,21 @@ private:
       } else if (log_prefix.find("<PID>") != std::string::npos) {
         pattern = std::string("<PID>");
         id = getpid();
-      } else {
-        log_prefix += "<PID>";
-        pattern = std::string("<PID>");
-        id = getpid();
       }
-
       // Combine hostname and pid
       std::ostringstream combined;
       combined << "." << hostname << "." << id;
 
       if (!pattern.empty()) {
-        log_path =
-            fs::absolute(log_dir).string() +
+        log_path = fs::absolute(log_path).string();
+        log_fn =
             std::regex_replace(log_prefix, std::regex(pattern), combined.str());
       } else {
-        log_path =
-            fs::absolute(log_dir).string() + log_prefix + "." + combined.str();
+        log_path = fs::absolute(log_path).string();
+        log_fn = log_prefix + combined.str();
       }
     }
-    logger->initialize_std_io_err(enable_log, log_path);
+    logger->initialize_std_io_err(enable_log, log_path, log_fn);
 
     return std::make_pair(enable_log, log_path);
   }

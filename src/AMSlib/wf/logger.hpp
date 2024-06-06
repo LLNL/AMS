@@ -49,7 +49,10 @@ public:
 
 
   void setLoggingMsgLevel(LogVerbosityLevel level);
-  void initialize_std_io_err(const bool enable_log, std::string& stdio_fn);
+  void initialize_std_io_err(const bool enable_log,
+                             std::string& log_path,
+                             std::string log_fn);
+
 
   FILE* out() const { return ams_out; }
   FILE* err() const { return ams_err; }
