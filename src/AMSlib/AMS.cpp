@@ -389,8 +389,9 @@ private:
       } else if (log_prefix.find("<PID>") != std::string::npos) {
         pattern = std::string("<PID>");
         id = getpid();
-      }  // Combine hostname and pid
+      }
 
+      // Combine hostname and pid
       std::ostringstream combined;
       combined << "." << hostname << "." << id;
 
@@ -665,7 +666,8 @@ const char *AMSGetAllocatorName(AMSResourceType device)
 void AMSSetAllocator(AMSResourceType resource, const char *alloc_name)
 {
   auto &rm = ams::ResourceManager::getInstance();
-  rm.setAllocator(std::string(alloc_name), resource);
+  std::string alloc(alloc_name);
+  rm.setAllocator(alloc, resource);
 }
 
 AMSCAbstrModel AMSRegisterAbstractModel(const char *domain_name,

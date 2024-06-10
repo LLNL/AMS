@@ -16,6 +16,8 @@
 #include "AMS.h"
 #include "wf/debug.h"
 
+#define UNDEFINED_FUNC -1
+
 #ifdef __ENABLE_CUDA__
 namespace ams
 {
@@ -254,6 +256,7 @@ inline void computePredicate(float *data,
                              const size_t kneigh,
                              float threshold)
 {
+  FATAL(Device, "Called device code when CUDA disabled");
   return;
 }
 
@@ -265,6 +268,7 @@ inline void linearize(TypeOutValue *output,
                       size_t dims,
                       size_t elements)
 {
+  FATAL(Device, "Called device code when CUDA disabled");
   return;
 }
 
@@ -277,7 +281,8 @@ inline int pack(bool cond,
                 TypeValue **dense,
                 int dims)
 {
-  return -1;
+  FATAL(Device, "Called device code when CUDA disabled");
+  return UNDEFINED_FUNC;
 }
 
 template <typename TypeValue>
@@ -290,7 +295,8 @@ inline int pack(bool cond,
                 int *sparse_indices,
                 int dims)
 {
-  return -1;
+  FATAL(Device, "Called device code when CUDA disabled");
+  return UNDEFINED_FUNC;
 }
 
 template <typename TypeValue>
@@ -302,7 +308,8 @@ inline int unpack(bool cond,
                   TypeValue **dense,
                   int dims)
 {
-  return -1;
+  FATAL(Device, "Called device code when CUDA disabled");
+  return UNDEFINED_FUNC;
 }
 
 template <typename TypeValue>
@@ -314,7 +321,8 @@ inline int unpack(bool cond,
                   int *sparse_indices,
                   int dims)
 {
-  return -1;
+  FATAL(Device, "Called device code when CUDA disabled");
+  return UNDEFINED_FUNC;
 }
 
 }  // namespace Device

@@ -9,6 +9,7 @@
 #define __AMS_ALLOCATOR__
 
 #include <cstddef>
+#include <string>
 #include <vector>
 
 #include "AMS.h"
@@ -27,7 +28,7 @@ void _raw_copy(void* src,
                AMSResourceType dest_dev,
                size_t num_bytes);
 
-AMSAllocator* _get_allocator(std::string alloc_name, AMSResourceType resource);
+AMSAllocator* _get_allocator(std::string& alloc_name, AMSResourceType resource);
 void _release_allocator(AMSAllocator* allocator);
 
 }  // namespace internal
@@ -40,15 +41,14 @@ void _release_allocator(AMSAllocator* allocator);
 
 struct AMSAllocator {
   std::string name;
-  AMSAllocator(std::string alloc_name) : name(alloc_name) {}
+  AMSAllocator(std::string& alloc_name) : name(alloc_name) {}
   virtual ~AMSAllocator() = default;
 
   virtual void* allocate(size_t num_bytes) = 0;
   virtual void deallocate(void* ptr) = 0;
 
-  std::string getName();
+  const std::string getName() const;
 };
-
 
 class ResourceManager
 {
@@ -77,7 +77,7 @@ public:
   }
 
   /** @brief return the name of an allocator */
-  std::string getAllocatorName(AMSResourceType resource)
+  const std::string getAllocatorName(AMSResourceType resource) const
   {
     return RMAllocators[resource]->getName();
   }
@@ -113,7 +113,7 @@ public:
    *  @tparam TypeInValue type of pointers
    *  @param[in] src Source memory pointer.
    *  @param[out] dest destination memory pointer.
-   *  @param[in] size number of values to copy.
+   *  @param[in] size number of values to copy (It performs a shallow copy of nested pointers).
    *  @return void.
    */
   template <typename TypeInValue>
@@ -146,18 +146,21 @@ public:
   void init()
   {
     DBG(ResourceManager, "Initialization of allocators");
+    std::string host_alloc("HOST");
+    std::string device_alloc("DEVICE");
+    std::string pinned_alloc("PINNED");
     if (!RMAllocators[AMSResourceType::AMS_HOST])
-      setAllocator("HOST", AMSResourceType::AMS_HOST);
+      setAllocator(host_alloc, AMSResourceType::AMS_HOST);
 #ifdef __ENABLE_CUDA__
     if (!RMAllocators[AMSResourceType::AMS_DEVICE])
-      setAllocator("DEVICE", AMSResourceType::AMS_DEVICE);
+      setAllocator(host_alloc, AMSResourceType::AMS_DEVICE);
 
     if (!RMAllocators[AMSResourceType::AMS_PINNED])
-      setAllocator("PINNED", AMSResourceType::AMS_PINNED);
+      setAllocator(pinned_alloc, AMSResourceType::AMS_PINNED);
 #endif
   }
 
-  void setAllocator(std::string alloc_name, AMSResourceType resource)
+  void setAllocator(std::string& alloc_name, AMSResourceType resource)
   {
     if (RMAllocators[resource]) {
       delete RMAllocators[resource];
@@ -193,7 +196,6 @@ public:
 
   //! ------------------------------------------------------------------------
 };
-
 
 }  // namespace ams
 

@@ -156,6 +156,7 @@ function(ADDTEST exe test_name)
 endfunction()
 
 # This test requires Allocate
+# TODO: Include tests once we re-instate a pool
 #BUILD_TEST(ams_allocator_test ams_allocate.cpp)
 #ADDTEST(ams_allocator_test AMSAllocate)
 BUILD_TEST(ams_packing_test cpu_packing_test.cpp AMSPack)
