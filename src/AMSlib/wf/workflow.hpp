@@ -25,7 +25,7 @@
 #include "resource_manager.hpp"
 #include "wf/basedb.hpp"
 
-#ifdef __ENABLE_MPI__
+#ifdef __AMS_ENABLE_MPI__
 #include <mpi.h>
 #include "wf/redist_load.hpp"
 #endif
@@ -80,7 +80,7 @@ class AMSWorkflow
   /** @brief execution policy of the distributed system. Load balance or not. */
   AMSExecPolicy ePolicy;
 
-#ifdef __ENABLE_MPI__
+#ifdef __AMS_ENABLE_MPI__
   /** @brief MPI Communicator for all ranks that call collectively the evaluate function **/
   MPI_Comm comm;
 #endif
@@ -169,7 +169,7 @@ public:
       : AppCall(nullptr),
         DB(nullptr),
         appDataLoc(AMSResourceType::AMS_HOST),
-#ifdef __ENABLE_MPI__
+#ifdef __AMS_ENABLE_MPI__
         comm(MPI_COMM_NULL),
 #endif
         ePolicy(AMSExecPolicy::AMS_UBALANCED)
@@ -192,7 +192,7 @@ public:
         wSize(_wSize),
         appDataLoc(app_data_loc),
         uqPolicy(uq_policy),
-#ifdef __ENABLE_MPI__
+#ifdef __AMS_ENABLE_MPI__
         comm(MPI_COMM_NULL),
 #endif
         ePolicy(AMSExecPolicy::AMS_UBALANCED)
@@ -208,7 +208,7 @@ public:
 
   void set_physics(AMSPhysicFn _AppCall) { AppCall = _AppCall; }
 
-#ifdef __ENABLE_MPI__
+#ifdef __AMS_ENABLE_MPI__
   void set_communicator(MPI_Comm communicator) { comm = communicator; }
 #endif
 
@@ -216,7 +216,7 @@ public:
 
   bool should_load_balance() const
   {
-#ifdef __ENABLE_MPI__
+#ifdef __AMS_ENABLE_MPI__
     return (comm != MPI_COMM_NULL && ePolicy == AMSExecPolicy::AMS_BALANCED);
 #else
     return false;
@@ -371,7 +371,7 @@ public:
       // Simple modification can make it easier to read.
       // if (should_load_balance)  -> Code for load balancing
       // else -> current code
-#ifdef __ENABLE_MPI__
+#ifdef __AMS_ENABLE_MPI__
       CALIPER(CALI_MARK_BEGIN("LOAD BALANCE MODULE");)
       AMSLoadBalancer<FPTypeValue> lBalancer(rId, wSize, packedElements, comm);
       if (should_load_balance()) {
@@ -391,7 +391,7 @@ public:
         CALIPER(CALI_MARK_END("PHYSICS MODULE");)
       }
 
-#ifdef __ENABLE_MPI__
+#ifdef __AMS_ENABLE_MPI__
       CALIPER(CALI_MARK_BEGIN("LOAD BALANCE MODULE");)
       if (should_load_balance()) {
         lBalancer.gatherOutputs(packedOutputs, appDataLoc);

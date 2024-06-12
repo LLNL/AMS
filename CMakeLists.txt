@@ -60,7 +60,6 @@ if (WITH_MPI)
   message(STATUS "MPICXX: ${MPI_CXX_COMPILER}")
   list(APPEND AMS_APP_LIBRARIES MPI::MPI_CXX)
   message(STATUS "MPI Library used: " MPI::MPI_CXX)
-  list(APPEND AMS_APP_DEFINES "-D__ENABLE_MPI__")
 endif()
 
 # ------------------------------------------------------------------------------

@@ -595,7 +595,7 @@ AMSExecutor AMSCreateExecutor(AMSCAbstrModel model,
   }
 }
 
-#ifdef __ENABLE_MPI__
+#ifdef __AMS_ENABLE_MPI__
 AMSExecutor AMSCreateDistributedExecutor(AMSCAbstrModel model,
                                          AMSDType data_type,
                                          AMSResourceType resource_type,
