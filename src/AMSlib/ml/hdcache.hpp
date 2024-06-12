@@ -17,6 +17,7 @@
 #include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <unordered_map>
 #include <vector>
 
 #ifdef __ENABLE_FAISS__
@@ -29,6 +30,8 @@
 #include <faiss/gpu/GpuCloner.h>
 #include <faiss/gpu/GpuIndexIVFPQ.h>
 #include <faiss/gpu/StandardGpuResources.h>
+
+#include "wf/device.hpp"
 #endif
 #endif
 
@@ -366,7 +369,7 @@ public:
     _evaluate(ndata, data, is_acceptable);
 
     if (cache_location == AMSResourceType::AMS_DEVICE) {
-      deviceCheckErrors(__FILE__, __LINE__);
+      ams::deviceCheckErrors(__FILE__, __LINE__);
     }
 
     DBG(UQModule, "Done with evalution of uq")

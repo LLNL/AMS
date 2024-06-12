@@ -130,13 +130,6 @@ void callBackSingle(void *cls, long elements, void **inputs, void **outputs)
 
 int main(int argc, char **argv)
 {
-  // Number of ranks in this run
-  int wS = 1;
-  // My Local Id
-  int rId = 0;
-  // Level of Threading provided by MPI
-  int provided = 0;
-
   if (argc != 12) {
     std::cout << "Wrong cli\n";
     std::cout << argv[0]
@@ -162,7 +155,6 @@ int main(int argc, char **argv)
   std::string db_type_str = std::string(argv[10]);
   std::string fs_path = std::string(argv[11]);
   AMSDBType db_type = ams::db::getDBType(db_type_str);
-  AMSDBType dbType = AMSDBType::AMS_NONE;
   AMSResourceType resource = AMSResourceType::AMS_HOST;
   srand(time(NULL));
 

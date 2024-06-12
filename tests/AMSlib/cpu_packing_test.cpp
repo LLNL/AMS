@@ -108,8 +108,16 @@ int main(int argc, char* argv[])
     double* rsparse = rm.allocate<double>(SIZE, resource);
     int* reindex = rm.allocate<int>(SIZE, resource);
 
-    rm.copy(h_predicate, predicate);
-    rm.copy(h_sparse, sparse);
+    rm.copy(h_predicate,
+            AMSResourceType::AMS_HOST,
+            predicate,
+            AMSResourceType::AMS_DEVICE,
+            SIZE);
+    rm.copy(h_sparse,
+            AMSResourceType::AMS_HOST,
+            sparse,
+            AMSResourceType::AMS_DEVICE,
+            SIZE);
 
     std::vector<const double*> s_data({const_cast<const double*>(sparse)});
     std::vector<double*> sr_data({rsparse});
@@ -126,7 +134,11 @@ int main(int argc, char* argv[])
         return 1;
       }
 
-      rm.copy(dense, h_dense);
+      rm.copy(dense,
+              AMSResourceType::AMS_DEVICE,
+              h_dense,
+              AMSResourceType::AMS_HOST,
+              elements);
 
       if (verify(h_dense, elements, flag)) {
         std::cout << "Dense elements do not have the correct values\n";
@@ -135,7 +147,11 @@ int main(int argc, char* argv[])
 
       data_handler::unpack(resource, predicate, size, d_data, sr_data, flag);
 
-      rm.copy(rsparse, h_rsparse);
+      rm.copy(rsparse,
+              AMSResourceType::AMS_DEVICE,
+              h_rsparse,
+              AMSResourceType::AMS_HOST,
+              size);
 
       if (verify(h_predicate, h_sparse, h_rsparse, size, flag)) {
         //      for ( int k = 0; k < SIZE; k++){

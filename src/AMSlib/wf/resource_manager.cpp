@@ -5,48 +5,117 @@
  * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
  */
 
-#include "resource_manager.hpp"
-
-#include <umpire/ResourceManager.hpp>
-#include <umpire/Umpire.hpp>
-#include <umpire/strategy/QuickPool.hpp>
+#include <cstdlib>
+#include <cstring>
 
 #include "debug.h"
+#include "device.hpp"
+#include "resource_manager.hpp"
 
 namespace ams
 {
 
-std::string AMSAllocator::getName() { return allocator.getName(); }
-
-void *AMSAllocator::allocate(size_t num_bytes)
+template <typename T>
+static T roundUp(T num_to_round, int multiple)
 {
-  void *ptr = allocator.allocate(num_bytes);
-  CFATAL(ResourceManager,
-         ptr == nullptr,
-         "Failed to allocated %ld values using allocator %s",
-         num_bytes,
-         getName().c_str());
-  return ptr;
+  return ((num_to_round + multiple - 1) / multiple) * multiple;
 }
 
-void AMSAllocator::deallocate(void *ptr) { allocator.deallocate(ptr); }
+const std::string AMSAllocator::getName() const { return name; }
 
-void AMSAllocator::registerPtr(void *ptr, size_t nBytes)
+
+struct AMSDefaultDeviceAllocator final : AMSAllocator {
+  AMSDefaultDeviceAllocator(std::string name) : AMSAllocator(name){};
+  ~AMSDefaultDeviceAllocator() = default;
+
+  void *allocate(size_t num_bytes) { return DeviceAllocate(num_bytes); }
+
+  void deallocate(void *ptr) { return DeviceFree(ptr); }
+};
+
+struct AMSDefaultHostAllocator final : AMSAllocator {
+  AMSDefaultHostAllocator(std::string name) : AMSAllocator(name) {}
+  ~AMSDefaultHostAllocator() = default;
+
+  void *allocate(size_t num_bytes)
+  {
+    return aligned_alloc(8, roundUp(num_bytes, 8));
+  }
+
+  void deallocate(void *ptr) { free(ptr); }
+};
+
+struct AMSDefaultPinnedAllocator final : AMSAllocator {
+  AMSDefaultPinnedAllocator(std::string name) : AMSAllocator(name) {}
+  ~AMSDefaultPinnedAllocator() = default;
+
+  void *allocate(size_t num_bytes) { return DevicePinnedAlloc(num_bytes); }
+
+  void deallocate(void *ptr) { DeviceFreePinned(ptr); }
+};
+
+
+namespace internal
 {
-  auto &rm = umpire::ResourceManager::getInstance();
-  rm.registerAllocation(ptr,
-                        umpire::util::AllocationRecord(
-                            ptr, nBytes, allocator.getAllocationStrategy()));
+void _raw_copy(void *src,
+               AMSResourceType src_dev,
+               void *dest,
+               AMSResourceType dest_dev,
+               size_t num_bytes)
+{
+  switch (src_dev) {
+    case AMSResourceType::AMS_HOST:
+    case AMSResourceType::AMS_PINNED:
+      switch (dest_dev) {
+        case AMSResourceType::AMS_HOST:
+        case AMSResourceType::AMS_PINNED:
+          std::memcpy(dest, src, num_bytes);
+          break;
+        case AMSResourceType::AMS_DEVICE:
+          HtoDMemcpy(dest, src, num_bytes);
+          break;
+        default:
+          FATAL(ResourceManager, "Unknown device type to copy to from HOST");
+          break;
+      }
+      break;
+    case AMSResourceType::AMS_DEVICE:
+      switch (dest_dev) {
+        case AMSResourceType::AMS_DEVICE:
+          DtoDMemcpy(dest, src, num_bytes);
+          break;
+        case AMSResourceType::AMS_HOST:
+        case AMSResourceType::AMS_PINNED:
+          DtoHMemcpy(dest, src, num_bytes);
+          break;
+        default:
+          FATAL(ResourceManager, "Unknown device type to copy to from DEVICE");
+          break;
+      }
+    default:
+      FATAL(ResourceManager, "Unknown device type to copy from");
+  }
 }
 
-void AMSAllocator::getAllocatorStats(size_t &wm, size_t &cs, size_t &as)
+AMSAllocator *_get_allocator(std::string &alloc_name, AMSResourceType resource)
 {
-  wm = allocator.getHighWatermark();
-  cs = allocator.getCurrentSize();
-  as = allocator.getActualSize();
+  switch (resource) {
+    case AMSResourceType::AMS_DEVICE:
+      return new AMSDefaultDeviceAllocator(alloc_name);
+      break;
+    case AMSResourceType::AMS_HOST:
+      return new AMSDefaultHostAllocator(alloc_name);
+      break;
+    case AMSResourceType::AMS_PINNED:
+      return new AMSDefaultPinnedAllocator(alloc_name);
+      break;
+    default:
+      FATAL(ResourceManager,
+            "Unknown resource type to create an allocator for");
+  }
 }
 
-// -----------------------------------------------------------------------------
-// set up the resource manager
-// -----------------------------------------------------------------------------
+void _release_allocator(AMSAllocator *allocator) { delete allocator; }
+
+}  // namespace internal
 }  // namespace ams

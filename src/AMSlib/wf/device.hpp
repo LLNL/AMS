@@ -13,274 +13,322 @@
 #include <iostream>
 #include <stdexcept>
 
+#include "AMS.h"
 #include "wf/debug.h"
 
-#ifdef __ENABLE_CUDA__
-#include "cuda/utilities.cuh"
-#endif
+#define UNDEFINED_FUNC -1
 
+#ifdef __ENABLE_CUDA__
 namespace ams
 {
+void DtoDMemcpy(void *dest, void *src, size_t nBytes);
+
+void HtoHMemcpy(void *dest, void *src, size_t nBytes);
+
+void HtoDMemcpy(void *dest, void *src, size_t nBytes);
+
+void DtoHMemcpy(void *dest, void *src, size_t nBytes);
+
+void *DeviceAllocate(size_t nBytes);
+
+void DeviceFree(void *ptr);
+
+void *DevicePinnedAlloc(size_t nBytes);
+
+void DeviceFreePinned(void *ptr);
+
+void deviceCheckErrors(const char *file, int line);
+
+void device_random_uq(int seed,
+                      bool *uq_flags,
+                      int ndata,
+                      double acceptable_error);
+
 namespace Device
 {
+
+template <typename scalar_t>
+void computeDeltaUQMeanPredicatesDevice(
+    const scalar_t *__restrict__ outputs_stdev,
+    bool *__restrict__ predicates,
+    const size_t nrows,
+    const size_t ncols,
+    const double threshold);
+
+
+template <typename scalar_t>
+void computeDeltaUQMaxPredicatesDevice(
+    const scalar_t *__restrict__ outputs_stdev,
+    bool *__restrict__ predicates,
+    const size_t nrows,
+    const size_t ncols,
+    const double threshold);
+
+void device_compute_predicate(float *data,
+                              bool *predicate,
+                              size_t nData,
+                              const size_t kneigh,
+                              float threshold);
+
+template <typename TypeValue>
 PERFFASPECT()
-void computePredicate(float *data,
-                      bool *predicate,
-                      size_t nData,
-                      const size_t kneigh,
-                      float threshold)
-{
-#ifdef __ENABLE_CUDA__
-  return device_compute_predicate(data, predicate, nData, kneigh, threshold);
-#else
-  return;
-#endif
-}
+void rand_init(bool *predicate, const size_t n, TypeValue threshold);
+
+template <typename TypeInValue, typename TypeOutValue>
+void device_linearize(TypeOutValue *output,
+                      const TypeInValue *const *inputs,
+                      size_t dims,
+                      size_t elements);
+
+template <typename T>
+int device_compact(bool cond,
+                   const T **sparse,
+                   T **dense,
+                   const bool *dPredicate,
+                   const size_t length,
+                   int dims,
+                   int blockSize,
+                   bool isReverse = false);
+
+template <typename T>
+int device_compact(bool cond,
+                   T **sparse,
+                   T **dense,
+                   int *indices,
+                   const size_t length,
+                   int dims,
+                   int blockSize,
+                   const bool *dPredicate,
+                   bool isReverse = false);
+
 
 PERFFASPECT()
-void computePredicateDeltaUQ()
+inline void computePredicate(float *data,
+                             bool *predicate,
+                             size_t nData,
+                             const size_t kneigh,
+                             float threshold)
 {
-  THROW(std::runtime_error,
-        "Computing DeltaUQ predications on device is not supported yet");
+  return device_compute_predicate(data, predicate, nData, kneigh, threshold);
 }
+
 
 template <typename TypeInValue, typename TypeOutValue>
 PERFFASPECT()
-void linearize(TypeOutValue *output,
-               const TypeInValue *const *inputs,
-               size_t dims,
-               size_t elements)
+inline void linearize(TypeOutValue *output,
+                      const TypeInValue *const *inputs,
+                      size_t dims,
+                      size_t elements)
 {
-#ifdef __ENABLE_CUDA__
   return device_linearize(output, inputs, dims, elements);
-#else
-  return;
-#endif
 }
 
 template <typename TypeValue>
 PERFFASPECT()
-int pack(bool cond,
-         const bool *predicate,
-         const size_t n,
-         const TypeValue **sparse,
-         TypeValue **dense,
-         int dims)
+inline int pack(bool cond,
+                const bool *predicate,
+                const size_t n,
+                const TypeValue **sparse,
+                TypeValue **dense,
+                int dims)
 {
-#ifdef __ENABLE_CUDA__
-  return compact(cond, sparse, dense, predicate, n, dims, 1024);
-#else
-  return 0;
-#endif
+  return device_compact(cond, sparse, dense, predicate, n, dims, 1024);
 }
 
 template <typename TypeValue>
 PERFFASPECT()
-int pack(bool cond,
-         const bool *predicate,
-         const size_t n,
-         TypeValue **sparse,
-         TypeValue **dense,
-         int *sparse_indices,
-         int dims)
+inline int pack(bool cond,
+                const bool *predicate,
+                const size_t n,
+                TypeValue **sparse,
+                TypeValue **dense,
+                int *sparse_indices,
+                int dims)
 {
-#ifdef __ENABLE_CUDA__
-  return compact(cond, sparse, dense, sparse_indices, n, dims, 1024, predicate);
-#else
-  return 0;
-#endif
+  return device_compact(
+      cond, sparse, dense, sparse_indices, n, dims, 1024, predicate);
 }
 
 template <typename TypeValue>
 PERFFASPECT()
-int unpack(bool cond,
-           const bool *predicate,
-           const size_t n,
-           TypeValue **sparse,
-           TypeValue **dense,
-           int dims)
+inline int unpack(bool cond,
+                  const bool *predicate,
+                  const size_t n,
+                  TypeValue **sparse,
+                  TypeValue **dense,
+                  int dims)
 {
-#ifdef __ENABLE_CUDA__
-  return compact(cond,
-                 const_cast<const TypeValue **>(sparse),
-                 dense,
-                 predicate,
-                 n,
-                 dims,
-                 1024,
-                 true);
-#else
-  return 0;
-#endif
+  return device_compact(cond,
+                        const_cast<const TypeValue **>(sparse),
+                        dense,
+                        predicate,
+                        n,
+                        dims,
+                        1024,
+                        true);
 }
 
 template <typename TypeValue>
 PERFFASPECT()
-int unpack(bool cond,
-           const size_t n,
-           TypeValue **sparse,
-           TypeValue **dense,
-           int *sparse_indices,
-           int dims)
+inline int unpack(bool cond,
+                  const size_t n,
+                  TypeValue **sparse,
+                  TypeValue **dense,
+                  int *sparse_indices,
+                  int dims)
 {
-#ifdef __ENABLE_CUDA__
-  return compact(
+  return device_compact(
       cond, sparse, dense, sparse_indices, n, dims, 1024, NULL, true);
-#else
-  return 0;
-#endif
-}
-
-template <typename TypeValue>
-PERFFASPECT()
-void rand_init(bool *predicate, const size_t n, TypeValue threshold)
-{
-#ifdef __ENABLE_CUDA__
-  cuda_rand_init(predicate, n, threshold);
-#endif
-  return;
 }
 
 }  // namespace Device
 }  // namespace ams
 
-void deviceCheckErrors(const char *file, const int line)
+#else
+
+namespace ams
 {
-#ifdef __ENABLE_CUDA__
-  __cudaCheckError(file, line);
-#endif
+
+
+PERFFASPECT()
+inline void DtoDMemcpy(void *dest, void *src, size_t nBytes)
+{
+  FATAL(Device, "DtoD Memcpy Not Enabled");
+}
+
+PERFFASPECT()
+inline void HtoHMemcpy(void *dest, void *src, size_t nBytes)
+{
+  std::memcpy(dest, src, nBytes);
+}
+
+PERFFASPECT()
+inline void HtoDMemcpy(void *dest, void *src, size_t nBytes)
+{
+  FATAL(Device, "HtoD Memcpy Not Enabled");
+}
+
+PERFFASPECT()
+inline void DtoHMemcpy(void *dest, void *src, size_t nBytes)
+{
+  FATAL(Device, "DtoH Memcpy Not Enabled");
+}
+
+
+inline void *DeviceAllocate(size_t nBytes)
+{
+  FATAL(Device, "DtoH Memcpy Not Enabled");
+}
+
+
+PERFFASPECT()
+inline void DeviceFree(void *ptr) { FATAL(Device, "DtoH Memcpy Not Enabled"); }
+
+PERFFASPECT()
+inline void *DevicePinnedAlloc(size_t nBytes)
+{
+  FATAL(Device, "Pinned Alloc Not Enabled");
+}
+
+PERFFASPECT()
+inline void DeviceFreePinned(void *ptr)
+{
+  FATAL(Device, "Pinned Free Pinned Not Enabled");
+}
+
+inline void device_random_uq(int seed,
+                             bool *uq_flags,
+                             int ndata,
+                             double acceptable_error)
+{
+  FATAL(Device, "Called Device Runtime UQ without enabling Device compilation");
+}
+
+
+inline void deviceCheckErrors(const char *file, int line) { return; }
+
+namespace Device
+{
+PERFFASPECT()
+inline void computePredicate(float *data,
+                             bool *predicate,
+                             size_t nData,
+                             const size_t kneigh,
+                             float threshold)
+{
+  FATAL(Device, "Called device code when CUDA disabled");
   return;
 }
 
 
-#ifdef __ENABLE_CUDA__
-
-#include <curand.h>
-#include <curand_kernel.h>
+template <typename TypeInValue, typename TypeOutValue>
 PERFFASPECT()
-__global__ void random_uq_device(int seed,
-                                 bool *uq_flags,
-                                 int ndata,
-                                 double acceptable_error)
+inline void linearize(TypeOutValue *output,
+                      const TypeInValue *const *inputs,
+                      size_t dims,
+                      size_t elements)
 {
-
-  /* CUDA's random number library uses curandState_t to keep track of the seed
-     value we will store a random state for every thread  */
-  curandState_t state;
-  int id = threadIdx.x + blockDim.x * blockIdx.x;
-
-  if (id >= ndata) return;
-
-  /* we have to initialize the state */
-  curand_init(
-      seed +
-          id, /* the seed controls the sequence of random values that are produced */
-      0,      /* the sequence number is only important with multiple cores */
-      0, /* the offset is how much extra we advance in the sequence for each
-            call, can be 0 */
-      &state);
-
-  float x = curand_uniform(&state);
-  uq_flags[id] = (x <= acceptable_error);
+  FATAL(Device, "Called device code when CUDA disabled");
+  return;
 }
 
-
-#include <cuda_runtime.h>
+template <typename TypeValue>
 PERFFASPECT()
-inline void DtoDMemcpy(void *dest, void *src, size_t nBytes)
+inline int pack(bool cond,
+                const bool *predicate,
+                const size_t n,
+                const TypeValue **sparse,
+                TypeValue **dense,
+                int dims)
 {
-  cudaMemcpy(dest, src, nBytes, cudaMemcpyDeviceToDevice);
+  FATAL(Device, "Called device code when CUDA disabled");
+  return UNDEFINED_FUNC;
 }
 
+template <typename TypeValue>
 PERFFASPECT()
-inline void HtoHMemcpy(void *dest, void *src, size_t nBytes)
+inline int pack(bool cond,
+                const bool *predicate,
+                const size_t n,
+                TypeValue **sparse,
+                TypeValue **dense,
+                int *sparse_indices,
+                int dims)
 {
-  std::memcpy(dest, src, nBytes);
+  FATAL(Device, "Called device code when CUDA disabled");
+  return UNDEFINED_FUNC;
 }
 
+template <typename TypeValue>
 PERFFASPECT()
-inline void HtoDMemcpy(void *dest, void *src, size_t nBytes)
+inline int unpack(bool cond,
+                  const bool *predicate,
+                  const size_t n,
+                  TypeValue **sparse,
+                  TypeValue **dense,
+                  int dims)
 {
-  cudaMemcpy(dest, src, nBytes, cudaMemcpyHostToDevice);
-};
-
-PERFFASPECT()
-inline void DtoHMemcpy(void *dest, void *src, size_t nBytes)
-{
-  cudaMemcpy(dest, src, nBytes, cudaMemcpyDeviceToHost);
+  FATAL(Device, "Called device code when CUDA disabled");
+  return UNDEFINED_FUNC;
 }
 
-template <typename scalar_t>
-__global__ void computeDeltaUQMeanPredicatesKernel(
-    const scalar_t *__restrict__ outputs_stdev,
-    bool *__restrict__ predicates,
-    const size_t nrows,
-    const size_t ncols,
-    const double threshold)
-{
-
-  size_t idx = blockDim.x * blockIdx.x + threadIdx.x;
-  size_t stride = blockDim.x * gridDim.x;
-  // Compute mean over columns, strided loop.
-  for (size_t i = idx; i < nrows; i += stride) {
-    double mean = 0.0;
-    for (size_t j = 0; j < ncols; ++j)
-      mean += outputs_stdev[j + i * ncols];
-    mean /= ncols;
-
-    predicates[i] = (mean < threshold);
-  }
-}
-
-template <typename scalar_t>
-__global__ void computeDeltaUQMaxPredicatesKernel(
-    const scalar_t *__restrict__ outputs_stdev,
-    bool *__restrict__ predicates,
-    const size_t nrows,
-    const size_t ncols,
-    const double threshold)
-{
-
-  size_t idx = blockDim.x * blockIdx.x + threadIdx.x;
-  size_t stride = blockDim.x * gridDim.x;
-  // Compute max delta uq over columns, strided loop.
-  for (size_t i = idx; i < nrows; i += stride) {
-    predicates[i] = true;
-    for (size_t j = 0; j < ncols; ++j)
-      if (outputs_stdev[j + i * ncols] >= threshold) {
-        predicates[i] = false;
-        break;
-      }
-  }
-}
-
-#else
+template <typename TypeValue>
 PERFFASPECT()
-inline void DtoDMemcpy(void *dest, void *src, size_t nBytes)
+inline int unpack(bool cond,
+                  const size_t n,
+                  TypeValue **sparse,
+                  TypeValue **dense,
+                  int *sparse_indices,
+                  int dims)
 {
-  std::cerr << "DtoD Memcpy Not Enabled" << std::endl;
-  exit(-1);
+  FATAL(Device, "Called device code when CUDA disabled");
+  return UNDEFINED_FUNC;
 }
 
-PERFFASPECT()
-inline void HtoHMemcpy(void *dest, void *src, size_t nBytes)
-{
-  std::memcpy(dest, src, nBytes);
-}
+}  // namespace Device
+}  // namespace ams
 
-PERFFASPECT()
-inline void HtoDMemcpy(void *dest, void *src, size_t nBytes)
-{
-  std::cerr << "HtoD Memcpy Not Enabled" << std::endl;
-  exit(-1);
-};
-
-PERFFASPECT()
-inline void DtoHMemcpy(void *dest, void *src, size_t nBytes)
-{
-  std::cerr << "DtoH Memcpy Not Enabled" << std::endl;
-  exit(-1);
-}
 #endif
+
 
 #endif

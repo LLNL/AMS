@@ -11,12 +11,8 @@
 
 #include "AMS.h"
 #include "wf/debug.h"
+#include "wf/device.hpp"
 #include "wf/utils.hpp"
-
-static size_t round_up(size_t num, size_t denom)
-{
-  return (num + denom - 1) / denom;
-}
 
 class RandomUQ
 {
@@ -25,20 +21,7 @@ public:
   inline void evaluate(const size_t ndata, bool *is_acceptable)
   {
     if (resourceLocation == AMSResourceType::AMS_DEVICE) {
-#ifdef __ENABLE_CUDA__
-      //TODO: Move all of this code on device.cpp and provide better logic regarding
-      // number of threads
-      size_t threads = 256;
-      size_t blocks = round_up(ndata, threads);
-      random_uq_device<<<blocks, threads>>>(seed,
-                                            is_acceptable,
-                                            ndata,
-                                            threshold);
-      seed = seed + 1;
-#else
-      THROW(std::runtime_error,
-            "Random-uq is not configured to use device allocations");
-#endif
+      ams::device_random_uq(seed, is_acceptable, ndata, threshold);
     } else {
       random_uq_host(is_acceptable, ndata, threshold);
     }
