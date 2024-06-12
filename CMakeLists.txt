@@ -21,6 +21,7 @@ endif()
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake;${CMAKE_MODULE_PATH};")
 
 set(AMS_APP_LIBRARIES "")
+set(AMS_APP_PRIVATE_LIBRARIES "")
 set(AMS_APP_DEFINES "")
 set(AMS_APP_INCLUDES "")
 
@@ -191,7 +192,7 @@ list(APPEND AMS_APP_LIBRARIES umpire)
 list(APPEND AMS_APP_INCLUDES ${UMPIRE_INCLUDE_DIR})
 
 find_package(nlohmann_json REQUIRED)
-list(APPEND AMS_APP_LIBRARIES nlohmann_json::nlohmann_json)
+list(APPEND AMS_APP_PRIVATE_LIBRARIES nlohmann_json::nlohmann_json)
 
 # ------------------------------------------------------------------------------
 find_package(Threads REQUIRED)
