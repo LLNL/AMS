@@ -200,6 +200,7 @@ public:
     parseUQPaths(uqPolicy, value);
     DBLabel = parseDBLabel(value);
     DebugDB = parseDebugDB(value);
+
     CFATAL(AMS,
            DebugDB && (SPath.empty()),
            "To store predicates in dabase, a surrogate model field is "
@@ -214,6 +215,7 @@ public:
                    double threshold,
                    int num_clusters)
   {
+    DebugDB = false;
     if (db_label == nullptr)
       FATAL(AMS, "registering model without a database identifier\n");
 
