@@ -32,6 +32,22 @@
       "threshold": 0.5,
       "db_label" : "duq_max"
     },
+    "duq_max_debug": {
+      "uq_type": "deltaUQ",
+      "model_path": "@CMAKE_CURRENT_SOURCE_DIR@/uq_max_double_cpu.pt",
+      "uq_aggregate": "max",
+      "threshold": 0.5,
+      "db_label" : "duq_max",
+      "debug_db" : true
+    },
+    "duq_mean_debug": {
+      "uq_type": "deltaUQ",
+      "model_path": "@CMAKE_CURRENT_SOURCE_DIR@/uq_mean_double_cpu.pt",
+      "uq_aggregate": "mean",
+      "threshold": 0.5,
+      "db_label" : "duq_mean",
+      "debug_db" : true
+    },
     "random_no_db_10": {
       "uq_type": "random",
       "model_path": "@CMAKE_CURRENT_SOURCE_DIR@/linear_scripted_cpu.pt",
@@ -83,6 +99,9 @@
     "app_uq_mean_ndb" : "duq_mean_no_db",
     "app_uq_max_ndb" : "duq_max_no_db",
     "app_no_model" : "no_model",
-    "app_no_model_no_db" : "no_model_no_db"
+    "app_no_model_no_db" : "no_model_no_db",
+    "app_uq_mean_debug" : "duq_mean_debug",
+    "app_uq_max_debug" : "duq_max_debug"
+
   }
 }

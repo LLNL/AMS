@@ -92,6 +92,7 @@ void _raw_copy(void *src,
           FATAL(ResourceManager, "Unknown device type to copy to from DEVICE");
           break;
       }
+      break;
     default:
       FATAL(ResourceManager, "Unknown device type to copy from");
   }

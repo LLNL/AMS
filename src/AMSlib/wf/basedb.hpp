@@ -9,6 +9,8 @@
 #define __AMS_BASE_DB__
 
 
+#include <H5Ipublic.h>
+
 #include <cstdint>
 #include <experimental/filesystem>
 #include <fstream>
@@ -22,7 +24,6 @@
 
 #include "AMS.h"
 #include "debug.h"
-#include "resource_manager.hpp"
 #include "wf/debug.h"
 #include "wf/resource_manager.hpp"
 #include "wf/utils.hpp"
@@ -36,10 +37,8 @@ namespace fs = std::experimental::filesystem;
 #warning Redis is currently not supported/tested
 #endif
 
-
 #ifdef __ENABLE_HDF5__
 #include <hdf5.h>
-
 #define HDF5_ERROR(Eid)                                             \
   if (Eid < 0) {                                                    \
     std::cerr << "[Error] Happened in " << __FILE__ << ":"          \
@@ -47,6 +46,7 @@ namespace fs = std::experimental::filesystem;
     exit(-1);                                                       \
   }
 #endif
+
 
 #ifdef __ENABLE_RMQ__
 #include <amqpcpp.h>
@@ -116,16 +116,21 @@ public:
 
   virtual void store(size_t num_elements,
                      std::vector<double*>& inputs,
-                     std::vector<double*>& outputs) = 0;
+                     std::vector<double*>& outputs,
+                     bool* predicate = nullptr) = 0;
 
 
   virtual void store(size_t num_elements,
                      std::vector<float*>& inputs,
-                     std::vector<float*>& outputs) = 0;
+                     std::vector<float*>& outputs,
+                     bool* predicate = nullptr) = 0;
+
 
   uint64_t getId() const { return id; }
 
   virtual bool updateModel() { return false; }
+
+  virtual bool storePredicate() const { return false; }
 };
 
 /**
@@ -273,15 +278,26 @@ public:
 
   virtual void store(size_t num_elements,
                      std::vector<float*>& inputs,
-                     std::vector<float*>& outputs) override
+                     std::vector<float*>& outputs,
+                     bool* predicate = nullptr) override
   {
+    CFATAL(CSV,
+           predicate != nullptr,
+           "CSV database does not support storing uq-predicates")
+
     _store(num_elements, inputs, outputs);
   }
 
   virtual void store(size_t num_elements,
                      std::vector<double*>& inputs,
-                     std::vector<double*>& outputs) override
+                     std::vector<double*>& outputs,
+                     bool* predicate = nullptr) override
   {
+
+    CFATAL(CSV,
+           predicate != nullptr,
+           "CSV database does not support storing uq-predicates")
+
     _store(num_elements, inputs, outputs);
   }
 
@@ -309,8 +325,8 @@ public:
    */
 };
 
-#ifdef __ENABLE_HDF5__
 
+#ifdef __ENABLE_HDF5__
 class hdf5DB final : public FileDB
 {
 private:
@@ -331,66 +347,25 @@ private:
 
   hid_t HDType;
 
+  /** @brief the dataset descriptor of the predicates */
+  hid_t pSet;
+
+  const bool predicateStore;
+
   /** @brief create or get existing hdf5 dataset with the provided name
    * storing data as Ckunked pieces. The Chunk value controls the chunking
    * performed by HDF5 and thus controls the write performance
    * @param[in] group in which we will store data under
    * @param[in] dName name of the data set
+   * @param[in] dataType dataType to be stored for this dataset
    * @param[in] Chunk chunk size of dataset used by HDF5.
    * @reval dataset HDF5 key value
    */
-  hid_t getDataSet(hid_t group, std::string dName, const size_t Chunk = 1024L)
-  {
-    // Our datasets a.t.m are 1-D vectors
-    const int nDims = 1;
-    // We always start from 0
-    hsize_t dims = 0;
-    hid_t dset = -1;
+  hid_t getDataSet(hid_t group,
+                   std::string dName,
+                   hid_t dataType,
+                   const size_t Chunk = 1024L);
 
-    int exists = H5Lexists(group, dName.c_str(), H5P_DEFAULT);
-
-    if (exists > 0) {
-      dset = H5Dopen(group, dName.c_str(), H5P_DEFAULT);
-      HDF5_ERROR(dset);
-      // We are assuming symmetrical data sets a.t.m
-      if (totalElements == 0) {
-        hid_t dspace = H5Dget_space(dset);
-        const int ndims = H5Sget_simple_extent_ndims(dspace);
-        hsize_t dims[ndims];
-        H5Sget_simple_extent_dims(dspace, dims, NULL);
-        totalElements = dims[0];
-      }
-      return dset;
-    } else {
-      // We will extend the data-set size, so we use unlimited option
-      hsize_t maxDims = H5S_UNLIMITED;
-      hid_t fileSpace = H5Screate_simple(nDims, &dims, &maxDims);
-      HDF5_ERROR(fileSpace);
-
-      hid_t pList = H5Pcreate(H5P_DATASET_CREATE);
-      HDF5_ERROR(pList);
-
-      herr_t ec = H5Pset_layout(pList, H5D_CHUNKED);
-      HDF5_ERROR(ec);
-
-      // cDims impacts performance considerably.
-      // TODO: Align this with the caching mechanism for this option to work
-      // out.
-      hsize_t cDims = Chunk;
-      H5Pset_chunk(pList, nDims, &cDims);
-      dset = H5Dcreate(group,
-                       dName.c_str(),
-                       HDType,
-                       fileSpace,
-                       H5P_DEFAULT,
-                       pList,
-                       H5P_DEFAULT);
-      HDF5_ERROR(dset);
-      H5Sclose(fileSpace);
-      H5Pclose(pList);
-    }
-    return dset;
-  }
 
   /**
    * @brief Create the HDF5 datasets and store their descriptors in the in/out
@@ -401,19 +376,7 @@ private:
    */
   void createDataSets(size_t numElements,
                       const size_t numIn,
-                      const size_t numOut)
-  {
-    for (int i = 0; i < numIn; i++) {
-      hid_t dSet = getDataSet(HFile, std::string("input_") + std::to_string(i));
-      HDIsets.push_back(dSet);
-    }
-
-    for (int i = 0; i < numOut; i++) {
-      hid_t dSet =
-          getDataSet(HFile, std::string("output_") + std::to_string(i));
-      HDOsets.push_back(dSet);
-    }
-  }
+                      const size_t numOut);
 
   /**
    * @brief Write all the data in the vectors in the respective datasets.
@@ -426,83 +389,22 @@ private:
   template <typename TypeValue>
   void writeDataToDataset(std::vector<hid_t>& dsets,
                           std::vector<TypeValue*>& data,
-                          size_t numElements)
-  {
-    int index = 0;
-    for (auto* I : data) {
-      writeVecToDataset(dsets[index++], static_cast<void*>(I), numElements);
-    }
-  }
+                          size_t numElements);
 
   /** @brief Writes a single 1-D vector to the dataset
    * @param[in] dSet the dataset to write the data to
    * @param[in] data the data we need to write
    * @param[in] elements the number of data elements we have
+   * @param[in] datatype of elements we will write
    */
-  void writeVecToDataset(hid_t dSet, void* data, size_t elements)
-  {
-    const int nDims = 1;
-    hsize_t dims = elements;
-    hsize_t start;
-    hsize_t count;
-    hid_t memSpace = H5Screate_simple(nDims, &dims, NULL);
-    HDF5_ERROR(memSpace);
-
-    dims = totalElements + elements;
-    H5Dset_extent(dSet, &dims);
-
-    hid_t fileSpace = H5Dget_space(dSet);
-    HDF5_ERROR(fileSpace);
-
-    // Data set starts at offset totalElements
-    start = totalElements;
-    // And we append additional elements
-    count = elements;
-    // Select hyperslab
-    herr_t err = H5Sselect_hyperslab(
-        fileSpace, H5S_SELECT_SET, &start, NULL, &count, NULL);
-    HDF5_ERROR(err);
-
-    H5Dwrite(dSet, HDType, memSpace, fileSpace, H5P_DEFAULT, data);
-    H5Sclose(fileSpace);
-  }
+  void writeVecToDataset(hid_t dSet, void* data, size_t elements, hid_t DType);
 
   PERFFASPECT()
   template <typename TypeValue>
   void _store(size_t num_elements,
               std::vector<TypeValue*>& inputs,
-              std::vector<TypeValue*>& outputs)
-  {
-    if (isDouble<TypeValue>::default_value())
-      HDType = H5T_NATIVE_DOUBLE;
-    else
-      HDType = H5T_NATIVE_FLOAT;
-
-
-    DBG(DB,
-        "DB of type %s stores %ld elements of input/output dimensions (%lu, "
-        "%lu)",
-        type().c_str(),
-        num_elements,
-        inputs.size(),
-        outputs.size())
-    const size_t num_in = inputs.size();
-    const size_t num_out = outputs.size();
-
-    if (HDIsets.empty()) {
-      createDataSets(num_elements, num_in, num_out);
-    }
-
-    if (HDIsets.size() != num_in || HDOsets.size() != num_out) {
-      std::cerr << "The data dimensionality is different than the one in the "
-                   "DB\n";
-      exit(-1);
-    }
-
-    writeDataToDataset(HDIsets, inputs, num_elements);
-    writeDataToDataset(HDOsets, outputs, num_elements);
-    totalElements += num_elements;
-  }
+              std::vector<TypeValue*>& outputs,
+              bool* predicate = nullptr);
 
 public:
   // Delete copy constructors. We do not want to copy the DB around
@@ -516,40 +418,20 @@ public:
    * @param[in] rId a unique Id for each process taking part in a distributed
    * execution (rank-id)
    */
-  hdf5DB(std::string path, std::string fn, uint64_t rId)
-      : FileDB(path, fn, ".h5", rId)
-  {
-    std::error_code ec;
-    bool exists = fs::exists(this->fn);
-    this->checkError(ec);
-
-    if (exists)
-      HFile = H5Fopen(this->fn.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
-    else
-      HFile =
-          H5Fcreate(this->fn.c_str(), H5F_ACC_EXCL, H5P_DEFAULT, H5P_DEFAULT);
-    HDF5_ERROR(HFile);
-    totalElements = 0;
-    HDType = -1;
-  }
+  hdf5DB(std::string path,
+         std::string fn,
+         uint64_t rId,
+         bool predicate = false);
 
   /**
    * @brief deconstructs the class and closes the file
    */
-  ~hdf5DB(){
-      DBG(DB, "Closing File: %s %s", type().c_str(), this->fn.c_str())
-      // HDF5 Automatically closes all opened fds at exit of application.
-      //    herr_t err = H5Fclose(HFile);
-      //    HDF5_ERROR(err);
-  }
+  ~hdf5DB();
 
   /**
    * @brief Define the type of the DB
    */
-  std::string type() override
-  {
-    return "hdf5";
-  }
+  std::string type() override { return "hdf5"; }
 
   /**
    * @brief Return the DB enumerationt type (File, Redis etc)
@@ -570,18 +452,9 @@ public:
    */
   void store(size_t num_elements,
              std::vector<float*>& inputs,
-             std::vector<float*>& outputs) override
-  {
-    if (HDType == -1) {
-      HDType = H5T_NATIVE_FLOAT;
-    } else if (HDType != H5T_NATIVE_FLOAT) {
-      THROW(std::runtime_error,
-            "Database " + fn +
-                " initialized to work on 'float' received different "
-                "datatypes'");
-    }
-    _store(num_elements, inputs, outputs);
-  }
+             std::vector<float*>& outputs,
+             bool* predicate = nullptr) override;
+
 
   /**
    * @brief Takes an input and an output vector each holding 1-D vectors data,
@@ -596,21 +469,17 @@ public:
    */
   void store(size_t num_elements,
              std::vector<double*>& inputs,
-             std::vector<double*>& outputs) override
-  {
-    if (HDType == -1) {
-      HDType = H5T_NATIVE_DOUBLE;
-    } else if (HDType != H5T_NATIVE_DOUBLE) {
-      THROW(std::runtime_error,
-            "Database " + fn +
-                " initialized to work on 'float' received different "
-                "datatypes'");
-    }
+             std::vector<double*>& outputs,
+             bool* predicate = nullptr) override;
 
-    _store(num_elements, inputs, outputs);
-  }
+  /**
+   * @brief Returns whether the DB can also store predicate information for debug
+   * purposes
+   */
+  bool storePredicate() const override { return predicateStore; }
 };
 #endif
+
 
 #ifdef __ENABLE_REDIS__
 template <typename TypeValue>
@@ -724,8 +593,13 @@ public:
 
   void store(size_t num_elements,
              std::vector<TypeValue*>& inputs,
-             std::vector<TypeValue*>& outputs)
+             std::vector<TypeValue*>& outputs,
+             bool predicate = nullptr) override
   {
+
+    CFATAL(REDIS,
+           predicate != nullptr,
+           "REDIS database does not support storing uq-predicates")
 
     const size_t num_in = inputs.size();
     const size_t num_out = outputs.size();
@@ -1652,7 +1526,8 @@ public:
                   data = msg.data(),
                   &_messages = this->_messages]() mutable {
             DBG(RMQPublisherHandler,
-                "[rank=%d] message #%d (Addr:%p) got acknowledged successfully "
+                "[rank=%d] message #%d (Addr:%p) got acknowledged "
+                "successfully "
                 "by "
                 "RMQ "
                 "server",
@@ -1664,7 +1539,8 @@ public:
           })
           .onNack([this, id = msg.id(), data = msg.data()]() mutable {
             WARNING(RMQPublisherHandler,
-                    "[rank=%d] message #%d (%p) received negative acknowledged "
+                    "[rank=%d] message #%d (%p) received negative "
+                    "acknowledged "
                     "by "
                     "RMQ "
                     "server",
@@ -2398,15 +2274,25 @@ public:
   PERFFASPECT()
   void store(size_t num_elements,
              std::vector<double*>& inputs,
-             std::vector<double*>& outputs) override
+             std::vector<double*>& outputs,
+             bool* predicate = nullptr) override
   {
+    CFATAL(RMQDB,
+           predicate != nullptr,
+           "RMQ database does not support storing uq-predicates")
+
     interface.publish(appDomain, num_elements, inputs, outputs);
   }
 
   void store(size_t num_elements,
              std::vector<float*>& inputs,
-             std::vector<float*>& outputs) override
+             std::vector<float*>& outputs,
+             bool* predicate = nullptr) override
   {
+    CFATAL(RMQDB,
+           predicate != nullptr,
+           "RMQ database does not support storing uq-predicates")
+
     interface.publish(appDomain, num_elements, inputs, outputs);
   }
 
@@ -2544,12 +2430,18 @@ public:
   * @param[in] domainName name of the domain model to store data for
   * @param[in] dbType Type of the database to create
   * @param[in] rId a unique Id for each process taking part in a distributed
+  * @param[in] isDebug Whether this db will store both ml and physics predictions with the associated predicate
   * execution (rank-id)
   */
   std::shared_ptr<BaseDB> createDB(std::string& domainName,
                                    AMSDBType dbType,
-                                   uint64_t rId = 0)
+                                   uint64_t rId = 0,
+                                   bool isDebug = false)
   {
+    CWARNING(DBManager,
+             (isDebug && dbType != AMSDBType::AMS_HDF5),
+             "Requesting debug database but %d db type does not support it",
+             dbType);
 #ifdef __ENABLE_DB__
     DBG(DBManager, "Instantiating data base");
 
@@ -2566,7 +2458,10 @@ public:
         return std::make_shared<csvDB>(fs_interface.path(), domainName, rId);
 #ifdef __ENABLE_HDF5__
       case AMSDBType::AMS_HDF5:
-        return std::make_shared<hdf5DB>(fs_interface.path(), domainName, rId);
+        return std::make_shared<hdf5DB>(fs_interface.path(),
+                                        domainName,
+                                        rId,
+                                        isDebug);
 #endif
 #ifdef __ENABLE_RMQ__
       case AMSDBType::AMS_RMQ:
@@ -2588,7 +2483,9 @@ public:
   * @param[in] rId a unique Id for each process taking part in a distributed
   * execution (rank-id)
   */
-  std::shared_ptr<BaseDB> getDB(std::string& domainName, uint64_t rId = 0)
+  std::shared_ptr<BaseDB> getDB(std::string& domainName,
+                                uint64_t rId = 0,
+                                bool isDebug = false)
   {
     DBG(DBManager,
         "Requested DB Under Name: '%s' DB Configured to operate with '%s'",
@@ -2601,7 +2498,7 @@ public:
 
     auto db_iter = db_instances.find(std::string(domainName));
     if (db_iter == db_instances.end()) {
-      auto db = createDB(domainName, dbType, rId);
+      auto db = createDB(domainName, dbType, rId, isDebug);
       db_instances.insert(std::make_pair(std::string(domainName), db));
       DBG(DBManager,
           "Creating new Database writting to file: %s",
@@ -2630,17 +2527,25 @@ public:
     return db;
   }
 
-  void instantiate_fs_db(AMSDBType type, std::string db_path)
+  void instantiate_fs_db(AMSDBType type,
+                         std::string db_path,
+                         bool is_debug = false)
   {
     CWARNING(DBManager,
              isInitialized(),
-             "Data Base is already initialized. Reconfiguring can result into "
+             "Data Base is already initialized. Reconfiguring can result "
+             "into "
              "issues")
 
     CWARNING(DBManager,
              dbType != AMSDBType::AMS_NONE,
              "Setting DBManager default DB when already set")
     dbType = type;
+
+    CWARNING(DBManager,
+             (is_debug && dbType != AMSDBType::AMS_HDF5),
+             "Only HDF5 supports debug")
+
     if (dbType != AMSDBType::AMS_NONE) fs_interface.connect(db_path);
   }
 };
