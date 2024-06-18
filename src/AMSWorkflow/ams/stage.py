@@ -18,6 +18,7 @@ from pathlib import Path
 from queue import Queue as ser_queue
 from threading import Thread
 from typing import Callable
+import warnings
 
 import numpy as np
 from ams.config import AMSInstance
@@ -45,7 +46,8 @@ class DataBlob:
         outputs: A ndarray of the outputs.
     """
 
-    def __init__(self, inputs, outputs):
+    def __init__(self, inputs, outputs, domain_name=None):
+        self._domain_name = domain_name
         self._inputs = inputs
         self._outputs = outputs
 
@@ -56,6 +58,10 @@ class DataBlob:
     @property
     def outputs(self):
         return self._outputs
+
+    @property
+    def domain_name(self):
+        return self._domain_name
 
 
 class QueueMessage:
@@ -277,7 +283,7 @@ class RMQLoaderTask(Task):
         the connection (or if a problem happened with the connection).
         """
         start_time = time.time()
-        input_data, output_data = AMSMessage(body).decode()
+        domain_name, input_data, output_data = AMSMessage(body).decode()
         row_size = input_data[0, :].nbytes + output_data[0, :].nbytes
         rows_per_batch = int(np.ceil(BATCH_SIZE / row_size))
         num_batches = int(np.ceil(input_data.shape[0] / rows_per_batch))
@@ -287,7 +293,7 @@ class RMQLoaderTask(Task):
         self.datasize += input_data.nbytes + output_data.nbytes
 
         for j, (i, o) in enumerate(zip(input_batches, output_batches)):
-            self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(i, o)))
+            self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(i, o, domain_name)))
 
         self.total_time += time.time() - start_time
 
@@ -346,35 +352,40 @@ class FSWriteTask(Task):
         """
 
         start = time.time()
-        while True:
-            fn = get_unique_fn()
-            fn = f"{self.out_dir}/{fn}.{self.suffix}"
-            is_terminate = False
-            total_bytes_written = 0
-            with self.data_writer_cls(fn) as fd:
-                bytes_written = 0
-                with AMSMonitor(obj=self, tag="internal_loop", accumulate=False):
-                    while True:
-                        # This is a blocking call
-                        item = self.i_queue.get(block=True)
-                        if item.is_terminate():
-                            is_terminate = True
-                        elif item.is_process():
-                            data = item.data()
-                            bytes_written += data.inputs.size * data.inputs.itemsize
-                            bytes_written += data.outputs.size * data.outputs.itemsize
-                            fd.store(data.inputs, data.outputs)
-                            total_bytes_written += data.inputs.size * data.inputs.itemsize
-                            total_bytes_written += data.outputs.size * data.outputs.itemsize
-                        # FIXME: We currently decide to chunk files to 2GB
-                        # of contents. Is this a good size?
-                        if is_terminate or bytes_written >= 2 * 1024 * 1024 * 1024:
-                            break
+        total_bytes_written = 0
+        data_files = dict()
+        # with self.data_writer_cls(fn) as fd:
+        with AMSMonitor(obj=self, tag="internal_loop", accumulate=False):
+            while True:
+                # This is a blocking call
+                item = self.i_queue.get(block=True)
+                if item.is_terminate():
+                    for k, v in data_files.items():
+                        v[0].close()
+                        self.o_queue.put(QueueMessage(MessageType.Process, v[0].file_name))
+                    del data_files
+                    self.o_queue.put(QueueMessage(MessageType.Terminate, None))
+                    break
+                elif item.is_process():
+                    data = item.data()
+                    if data.domain_name not in data_files:
+                        fn = get_unique_fn()
+                        fn = f"{self.out_dir}/{data.domain_name}_{fn}.{self.suffix}"
+                        # TODO: bytes_written should be an attribute of the file
+                        # to keep track of the size of the current file. Currently we keep track of this
+                        # by keeping a value in a list
+                        data_files[data.domain_name] = [self.data_writer_cls(fn).open(), 0]
+                    bytes_written = data.inputs.size * data.inputs.itemsize
+                    bytes_written += data.outputs.size * data.outputs.itemsize
+                    data_files[data.domain_name][0].store(data.inputs, data.outputs)
+                    data_files[data.domain_name][1] += bytes_written
+                    total_bytes_written += data.inputs.size * data.inputs.itemsize
+                    total_bytes_written += data.outputs.size * data.outputs.itemsize
 
-            self.o_queue.put(QueueMessage(MessageType.Process, fn))
-            if is_terminate:
-                self.o_queue.put(QueueMessage(MessageType.Terminate, None))
-                break
+                    if data_files[data.domain_name][1] >= 2 * 1024 * 1024 * 1024:
+                        data_files[data.domain_name][0].close()
+                        self.o_queue.put(QueueMessage(MessageType.Process, data_files[data.domain_name][0].file_name))
+                        del data_files[data.domain_name]
 
         end = time.time()
         self.datasize = total_bytes_written
@@ -432,6 +443,8 @@ class PushToStore(Task):
                         dest_file = self.dir / src_fn.name
                         if src_fn != dest_file:
                             shutil.move(src_fn, dest_file)
+                        # TODO: Fix me candidates now will be "indexed by the name"
+                        warnings.warn("AMS Kosh manager does not operate with multi-models")
                         if self._store:
                             db_store.add_candidates([str(dest_file)])
 

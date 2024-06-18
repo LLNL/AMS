@@ -650,7 +650,7 @@ public:
   *   - 1 byte is the size of the header (here 16). Limit max: 255
   *   - 1 byte is the precision (4 for float, 8 for double). Limit max: 255
   *   - 2 bytes are the MPI rank (0 if AMS is not running with MPI). Limit max: 65535
-  *   - 2 bytes To store the size of the MSG domain name. Limit max: 65535
+  *   - 2 bytes to store the size of the MSG domain name. Limit max: 65535
   *   - 4 bytes are the number of elements in the message. Limit max: 2^32 - 1
   *   - 2 bytes are the input dimension. Limit max: 65535
   *   - 2 bytes are the output dimension. Limit max: 65535
@@ -763,9 +763,15 @@ struct AMSMsgHeader {
     std::memcpy(data_blob + current_offset, &(mpi_rank), sizeof(mpi_rank));
     current_offset += sizeof(mpi_rank);
     // Domain Size (should be 2 bytes)
+    DBG(AMSMsgHeader,
+        "Generating domain name of size %d --- %d offset %d",
+        domain_size,
+        sizeof(domain_size),
+        current_offset);
     std::memcpy(data_blob + current_offset,
                 &(domain_size),
                 sizeof(domain_size));
+    current_offset += sizeof(domain_size);
     // Num elem (should be 4 bytes)
     std::memcpy(data_blob + current_offset, &(num_elem), sizeof(num_elem));
     current_offset += sizeof(num_elem);
@@ -2116,8 +2122,7 @@ private:
 
 public:
   RMQInterface() : connected(false) {}
-  bool connect(std::string erlang_cookie,
-               std::string rmq_name,
+  bool connect(std::string rmq_name,
                std::string rmq_password,
                std::string rmq_user,
                std::string rmq_vhost,
@@ -2348,12 +2353,13 @@ public:
     std::error_code ec;
 
     if (!fs::exists(Path, ec)) {
-      THROW(std::runtime_error, "Path: :'" + path + "' does not exist");
+      THROW(std::runtime_error,
+            ("Path: :'" + path + "' does not exist").c_str());
       exit(-1);
     }
 
     if (ec) {
-      THROW(std::runtime_error, "Error in file:" + ec.message());
+      THROW(std::runtime_error, ("Error in file:" + ec.message()).c_str());
       exit(-1);
     }
 
@@ -2547,6 +2553,42 @@ public:
              "Only HDF5 supports debug")
 
     if (dbType != AMSDBType::AMS_NONE) fs_interface.connect(db_path);
+  }
+
+  void instantiate_rmq_db(int port,
+                          std::string& host,
+                          std::string& rmq_name,
+                          std::string& rmq_pass,
+                          std::string& rmq_user,
+                          std::string& rmq_vhost,
+                          std::string& rmq_cert,
+                          std::string& inbouund_queue,
+                          std::string& outbound_queue)
+  {
+    fs::path Path(rmq_cert);
+    std::error_code ec;
+    CFATAL(AMS,
+           !fs::exists(Path, ec),
+           "Certificate file '%s' for RMQ server does not exist",
+           rmq_cert.c_str());
+    dbType = AMSDBType::AMS_RMQ;
+
+
+#ifdef __ENABLE_RMQ__
+    rmq_interface.connect(rmq_name,
+                          rmq_pass,
+                          rmq_user,
+                          rmq_vhost,
+                          port,
+                          host,
+                          rmq_cert,
+                          inbouund_queue,
+                          outbound_queue);
+#else
+    FATAL(DBManager,
+          "Requsted RMQ database but AMS is not built with such support "
+          "enabled")
+#endif
   }
 };
 

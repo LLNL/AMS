@@ -267,6 +267,7 @@ public:
   std::vector<AMSAbstractModel> registered_models;
   std::unordered_map<std::string, int> ams_candidate_models;
   AMSDBType dbType = AMSDBType::AMS_NONE;
+  ams::ResourceManager &memManager;
 
 private:
   void dumpEnv()
@@ -330,6 +331,64 @@ private:
     }
   }
 
+  void setupFSDB(json &entry, std::string &dbStrType)
+  {
+    if (!entry.contains("fs_path"))
+      THROW(std::runtime_error,
+            "JSON db-fields does not provide file system path");
+
+    std::string db_path = entry["fs_path"].get<std::string>();
+    auto &DB = ams::db::DBManager::getInstance();
+    DB.instantiate_fs_db(dbType, db_path);
+    DBG(AMS,
+        "Configured AMS File system database to point to %s using file "
+        "type %s",
+        db_path.c_str(),
+        dbStrType.c_str());
+  }
+
+  template <typename T>
+  T getEntry(json &entry, std::string field)
+  {
+    if (!entry.contains(field)) {
+      THROW(std::runtime_error,
+            ("I was expecting entry '" + field + "' to exist in json").c_str())
+    }
+    return entry[field].get<T>();
+  }
+
+  void setupRMQ(json &entry, std::string &dbStrType)
+  {
+    if (!entry.contains("rmq_config")) {
+      THROW(std::runtime_error,
+            "JSON db-fields do not contain rmq_config entires")
+    }
+    auto rmq_entry = entry["rmq_config"];
+    int port = getEntry<int>(rmq_entry, "service-port");
+    std::string host = getEntry<std::string>(rmq_entry, "service-host");
+    std::string rmq_name = getEntry<std::string>(rmq_entry, "rabbitmq-name");
+    std::string rmq_pass =
+        getEntry<std::string>(rmq_entry, "rabbitmq-password");
+    std::string rmq_user = getEntry<std::string>(rmq_entry, "rabbitmq-user");
+    std::string rmq_vhost = getEntry<std::string>(rmq_entry, "rabbitmq-vhost");
+    std::string rmq_cert = getEntry<std::string>(rmq_entry, "rabbitmq-cert");
+    std::string rmq_in_queue =
+        getEntry<std::string>(rmq_entry, "rabbitmq-inbound-queue");
+    std::string rmq_out_queue =
+        getEntry<std::string>(rmq_entry, "rabbitmq-outbound-queue");
+
+    auto &DB = ams::db::DBManager::getInstance();
+    DB.instantiate_rmq_db(port,
+                          host,
+                          rmq_name,
+                          rmq_pass,
+                          rmq_user,
+                          rmq_vhost,
+                          rmq_cert,
+                          rmq_in_queue,
+                          rmq_out_queue);
+  }
+
   void parseDatabase(json &jRoot)
   {
     DBG(AMS, "Parsing Data Base Fields")
@@ -341,24 +400,21 @@ private:
             "\"dbType\" "
             "entry");
     auto dbStrType = entry["dbType"].get<std::string>();
-    DBG(AMS, "DB Type is: %s", dbStrType.c_str())
-    AMSDBType dbType = ams::db::getDBType(dbStrType);
-    if (dbType == AMSDBType::AMS_NONE) return;
-
-    if (dbType == AMSDBType::AMS_CSV || dbType == AMSDBType::AMS_HDF5) {
-      if (!entry.contains("fs_path"))
-        THROW(std::runtime_error,
-              "JSON db-fiels does not provide file system path");
-
-      std::string db_path = entry["fs_path"].get<std::string>();
-      auto &DB = ams::db::DBManager::getInstance();
-      DB.instantiate_fs_db(dbType, db_path);
-      DBG(AMS,
-          "Configured AMS File system database to point to %s using file "
-          "type %s",
-          db_path.c_str(),
-          dbStrType.c_str());
+    dbType = ams::db::getDBType(dbStrType);
+    switch (dbType) {
+      case AMSDBType::AMS_NONE:
+        return;
+      case AMSDBType::AMS_CSV:
+      case AMSDBType::AMS_HDF5:
+        setupFSDB(entry, dbStrType);
+        break;
+      case AMSDBType::AMS_RMQ:
+        setupRMQ(entry, dbStrType);
+        break;
+      case AMSDBType::AMS_REDIS:
+        FATAL(AMS, "Cannot connect to REDIS database, missing implementation");
     }
+    return;
   }
 
   std::pair<bool, std::string> setup_loggers()
@@ -427,7 +483,7 @@ private:
   }
 
 public:
-  AMSWrap()
+  AMSWrap() : memManager(ams::ResourceManager::getInstance())
   {
     auto log_stats = setup_loggers();
     DBG(AMS,
