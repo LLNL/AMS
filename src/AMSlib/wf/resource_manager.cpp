@@ -26,7 +26,10 @@ const std::string AMSAllocator::getName() const { return name; }
 
 struct AMSDefaultDeviceAllocator final : AMSAllocator {
   AMSDefaultDeviceAllocator(std::string name) : AMSAllocator(name){};
-  ~AMSDefaultDeviceAllocator() = default;
+  ~AMSDefaultDeviceAllocator()
+  {
+    DBG(AMSDefaultDeviceAllocator, "Destroying default device allocator");
+  };
 
   void *allocate(size_t num_bytes) { return DeviceAllocate(num_bytes); }
 
@@ -35,7 +38,10 @@ struct AMSDefaultDeviceAllocator final : AMSAllocator {
 
 struct AMSDefaultHostAllocator final : AMSAllocator {
   AMSDefaultHostAllocator(std::string name) : AMSAllocator(name) {}
-  ~AMSDefaultHostAllocator() = default;
+  ~AMSDefaultHostAllocator()
+  {
+    DBG(AMSDefaultDeviceAllocator, "Destroying default host allocator");
+  }
 
   void *allocate(size_t num_bytes)
   {

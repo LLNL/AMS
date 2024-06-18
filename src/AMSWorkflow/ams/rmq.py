@@ -32,20 +32,21 @@ class AMSMessage(object):
         - 1 byte is the size of the header (here 12). Limit max: 255
         - 1 byte is the precision (4 for float, 8 for double). Limit max: 255
         - 2 bytes are the MPI rank (0 if AMS is not running with MPI). Limit max: 65535
+        - 2 bytes to store the size of the MSG domain name. Limit max: 65535
         - 4 bytes are the number of elements in the message. Limit max: 2^32 - 1
         - 2 bytes are the input dimension. Limit max: 65535
         - 2 bytes are the output dimension. Limit max: 65535
-        - 4 bytes are for aligning memory to 8
+        - 2 bytes are for aligning memory to 8
 
-            |__Header_size__|__Datatype__|__Rank__|__#elem__|__InDim__|__OutDim__|...real data...|
+            |_Header_|_Datatype_|___Rank___|__DomainSize__|__#elems__|___InDim____|___OutDim___|_Pad_|.real data.|
 
-        Then the data starts at 12 and is structered as pairs of input/outputs.
+        Then the data starts at 16 and is structered as pairs of input/outputs.
         Let K be the total number of elements, then we have K pairs of inputs/outputs (either float or double):
 
-            |__Header_(12B)__|__Input 1__|__Output 1__|...|__Input_K__|__Output_K__|
+            |__Header_(16B)__|__Input 1__|__Output 1__|...|__Input_K__|__Output_K__|
 
         """
-        return "BBHIHHI"
+        return "BBHHIHHH"
 
     def endianness(self) -> str:
         """
@@ -85,6 +86,7 @@ class AMSMessage(object):
             res["hsize"],
             res["datatype"],
             res["mpirank"],
+            res["domain_size"],
             res["num_element"],
             res["input_dim"],
             res["output_dim"],
@@ -103,17 +105,24 @@ class AMSMessage(object):
         res["multiple_msg"] = len(body) != res["msg_size"]
         return res
 
-    def _parse_data(self, body: str, header_info: dict) -> np.array:
+    def _parse_data(self, body: str, header_info: dict) -> Tuple[str, np.array, np.array]:
         data = np.array([])
         if len(body) == 0:
             return data
         hsize = header_info["hsize"]
         dsize = header_info["dsize"]
+        domain_name_size = header_info["domain_size"]
+        domain_name = body[hsize : hsize + domain_name_size]
+        domain_name = domain_name.decode("utf-8")
         try:
             if header_info["datatype"] == 4:  # if datatype takes 4 bytes (float)
-                data = np.frombuffer(body[hsize : hsize + dsize], dtype=np.float32)
+                data = np.frombuffer(
+                    body[hsize + domain_name_size : hsize + domain_name_size + dsize], dtype=np.float32
+                )
             else:
-                data = np.frombuffer(body[hsize : hsize + dsize], dtype=np.float64)
+                data = np.frombuffer(
+                    body[hsize + domain_name_size : hsize + domain_name_size + dsize], dtype=np.float64
+                )
         except ValueError as e:
             print(f"Error: {e} => {header_info}")
             return np.array([])
@@ -122,7 +131,7 @@ class AMSMessage(object):
         odim = header_info["output_dim"]
         data = data.reshape((-1, idim + odim))
         # Return input, output
-        return data[:, :idim], data[:, idim:]
+        return (domain_name, data[:, :idim], data[:, idim:])
 
     def _decode(self, body: str) -> Tuple[np.array]:
         input = []
@@ -130,17 +139,18 @@ class AMSMessage(object):
         # Multiple AMS messages could be packed in one RMQ message
         while body:
             header_info = self._parse_header(body)
-            temp_input, temp_output = self._parse_data(body, header_info)
-            print(f"input shape {temp_input.shape} outpute shape {temp_output.shape}")
+            print("Received domain name ", header_info["domain_size"])
+            domain_name, temp_input, temp_output = self._parse_data(body, header_info)
+            print(f"MSG: {domain_name} input shape {temp_input.shape} outpute shape {temp_output.shape}")
             # total size of byte we read for that message
-            chunk_size = header_info["hsize"] + header_info["dsize"]
+            chunk_size = header_info["hsize"] + header_info["dsize"] + header_info["domain_size"]
             input.append(temp_input)
             output.append(temp_output)
             # We remove the current message and keep going
             body = body[chunk_size:]
-        return np.concatenate(input), np.concatenate(output)
+        return domain_name, np.concatenate(input), np.concatenate(output)
 
-    def decode(self) -> Tuple[np.array]:
+    def decode(self) -> Tuple[str, np.array, np.array]:
         return self._decode(self.body)
 
 

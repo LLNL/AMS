@@ -1,0 +1,118 @@
+{
+  "db" : {
+    "dbType" : "rmq",
+      "rmq_config" : {
+      "service-port": ,
+      "service-host": "",
+      "rabbitmq-erlang-cookie": "",
+      "rabbitmq-name": "",
+      "rabbitmq-password": "",
+      "rabbitmq-user": "",
+      "rabbitmq-vhost": "",
+      "rabbitmq-cert": "",
+      "rabbitmq-inbound-queue": "",
+      "rabbitmq-outbound-queue": ""
+    }
+  },
+  "ml_models" : {
+    "random_50": {
+      "uq_type": "random",
+      "model_path": "@CMAKE_CURRENT_SOURCE_DIR@/linear_scripted_cpu.pt",
+      "uq_aggregate": "mean",
+      "threshold": 0.5,
+      "db_label" : "random_50"
+    }, 
+    "random_10": {
+      "uq_type": "random",
+      "model_path": "@CMAKE_CURRENT_SOURCE_DIR@/linear_scripted_cpu.pt",
+      "uq_aggregate": "mean",
+      "threshold": 0.1,
+      "db_label" : "random_10"
+    }, 
+    "duq_mean": {
+      "uq_type": "deltaUQ",
+      "model_path": "@CMAKE_CURRENT_SOURCE_DIR@/uq_mean_double_cpu.pt",
+      "uq_aggregate": "mean",
+      "threshold": 0.5,
+      "db_label" : "duq_mean"
+    },
+    "duq_max": {
+      "uq_type": "deltaUQ",
+      "model_path": "@CMAKE_CURRENT_SOURCE_DIR@/uq_max_double_cpu.pt",
+      "uq_aggregate": "max",
+      "threshold": 0.5,
+      "db_label" : "duq_max"
+    },
+    "duq_max_debug": {
+      "uq_type": "deltaUQ",
+      "model_path": "@CMAKE_CURRENT_SOURCE_DIR@/uq_max_double_cpu.pt",
+      "uq_aggregate": "max",
+      "threshold": 0.5,
+      "db_label" : "duq_max",
+      "debug_db" : true
+    },
+    "duq_mean_debug": {
+      "uq_type": "deltaUQ",
+      "model_path": "@CMAKE_CURRENT_SOURCE_DIR@/uq_mean_double_cpu.pt",
+      "uq_aggregate": "mean",
+      "threshold": 0.5,
+      "db_label" : "duq_mean",
+      "debug_db" : true
+    },
+    "random_no_db_10": {
+      "uq_type": "random",
+      "model_path": "@CMAKE_CURRENT_SOURCE_DIR@/linear_scripted_cpu.pt",
+      "uq_aggregate": "mean",
+      "threshold": 0.1,
+      "db_label" : ""
+    },
+    "random_no_db_50": {
+      "uq_type": "random",
+      "model_path": "@CMAKE_CURRENT_SOURCE_DIR@/linear_scripted_cpu.pt",
+      "uq_aggregate": "mean",
+      "threshold": 0.5,
+      "db_label" : ""
+    },
+    "duq_mean_no_db": {
+      "uq_type": "deltaUQ",
+      "model_path": "@CMAKE_CURRENT_SOURCE_DIR@/uq_mean_double_cpu.pt",
+      "uq_aggregate": "mean",
+      "threshold": 0.5,
+      "db_label" : ""
+    },
+    "duq_max_no_db": {
+      "uq_type": "deltaUQ",
+      "model_path": "@CMAKE_CURRENT_SOURCE_DIR@/uq_max_double_cpu.pt",
+      "uq_aggregate": "max",
+      "threshold": 0.5,
+      "db_label" : ""
+    },
+    "no_model": {
+      "uq_type": "random",
+      "model_path": "",
+      "uq_aggregate": "mean",
+      "threshold": 0.5,
+      "db_label" : "no_model"
+    },
+    "no_model_no_db": {
+      "uq_type": "random",
+      "uq_aggregate": "mean",
+      "threshold": 0.5,
+      "db_label" : ""
+    }
+  },
+  "domain_models" : {
+    "app_random_10": "random_10",
+    "app_random_50": "random_50",
+    "app_uq_mean" : "duq_mean",
+    "app_uq_max" : "duq_max",
+    "app_random_ndb": "random_no_db",
+    "app_uq_mean_ndb" : "duq_mean_no_db",
+    "app_uq_max_ndb" : "duq_max_no_db",
+    "app_no_model" : "no_model",
+    "app_no_model_no_db" : "no_model_no_db",
+    "app_uq_mean_debug" : "duq_mean_debug",
+    "app_uq_max_debug" : "duq_max_debug"
+
+  }
+}
