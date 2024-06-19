@@ -383,7 +383,13 @@ public:
           packedElements);
       Store(packedElements, packedInputs, packedOutputs);
       CALIPER(CALI_MARK_END("DBSTORE");)
+
+      // if (DB->updateModel()) {
+      //   auto latest_model = DB->getLatestModel();
+      //   DBG(Workflow, "New ML model detected: %s", latest_model.c_str());
+      // }
     }
+    DBG(Workflow, "Deallocating temporal data")
 
     // -----------------------------------------------------------------
     // Deallocate temporal data

@@ -114,6 +114,7 @@ public:
   uint64_t getId() const { return id; }
 
   virtual bool updateModel() { return false; }
+  virtual std::string getLatestModel() { return ""; }
 };
 
 /**
@@ -1076,6 +1077,8 @@ public:
   }
 };  // class AMSMessage
 
+enum RMQConnectionStatus { FAILED, CONNECTED, CLOSED, ERROR };
+
 /** @brief Structure that represents a received RabbitMQ message.
  * - The first field is the message content (body)
  * - The second field is the RMQ exchange from which the message
@@ -1102,10 +1105,29 @@ private:
   std::shared_ptr<struct event_base> _loop;
   /** @brief main channel used to send data to the broker */
   std::shared_ptr<AMQP::TcpChannel> _channel;
-  /** @brief RabbitMQ queue */
-  std::string _queue;
-  /** @brief Queue that contains all the messages received on receiver queue */
+  /** @brief RabbitMQ exchange */
+  std::string _exchange;
+  /** @brief RabbitMQ routing key */
+  std::string _routing_key;
+  // /** @brief Queue that contains all the messages received on receiver queue */
   std::shared_ptr<std::vector<inbound_msg>> _messages;
+  /** @brief Function that is called when a new message is received */
+  // std::function<void(const AMQP::Message&, uint64_t, bool)> _on_message_received;
+
+  /** @brief Type of the exchange used (AMQP::topic, AMQP::fanout, AMQP::direct) */
+  AMQP::ExchangeType _extype;
+
+  std::promise<RMQConnectionStatus> establish_connection;
+  std::future<RMQConnectionStatus> established;
+
+  std::promise<RMQConnectionStatus> close_connection;
+  std::future<RMQConnectionStatus> closed;
+
+  std::promise<RMQConnectionStatus> _error_connection;
+  std::future<RMQConnectionStatus> _ftr_error;
+
+  std::promise<RMQConnectionStatus> create_exchange;
+  std::future<RMQConnectionStatus> created;
 
 public:
   /**
@@ -1114,25 +1136,113 @@ public:
    *  @param[in]  cacert       SSL Cacert
    *  @param[in]  rank         MPI rank
    */
+  //  std::function<void(const AMQP::Message&, uint64_t, bool)> on_message_received,
+  // _on_message_received(std::move(on_message_received)),
   RMQConsumerHandler(std::shared_ptr<struct event_base> loop,
                      std::string cacert,
-                     std::string queue)
+                     std::string exchange,
+                     std::string routing_key,
+                     AMQP::ExchangeType exchange_type = AMQP::topic)
       : AMQP::LibEventHandler(loop.get()),
         _loop(loop),
-        _rank(0),
         _cacert(std::move(cacert)),
-        _queue(queue),
+        _exchange(std::move(exchange)),
+        _routing_key(std::move(routing_key)),
+        _extype(exchange_type),
+        _rank(0),
         _messages(std::make_shared<std::vector<inbound_msg>>()),
         _channel(nullptr)
   {
 #ifdef __ENABLE_MPI__
     MPI_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &_rank));
 #endif
+    established = establish_connection.get_future();
+    closed = close_connection.get_future();
+    created = create_exchange.get_future();
+    _ftr_error = _error_connection.get_future();
   }
 
   ~RMQConsumerHandler() = default;
 
+  /**
+   *  @brief  Check if the connection can be used to send messages.
+   *  @return     True if connection is valid (i.e., can send messages)
+   */
+  bool connection_valid()
+  {
+    std::chrono::milliseconds span(1);
+    return _ftr_error.wait_for(span) != std::future_status::ready;
+  }
+
+  /**
+   *  @brief  Wait (blocking call) until connection has been established or that ms * repeat is over.
+   *  @param[in]  ms            Number of milliseconds the function will wait on the future
+   *  @param[in]  repeat        Number of times the function will wait
+   *  @return     True if connection has been established
+   */
+  bool waitToEstablish(unsigned ms, int repeat = 1)
+  {
+    if (waitFuture(established, ms, repeat)) {
+      auto status = established.get();
+      DBG(RMQConsumerHandler, "[r%d] Connection Status: %d", _rank, status);
+      return status == CONNECTED;
+    }
+    return false;
+  }
+
+  /**
+   *  @brief  Wait (blocking call) until connection has been closed or that ms * repeat is over.
+   *  @param[in]  ms            Number of milliseconds the function will wait on the future
+   *  @param[in]  repeat        Number of times the function will wait
+   *  @return     True if connection has been closed
+   */
+  bool waitToClose(unsigned ms, int repeat = 1)
+  {
+    if (waitFuture(closed, ms, repeat)) {
+      return closed.get() == CLOSED;
+    }
+    return false;
+  }
+
+  // TODO: Update that function with a more modular parser
+  // Maybe create some sort of AMSMessageTraining or something that is 
+  // responsible of parsing messages from AMSWorkflow
+  std::tuple<bool, std::string> modelAvailable()
+  {
+    // TODO: improve: right now we return the first available model
+    // not necessarily the latest
+    for (inbound_msg& e : *_messages) {
+      std::string body = std::get<0>(e);
+      auto split = splitString(body, ":");
+      if (split[0] == "UPDATE") {
+        return std::make_tuple(true, split[1]);
+      }
+    }
+    return std::make_tuple(false, "");
+  }
+
 private:
+  std::vector<std::string> splitString(std::string str, std::string delimiter)
+  {
+    size_t pos = 0;
+    std::string token;
+    std::vector<std::string> res;
+    while ((pos = str.find(delimiter)) != std::string::npos) {
+        token = str.substr(0, pos);
+        res.push_back(token);
+        str.erase(0, pos + delimiter.length());
+    }
+    return res;
+  }
+
+  std::promise<RMQConnectionStatus>&& setFutureSilent(std::promise<RMQConnectionStatus> ftr, const RMQConnectionStatus& status) {
+    try {
+      ftr.set_value(status);
+    } catch(const std::future_error& e) {
+    }
+    return std::move(ftr);
+  }
+
   /**
    *  @brief Method that is called after a TCP connection has been set up, and
    * right before the SSL handshake is going to be performed to secure the
@@ -1164,6 +1274,7 @@ private:
         error += std::string(ERR_reason_error_string(err));
       }
       error += "]";
+      establish_connection.set_value(FAILED);
       throw std::runtime_error(error);
     } else {
       DBG(RMQConsumerHandler,
@@ -1192,6 +1303,44 @@ private:
     return true;
   }
 
+  // bool declare_exchange(AMQP::TcpConnection* connection, const std::string& exchange, AMQP::ExchangeType extype)
+  // {
+  //   // _channel->removeExchange(exchange, extype)
+  //   //   .onSuccess([exchange, this, extype]() {
+  //   //     DBG(RMQConsumerHandler, "removed exchange %s (%d)", exchange.c_str(), extype)
+  //   //     for (int k = 0; k < 3; k++) {
+  //   //       DBG(RMQConsumerHandler, "k=%d SLEEPING 10s", k+1)
+  //   //       std::this_thread::sleep_for(std::chrono::milliseconds(1000 * 10));
+  //   //     }
+  //   //     DBG(RMQConsumerHandler, "DONE SLEEPING")
+
+  //   _channel->declareExchange(exchange, extype)
+  //     .onSuccess([exchange, this, extype]() {
+  //       DBG(RMQConsumerHandler, "created exchange %s (%d)", exchange.c_str(), extype)
+  //       create_exchange.set_value(CONNECTED);
+  //     })
+  //     .onError([this](const char* message) {
+  //       WARNING(RMQConsumerHandler, "error declare exchange %s", message)
+  //       create_exchange.set_value(FAILED);
+  //     });
+
+  //     // })
+  //     // .onError([this](const char* message) {
+  //     //   WARNING(RMQConsumerHandler, "error remove exchange %s", message)
+  //     //   create_exchange.set_value(FAILED);
+  //     // });
+
+  //   // // We block until the exchange is removed (if needed) and re-created
+  //   // if (waitFuture(created, 100, 10)) {
+  //   //   auto status = created.get();
+  //   //   DBG(RMQConsumerHandler, "[declare_exchange] Connection Status: %d", status);
+  //   //   return status == CONNECTED;
+  //   // } else {
+  //   //   DBG(RMQConsumerHandler, "[declare_exchange] Connection Status XXX");
+  //   // }
+  //   return false;
+  // }
+
   /**
    *  @brief Method that is called by the AMQP library when the login attempt
    *  succeeded. After this the connection is ready to use.
@@ -1205,90 +1354,304 @@ private:
 
     _channel = std::make_shared<AMQP::TcpChannel>(connection);
     _channel->onError([&](const char* message) {
-      CFATAL(RMQConsumerHandler,
-             false,
+      WARNING(RMQConsumerHandler,
              "[rank=%d] Error on channel: %s",
              _rank,
              message)
+      establish_connection.set_value(FAILED);
     });
 
-    _channel->declareQueue(_queue)
-        .onSuccess([&](const std::string& name,
-                       uint32_t messagecount,
-                       uint32_t consumercount) {
-          if (messagecount > 0 || consumercount > 1) {
-            CWARNING(RMQConsumerHandler,
-                     _rank == 0,
-                     "[rank=%d] declared queue: %s (messagecount=%d, "
-                     "consumercount=%d)",
-                     _rank,
-                     _queue.c_str(),
-                     messagecount,
-                     consumercount)
-          }
-          // We can now install callback functions for when we will consumme messages
-          // callback function that is called when the consume operation starts
-          auto startCb = [](const std::string& consumertag) {
-            DBG(RMQConsumerHandler,
-                "consume operation started with tag: %s",
-                consumertag.c_str())
-          };
+    // // // All ranks can perform declareExchange as it's an idempotent operation
+    // // declare_exchange(connection, "my-exchange", AMQP::topic);
+    // // auto status = created.get(); // BLOCK HERE
+    // // DBG(RMQConsumerHandler, "[declare_exchange] Connection Status: %d", status);
 
-          // callback function that is called when the consume operation failed
-          auto errorCb = [](const char* message) {
-            CFATAL(RMQConsumerHandler,
-                   false,
-                   "consume operation failed: %s",
-                   message);
-          };
-          // callback operation when a message was received
-          auto messageCb = [&](const AMQP::Message& message,
-                               uint64_t deliveryTag,
-                               bool redelivered) {
-            // acknowledge the message
-            _channel->ack(deliveryTag);
-            std::string msg(message.body(), message.bodySize());
-            DBG(RMQConsumerHandler,
-                "message received [tag=%d] : '%s' of size %d B from "
-                "'%s'/'%s'",
-                deliveryTag,
-                msg.c_str(),
-                message.bodySize(),
-                message.exchange().c_str(),
-                message.routingkey().c_str())
-            _messages->push_back(std::make_tuple(std::move(msg),
-                                                 message.exchange(),
-                                                 message.routingkey(),
-                                                 deliveryTag,
-                                                 redelivered));
-          };
+    // auto exchange = "my-exchange2";
+    // auto extype = AMQP::topic;
 
-          /* callback that is called when the consumer is cancelled by RabbitMQ (this
-          * only happens in rare situations, for example when someone removes the queue
-          * that you are consuming from)
-          */
-          auto cancelledCb = [](const std::string& consumertag) {
-            WARNING(RMQConsumerHandler,
-                    "consume operation cancelled by the RabbitMQ server: %s",
-                    consumertag.c_str())
-          };
+    // _channel->removeExchange(exchange, extype)
+    //   .onSuccess([exchange, this, extype]() {
+    //     DBG(RMQConsumerHandler, "removed exchange %s (%d)", exchange, extype)
+    //   })
+    //   .onError([this](const char* message) {
+    //     WARNING(RMQConsumerHandler, "error remove exchange %s", message)
+    //   })
+    //   .onFinalize([]() {
+    //     WARNING(RMQConsumerHandler, "Finalizing")
+    //   });
 
-          // start consuming from the queue, and install the callbacks
-          _channel->consume(_queue)
-              .onReceived(messageCb)
-              .onSuccess(startCb)
-              .onCancelled(cancelledCb)
-              .onError(errorCb);
-        })
-        .onError([&](const char* message) {
-          CFATAL(RMQConsumerHandler,
-                 false,
-                 "[ERROR][rank=%d] Error while creating broker queue (%s): "
-                 "%s",
-                 _rank,
-                 _queue.c_str(),
-                 message)
-        });
+
+    // // _channel->declareExchange()
+    // //   .onSuccess([exchange, this, extype]() {
+    // //     DBG(RMQConsumerHandler, "created exchange %s (%d)", exchange, extype)
+    // //     // create_exchange.set_value(CONNECTED);
+    // //   })
+    // //   .onError([this](const char* message) {
+    // //     WARNING(RMQConsumerHandler, "error declare exchange %s", message)
+    // //     // create_exchange.set_value(FAILED);
+    // //   });
+
+
+    // // Different queue name for each rank
+    // _queue = _queue + "-" + std::to_string(_rank);
+    // for (int k = 0; k < 2; k++) {
+    //   DBG(RMQConsumerHandler, "k=%d MAIN SLEEPING 10s", k+1)
+    //   std::this_thread::sleep_for(std::chrono::milliseconds(1000 * 10));
+    // }
+    // DBG(RMQConsumerHandler, "DONE SLEEPING")
+    
+    // _channel->declareQueue(_queue)
+    //     .onSuccess([&](const std::string& name,
+    //                   uint32_t messagecount,
+    //                   uint32_t consumercount) {
+    //         if (messagecount > 0 || consumercount > 1) {
+    //           CWARNING(RMQConsumerHandler,
+    //                   _rank == 0,
+    //                   "[rank=%d] declared queue: %s (messagecount=%d, "
+    //                   "consumercount=%d)",
+    //                   _rank,
+    //                   name.c_str(),
+    //                   messagecount,
+    //                   consumercount)
+    //         } else {
+    //           DBG(RMQConsumerHandler,
+    //                   "[rank=%d] declared queue: %s",
+    //                   _rank,
+    //                   name.c_str())
+    //         }
+
+    //         _channel->bindQueue("my-exchange2", _queue, "my-routing-key")
+    //           .onSuccess([&]() {
+    //             establish_connection.set_value(CONNECTED);
+    //             // establish_connection = set_future_silent(std::move(establish_connection), CONNECTED);
+
+    //             DBG(RMQConsumerHandler,
+    //                 "[rank=%d] Bound %s to %s with routing-key = %s",
+    //                 _rank, _queue.c_str(), "my-exchange", "my-routing-key")
+
+    //             // We can now install callback functions for when we will consumme messages
+    //             // callback function that is called when the consume operation starts
+    //             auto startCb = [&](const std::string& consumertag) {
+    //               DBG(RMQConsumerHandler,
+    //                   "[rank=%d] consume operation started with tag: %s",
+    //                   _rank,
+    //                   consumertag.c_str())
+    //             };
+
+    //             // callback function that is called when the consume operation failed
+    //             auto errorCb = [&](const char* message) {
+    //               WARNING(RMQConsumerHandler,
+    //                     "[rank=%d] consume operation failed: %s",
+    //                     _rank,
+    //                     message);
+    //             };
+    //             // callback operation when a message was received
+    //             auto messageCb = [&](const AMQP::Message& message,
+    //                                 uint64_t deliveryTag,
+    //                                 bool redelivered) {
+    //               // acknowledge the message
+    //               _channel->ack(deliveryTag);
+    //               std::string msg(message.body(), message.bodySize());
+    //               DBG(RMQConsumerHandler,
+    //                   "[rank=%d] message received [tag=%d] : '%s' of size %d B from "
+    //                   "'%s'/'%s'",
+    //                   _rank,
+    //                   deliveryTag,
+    //                   msg.c_str(),
+    //                   message.bodySize(),
+    //                   message.exchange().c_str(),
+    //                   message.routingkey().c_str())
+    //               _messages->push_back(std::make_tuple(std::move(msg),
+    //                                                   message.exchange(),
+    //                                                   message.routingkey(),
+    //                                                   deliveryTag,
+    //                                                   redelivered));
+    //             };
+
+    //             /* callback that is called when the consumer is cancelled by RabbitMQ (this
+    //             * only happens in rare situations, for example when someone removes the queue
+    //             * that you are consuming from)
+    //             */
+    //             auto cancelledCb = [&](const std::string& consumertag) {
+    //               WARNING(RMQConsumerHandler,
+    //                       "[rank=%d] consume operation cancelled by the RabbitMQ server: %s",
+    //                       _rank,
+    //                       consumertag.c_str())
+    //             };
+    //             DBG(RMQConsumerHandler,
+    //                 "[rank=%d] starting consume",
+    //                 _rank)
+    //             // start consuming from the queue, and install the callbacks
+    //             _channel->consume(_queue)
+    //                 .onReceived(std::move(messageCb))
+    //                 .onSuccess(std::move(startCb))
+    //                 .onCancelled(std::move(cancelledCb))
+    //                 .onError(std::move(errorCb));
+    //           }) //consume
+    //           .onError([&](const char* message) {
+    //             WARNING(RMQConsumerHandler,
+    //                   "[rank=%d] creating queue (%s): %s",
+    //                   _rank,
+    //                   _queue.c_str(),
+    //                   message)
+    //             establish_connection.set_value(FAILED);
+    //           }); //consume
+    //         }) //bindQueue
+    //         .onError([&](const char* message) {
+    //           WARNING(RMQConsumerHandler,
+    //                   "[rank=%d] binding queue %s to exchange: %s",
+    //                   _rank,
+    //                   _queue.c_str(),
+    //                   message)
+    //           // bool res = set_future_silent(std::move(establish_connection), FAILED);
+    //           establish_connection.set_value(FAILED);
+    //         }); //bindQueue
+
+    // std::string exchange_name = "my-exchange";
+    // std::string routing_key = "my-routing-key";
+
+    // _channel->removeExchange(_exchange, _extype)
+    //   .onSuccess([&, this]() {
+    //       DBG(RMQConsumerHandler,"[rank=%d] removed exchange %s (type: %d)",
+    //                           _rank, _exchange.c_str(), _extype)
+    //     // _channel->declareExchange("my-exchange", AMQP::fanout)
+
+    // Different queue name for each rank
+    // Queue MUST be named if we want to keep messages retention
+    auto queue = "amslib-consummer-" + std::to_string(_rank);
+
+    _channel->declareExchange(_exchange, AMQP::topic)
+      .onSuccess([&, this, queue]() {
+        DBG(RMQConsumerHandler,
+            "[rank=%d] declared exchange %s (type: %d)",
+            _rank, _exchange.c_str(), _extype)
+        _channel->declareQueue(queue)
+            .onSuccess([&, this](const std::string& name,
+                          uint32_t messagecount,
+                          uint32_t consumercount) {
+                if (messagecount > 0 || consumercount > 1) {
+                  CWARNING(RMQConsumerHandler,
+                          _rank == 0,
+                          "[rank=%d] declared queue: %s (messagecount=%d, "
+                          "consumercount=%d)",
+                          _rank,
+                          name.c_str(),
+                          messagecount,
+                          consumercount)
+                } else {
+                  DBG(RMQConsumerHandler,
+                          "[rank=%d] declared queue: %s",
+                          _rank,
+                          name.c_str())
+                }
+
+                _channel->bindQueue(_exchange, name, _routing_key)
+                  .onSuccess([&, name, this]() {
+                    establish_connection.set_value(CONNECTED);
+                    // establish_connection = set_future_silent(std::move(establish_connection), CONNECTED);
+
+                    DBG(RMQConsumerHandler,
+                        "[rank=%d] Bounded queue %s to exchange %s with routing key = %s",
+                        _rank, name.c_str(), _exchange.c_str(), _routing_key.c_str())
+
+                    // We can now install callback functions for when we will consumme messages
+                    // callback function that is called when the consume operation starts
+                    auto startCb = [&](const std::string& consumertag) {
+                      DBG(RMQConsumerHandler,
+                          "[rank=%d] consume operation started with tag: %s",
+                          _rank,
+                          consumertag.c_str())
+                    };
+
+                    // callback function that is called when the consume operation failed
+                    auto errorCb = [&](const char* message) {
+                      WARNING(RMQConsumerHandler,
+                            "[rank=%d] consume operation failed: %s",
+                            _rank,
+                            message);
+                    };
+                    // callback operation when a message was received
+                    auto messageCb = [&](const AMQP::Message& message,
+                                        uint64_t deliveryTag,
+                                        bool redelivered) {
+                      // acknowledge the message
+                      _channel->ack(deliveryTag);
+                      // _on_message_received(message, deliveryTag, redelivered);
+                      std::string msg(message.body(), message.bodySize());
+                      DBG(RMQConsumerHandler,
+                          "[rank=%d] message received [tag=%d] : '%s' of size %d B from "
+                          "'%s'/'%s'",
+                          _rank,
+                          deliveryTag,
+                          msg.c_str(),
+                          message.bodySize(),
+                          message.exchange().c_str(),
+                          message.routingkey().c_str())
+                      _messages->push_back(std::make_tuple(std::move(msg),
+                                                          message.exchange(),
+                                                          message.routingkey(),
+                                                          deliveryTag,
+                                                          redelivered));
+                    };
+
+                    /* callback that is called when the consumer is cancelled by RabbitMQ (this
+                    * only happens in rare situations, for example when someone removes the queue
+                    * that you are consuming from)
+                    */
+                    auto cancelledCb = [&](const std::string& consumertag) {
+                      WARNING(RMQConsumerHandler,
+                              "[rank=%d] consume operation cancelled by the RabbitMQ server: %s",
+                              _rank,
+                              consumertag.c_str())
+                    };
+
+                    DBG(RMQConsumerHandler,
+                        "[rank=%d] starting consume operation",
+                        _rank)
+
+                    // start consuming from the queue, and install the callbacks
+                    _channel->consume(name)
+                        .onReceived(std::move(messageCb))
+                        .onSuccess(std::move(startCb))
+                        .onCancelled(std::move(cancelledCb))
+                        .onError(std::move(errorCb));
+                  }) //consume
+                  .onError([&](const char* message) {
+                    WARNING(RMQConsumerHandler,
+                          "[rank=%d] creating queue: %s",
+                          _rank,
+                          message)
+                    establish_connection.set_value(FAILED);
+                  }); //consume
+                }) //bindQueue
+                .onError([&](const char* message) {
+                  WARNING(RMQConsumerHandler,
+                          "[rank=%d] binding queue to exchange: %s",
+                          _rank,
+                          message)
+                  // bool res = set_future_silent(std::move(establish_connection), FAILED);
+                  establish_connection.set_value(FAILED);
+                }); //bindQueue
+      }) //declareExchange
+      .onError([&](const char* message) {
+        WARNING(RMQConsumerHandler,
+                "[rank=%d] creating exchange: %s",
+                _rank,
+                message)
+        // establish_connection.set_value(FAILED);
+      }); //declareExchange
+
+      // })
+      // .onError([&](const char* message) {
+      //   // Could be because exchange already exists
+      //   // or if we try to remove an exchange with a different type
+      //   WARNING(RMQConsumerHandler,
+      //           "[rank=%d] removing exchange: %s",
+      //           _rank,
+      //           message)
+      //   // establish_connection.set_value(FAILED);
+      // }); //removeExchange
+
   }
 
   /**
@@ -1300,7 +1663,7 @@ private:
     */
   virtual void onClosed(AMQP::TcpConnection* connection) override
   {
-    DBG(RMQConsumerHandler, "[rank=%d] Connection is closed.\n", _rank)
+    DBG(RMQConsumerHandler, "[rank=%d] Connection is closed.", _rank)
   }
 
   /**
@@ -1316,9 +1679,10 @@ private:
                        const char* message) override
   {
     DBG(RMQConsumerHandler,
-        "[rank=%d] fatal error when establishing TCP connection: %s\n",
+        "[rank=%d] fatal error when establishing TCP connection: %s",
         _rank,
         message)
+    // establish_connection.set_value(ERROR);
   }
 
   /**
@@ -1329,8 +1693,23 @@ private:
   virtual void onDetached(AMQP::TcpConnection* connection) override
   {
     //  add your own implementation, like cleanup resources or exit the application
-    DBG(RMQConsumerHandler, "[rank=%d] Connection is detached.\n", _rank)
+    DBG(RMQConsumerHandler, "[rank=%d] Connection is detached.", _rank)
+    close_connection.set_value(CLOSED);
   }
+
+  bool waitFuture(std::future<RMQConnectionStatus>& future,
+                  unsigned ms,
+                  int repeat)
+  {
+    std::chrono::milliseconds span(ms);
+    int iters = 0;
+    std::future_status status;
+    while ((status = future.wait_for(span)) == std::future_status::timeout &&
+           (iters++ < repeat))
+      std::future<RMQConnectionStatus> established;
+    return status == std::future_status::ready;
+  }
+
 };  // class RMQConsumerHandler
 
 /**
@@ -1343,7 +1722,9 @@ private:
   /** @brief Connection to the broker */
   AMQP::TcpConnection* _connection;
   /** @brief name of the queue to send data */
-  std::string _queue;
+  std::string _exchange;
+  /** @brief name of the queue to send data */
+  std::string _routing_key;
   /** @brief TLS certificate file */
   std::string _cacert;
   /** @brief MPI rank (if MPI is used, otherwise 0) */
@@ -1355,14 +1736,18 @@ private:
   /** @brief Queue that contains all the messages received on receiver queue (messages can be popped in) */
   std::vector<inbound_msg> _messages;
 
+  // /** @brief Function that is called when a new message is received */
+  // std::function<void(const AMQP::Message&, uint64_t, bool)> processing_functor;
+
 public:
   RMQConsumer(const RMQConsumer&) = delete;
   RMQConsumer& operator=(const RMQConsumer&) = delete;
 
   RMQConsumer(const AMQP::Address& address,
               std::string cacert,
-              std::string queue)
-      : _rank(0), _queue(queue), _cacert(cacert), _handler(nullptr)
+              std::string exchange,
+              std::string routing_key)
+      : _rank(0),  _cacert(cacert), _exchange(exchange), _routing_key(routing_key), _handler(nullptr)
   {
 #ifdef __ENABLE_MPI__
     MPI_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &_rank));
@@ -1387,19 +1772,59 @@ public:
 #endif
     CINFO(RMQConsumer,
           _rank == 0,
-          "RabbitMQ address: %s:%d/%s (queue = %s)",
+          "RabbitMQ address: %s:%d/%s (exchange = %s / routing key = %s)",
           address.hostname().c_str(),
           address.port(),
           address.vhost().c_str(),
-          _queue.c_str())
+          _exchange.c_str(),
+          _routing_key.c_str())
 
     _loop = std::shared_ptr<struct event_base>(event_base_new(),
                                                [](struct event_base* event) {
                                                  event_base_free(event);
                                                });
-    _handler = std::make_shared<RMQConsumerHandler>(_loop, _cacert, _queue);
+
+    // auto on_message_received = [&](const AMQP::Message& message,
+    //                     uint64_t deliveryTag,
+    //                     bool redelivered) {
+    //   std::string msg(message.body(), message.bodySize());
+    //   DBG(RMQConsumer,
+    //       "[rank=%d] message received [tag=%d] : '%s' of size %d B from "
+    //       "'%s'/'%s'",
+    //       _rank,
+    //       deliveryTag,
+    //       msg.c_str(),
+    //       message.bodySize(),
+    //       message.exchange().c_str(),
+    //       message.routingkey().c_str())
+    //   _messages.push_back(std::make_tuple(std::move(msg),
+    //                                       message.exchange(),
+    //                                       message.routingkey(),
+    //                                       deliveryTag,
+    //                                       redelivered));
+    // };
+
+    _handler = std::make_shared<RMQConsumerHandler>(_loop, _cacert, _exchange, _routing_key);
     _connection = new AMQP::TcpConnection(_handler.get(), address);
   }
+
+  // void on_message_received(const AMQP::Message& message, uint64_t deliveryTag, bool redelivered) {
+  //     std::string msg(message.body(), message.bodySize());
+  //     DBG(RMQConsumer,
+  //         "[rank=%d] XXX message received [tag=%d] : '%s' of size %d B from "
+  //         "'%s'/'%s'",
+  //         _rank,
+  //         deliveryTag,
+  //         msg.c_str(),
+  //         message.bodySize(),
+  //         message.exchange().c_str(),
+  //         message.routingkey().c_str())
+  //     _messages->push_back(std::make_tuple(std::move(msg),
+  //                                         message.exchange(),
+  //                                         message.routingkey(),
+  //                                         deliveryTag,
+  //                                         redelivered));
+  // }
 
   /**
    * @brief Start the underlying I/O loop (blocking call)
@@ -1412,10 +1837,25 @@ public:
   void stop() { event_base_loopexit(_loop.get(), NULL); }
 
   /**
+   * @brief Check if the underlying RabbitMQ connection is ready and usable
+   * @return True if the publisher is ready to publish
+   */
+  bool ready() { return _connection->ready() && _connection->usable(); }
+
+  /**
+   * @brief Wait that the connection is ready (blocking call)
+   * @return True if the publisher is ready to publish
+   */
+  bool waitToEstablish(unsigned ms, int repeat = 1)
+  {
+    return _handler->waitToEstablish(ms, repeat);
+  }
+
+  /**
    * @brief Return the most recent messages and delete it
    * @return A structure inbound_msg which is a std::tuple (see typedef)
    */
-  inbound_msg pop_messages()
+  inbound_msg popMessages()
   {
     if (!_messages.empty()) {
       inbound_msg msg = _messages.back();
@@ -1431,7 +1871,7 @@ public:
    * @param[in] delivery_tag Delivery tag that will be returned (if found)
    * @return A structure inbound_msg which is a std::tuple (see typedef)
    */
-  inbound_msg get_messages(uint64_t delivery_tag)
+  inbound_msg getMessages(uint64_t delivery_tag)
   {
     if (!_messages.empty()) {
       auto it = std::find_if(_messages.begin(),
@@ -1444,14 +1884,53 @@ public:
     return std::make_tuple("", "", "", -1, false);
   }
 
-  ~RMQConsumer()
+  // std::vector<std::string> splitString(std::string str, std::string delimiter)
+  // {
+  //   size_t pos = 0;
+  //   std::string token;
+  //   std::vector<std::string> res;
+  //   while ((pos = str.find(delimiter)) != std::string::npos) {
+  //       token = str.substr(0, pos);
+  //       res.push_back(token);
+  //       str.erase(0, pos + delimiter.length());
+  //   }
+  //   return res;
+  // }
+
+  // TODO: Update that function with a more modular parser
+  // Maybe create some sort of AMSMessageTraining or something that is 
+  // responsible of parsing messages from AMSWorkflow
+  std::tuple<bool, std::string> modelAvailable()
+  {
+    return _handler->modelAvailable();
+  }
+
+  /**
+   *  @brief    Close the unerlying connection
+   *  @param[in] ms Number of milliseconds to wait between each tentative
+   *  @param[in] repeat Number of tentatives
+   *  @return  True if connection was closed properly
+   */
+  bool close(unsigned ms, int repeat = 1)
   {
     _connection->close(false);
+    // DBG(RMQConsumer, "In close()")
+    return _handler->waitToClose(ms, repeat);
+  }
+
+  ~RMQConsumer()
+  {
+    // DBG(RMQConsumer, "In ~RMQConsumer()")
+    _connection->close(false);
+    // for (inbound_msg& e : _messages) {
+    //   auto tag = std::get<3>(e);
+    //   std::cout << "[" << tag << "] Body: " << std::get<0>(e) << std::endl;
+    //   std::cout << "[" << tag << "]   Exchange: " << std::get<1>(e) << std::endl;
+    //   std::cout << "[" << tag << "]   Routing key: " << std::get<2>(e) << std::endl;
+    // }
     delete _connection;
   }
 };  // class RMQConsumer
-
-enum RMQConnectionStatus { FAILED, CONNECTED, CLOSED, ERROR };
 
 /**
  * @brief Specific handler for RabbitMQ connections based on libevent.
@@ -1591,7 +2070,7 @@ public:
   {
     if (waitFuture(established, ms, repeat)) {
       auto status = established.get();
-      DBG(RMQPublisherHandler, "Connection Status: %d", status);
+      DBG(RMQPublisherHandler, "[r%d] Connection Status: %d", _rank, status);
       return status == CONNECTED;
     }
     return false;
@@ -1733,11 +2212,11 @@ private:
 
     _channel = std::make_shared<AMQP::TcpChannel>(connection);
     _channel->onError([&](const char* message) {
-      CFATAL(RMQPublisherHandler,
-             false,
+      WARNING(RMQPublisherHandler,
              "[rank=%d] Error on channel: %s",
              _rank,
              message)
+      establish_connection.set_value(FAILED);
     });
 
     _channel->declareQueue(_queue)
@@ -1764,9 +2243,8 @@ private:
           establish_connection.set_value(CONNECTED);
         })
         .onError([&](const char* message) {
-          CFATAL(RMQPublisherHandler,
-                 false,
-                 "[ERROR][rank=%d] Error while creating broker queue (%s): "
+          WARNING(RMQPublisherHandler,
+                 "[rank=%d] Error while creating broker queue (%s): "
                  "%s",
                  _rank,
                  _queue.c_str(),
@@ -2050,18 +2528,23 @@ public:
   int msg_acknowledged() const { return _handler->msg_acknowledged(); }
 
   /**
-   *  @brief    Total number of messages successfully acknowledged
-   *  @return   Number of messages
+   *  @brief    Close the unerlying connection
+   *  @param[in] ms Number of milliseconds to wait between each tentative
+   *  @param[in] repeat Number of tentatives
+   *  @return  True if connection was closed properly
    */
   bool close(unsigned ms, int repeat = 1)
   {
     _handler->flush();
     _connection->close(false);
+    DBG(RMQPublisher, "In close()")
     return _handler->waitToClose(ms, repeat);
   }
 
-  ~RMQPublisher() = default;
-
+  // ~RMQPublisher() = default;
+  ~RMQPublisher() {
+    DBG(RMQPublisher, "In ~RMQPublisher()")
+  }
 };  // class RMQPublisher
 
 /**
@@ -2209,6 +2692,7 @@ public:
         _read_config(_config);
     _queue_sender =
         rmq_config["rabbitmq-outbound-queue"];  // Queue to send data to
+    // TODO: switch to exchange + routing key
     _queue_receiver =
         rmq_config["rabbitmq-inbound-queue"];  // Queue to receive data from PDS
     bool is_secure = true;
@@ -2256,13 +2740,23 @@ public:
     if (!status) {
       _publisher->stop();
       _publisher_thread.join();
-      FATAL(RabbitMQDB, "Could not establish connection");
+      FATAL(RabbitMQDB, "Could not establish publisher connection");
     }
 
-    //_consumer_thread = std::thread([&]() { _consumer->start(); });
-    //_consumer = std::make_shared<RMQConsumer<TypeValue>>(address,
-    //                                                     cacert,
-    //                                                     _queue_receiver);
+    // TODO: Move that to JSON config file
+    auto _exchange = "ams";
+    auto _routing_key = "training";
+
+    _consumer = std::make_shared<RMQConsumer>(*_address, _cacert, _exchange, _routing_key);
+    _consumer_thread = std::thread([&]() { _consumer->start(); });
+
+    status = _consumer->waitToEstablish(10000, 10);
+    if (!status) {
+      _consumer->stop();
+      _consumer_thread.join();
+      FATAL(RabbitMQDB, "Could not establish consumer connection");
+    }
+
   }
 
   /**
@@ -2288,7 +2782,7 @@ public:
         inputs.size(),
         outputs.size())
     if (!_publisher->connection_valid()) {
-      restart();
+      restart_publisher();
       bool status = _publisher->waitToEstablish(100, 10);
       if (!status) {
         _publisher->stop();
@@ -2298,9 +2792,10 @@ public:
     }
     _publisher->publish(AMSMessage(_msg_tag, num_elements, inputs, outputs));
     _msg_tag++;
+    std::this_thread::sleep_for(std::chrono::milliseconds(10*1000));
   }
 
-  void restart()
+  void restart_publisher()
   {
     std::vector<AMSMessage> messages = _publisher->get_buffer_msgs();
 
@@ -2341,21 +2836,27 @@ public:
    */
   AMSDBType dbType() { return AMSDBType::RMQ; };
 
+  bool updateModel() { return std::get<0>(_consumer->modelAvailable()); }
+  std::string getLatestModel() { return std::get<1>(_consumer->modelAvailable()); }
+
   void close()
   {
-    if (!_publisher_thread.joinable()) {
+    if (!_publisher_thread.joinable() || !_consumer_thread.joinable()) {
       return;
     }
     bool status = _publisher->close(100, 10);
-    CWARNING(RabbitMQDB, !status, "Could not gracefully close TCP connection")
+    CWARNING(RabbitMQDB, !status, "Could not gracefully close publisher TCP connection")
     DBG(RabbitMQDB, "Number of messages sent: %d", _msg_tag)
     DBG(RabbitMQDB,
         "Number of unacknowledged messages are %d",
         _publisher->unacknowledged())
     _publisher->stop();
-    //_consumer->stop();
     _publisher_thread.join();
-    //_consumer_thread.join();
+
+    status = _consumer->close(100, 10);
+    CWARNING(RabbitMQDB, !status, "Could not gracefully close consumer TCP connection")
+    _consumer->stop();
+    _consumer_thread.join();
   }
 
   ~RabbitMQDB() { close(); }
