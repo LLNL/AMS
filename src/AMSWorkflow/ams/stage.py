@@ -478,7 +478,9 @@ class Pipeline(ABC):
         initializes the Pipeline class to write the final data in the 'dest_dir' using a file writer of type 'db_type'
         and optionally caching the data in the 'stage_dir' before making them available in the cache store.
         """
-        self.ams_config = AMSInstance.from_path(db_dir)
+        self.ams_config = AMSInstance.from_env()
+        if self.ams_config is None:
+            self.ams_config = AMSInstance.from_path(db_dir)
 
         if dest_dir is not None:
             self.dest_dir = dest_dir
