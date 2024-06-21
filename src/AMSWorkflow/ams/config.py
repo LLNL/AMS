@@ -86,8 +86,9 @@ class AMSInstance(metaclass=AMSSingleton):
 
     @classmethod
     def from_path(cls, db_path):
-        _fn = Path(db_path) / Path("ams_config.json")
-        assert _fn.exists(), "AMS Configuration file does not exist"
+        _default_conf = "ams_config.json"
+        _fn = Path(db_path) / Path(_default_conf)
+        assert _fn.exists(), f"AMS Configuration ({_default_conf}) does not exist"
         with open(str(_fn), "r") as fd:
             config = json.load(fd)
 
