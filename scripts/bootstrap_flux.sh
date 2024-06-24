@@ -136,8 +136,7 @@ if [[ "$MACHINE" == "lassen" ]] ; then
   module load pmi-shim
 
   PMIX_MCA_gds="^ds12,ds21" \
-    jsrun -a 1 -c ALL_CPUS -g ALL_GPUS -n ${FLUX_NODES} \
-      --bind=none --smpiargs="-disable_gpu_hooks" \
+    jsrun -a 1 -c ALL_CPUS -g ALL_GPUS -n ${FLUX_NODES} --bind=none --smpiargs="-disable_gpu_hooks" \
       flux start -o,-S,log-filename=$FLUX_LOG -v $FLUX_SLEEP_WRAPPER $FLUX_SERVER &
 elif [[ "$MACHINE" == "pascal" || "$MACHINE" == "ruby" ]] ; then
     srun -n ${FLUX_NODES} -N ${FLUX_NODES} --pty --mpi=none --mpibind=off \
