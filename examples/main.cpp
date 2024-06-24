@@ -219,7 +219,7 @@ int run(const char *device_name,
     std::default_random_engine generator;
     std::normal_distribution<double> distribution(avg, stdDev);
     threshold = distribution(generator);
-#ifdef __ENABLE_MPI__
+#ifdef __AMS_ENABLE_MPI__
     if (wS > 1) {
       if (rId == 0) {
         for (int i = 1; i < wS; i++) {

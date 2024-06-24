@@ -55,7 +55,14 @@ target_include_directories(AMS PUBLIC
   $<INSTALL_INTERFACE:include/>)
 target_include_directories(AMS PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_directories(AMS PUBLIC ${AMS_APP_LIB_DIRS})
-target_link_libraries(AMS PUBLIC ${AMS_APP_LIBRARIES} stdc++fs)
+if (EXCLUDE_STATIC_LIBS)
+   target_link_libraries(AMS PRIVATE ${NONSTATIC_AMS_APP_PRIVATE_LIBRARIES} ${AMS_APP_PRIVATE_LIBRARIES} ${AMS_TORCH_LIBRARY} stdc++fs stdc++ /usr/tce/packages/intel/intel-2022.1.0/compiler/2022.1.0/linux/compiler/lib/intel64_lin/libintlc.so m)
+   target_link_libraries(AMS INTERFACE ${NONSTATIC_AMS_APP_INTERFACE_LIBRARIES} stdc++fs stdc++ /usr/tce/packages/intel/intel-2022.1.0/compiler/2022.1.0/linux/compiler/lib/intel64_lin/libintlc.so m)
+   target_link_options(AMS PRIVATE "-Wl,--unresolved-symbols=ignore-all")
+else()
+   target_link_libraries(AMS PUBLIC ${AMS_APP_LIBRARIES} stdc++fs stdc++ /usr/tce/packages/intel/intel-2022.1.0/compiler/2022.1.0/linux/compiler/lib/intel64_lin/libintlc.so m)
+   target_link_libraries(AMS PRIVATE ${AMS_APP_PRIVATE_LIBRARIES})
+endif()
 
 #-------------------------------------------------------------------------------
 # create the configuration header file with the respective information
@@ -88,7 +95,7 @@ install(TARGETS AMS
         DESTINATION lib)
 
 install(EXPORT AMSTargets
-  FILE AMS.cmake
+  FILE AMSConfig.cmake
   DESTINATION lib/cmake/AMS)
 
 install(FILES ${PROJECT_BINARY_DIR}/include/AMS.h DESTINATION include)
