@@ -2,6 +2,10 @@
 
 #include "realtype.h"
 
+#ifdef USE_AMS
+#include <AMS.h>
+#endif
+
 class BinomialOptions
 {
 private:
@@ -11,6 +15,10 @@ private:
   real *d_S;
   real *d_X;
   real *d_CallValue;
+#ifdef USE_AMS
+  AMSCAbstrModel model;
+  AMSExecutor wf;
+#endif
 
 public:
   BinomialOptions(unsigned int batchSize);
@@ -21,5 +29,10 @@ public:
            real *_V,
            real *_T,
            size_t optN);
+
+#ifdef USE_AMS
+  static void AMSRun(void *cls, long numOptions, void **inputs, void **outputs);
+#endif
+
   ~BinomialOptions();
 };
