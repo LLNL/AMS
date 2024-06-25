@@ -17,8 +17,11 @@
 #include <cassert>
 #include <chrono>
 #include <iostream>
+#include <numeric>
+#include <vector>
 
 #include "binomialOptions.h"
+#include "kernel.hpp"
 #include "realtype.h"
 
 #define DOUBLE 0
@@ -261,7 +264,11 @@ int main(int argc, char **argv)
   sumDelta = 0;
   sumRef = 0;
 
+  BinomialOptions BO(batch_size);
+  std::vector<real> gpuTiming;
 
+
+  auto t_start = std::chrono::high_resolution_clock::now();
   for (size_t i = 0; i < numOptions; i += batch_size) {
     for (int j = 0; j < std::min(numOptions - i * batch_size, batch_size);
          j++) {
@@ -272,13 +279,22 @@ int main(int argc, char **argv)
       V[j] = 0.10f;
       BlackScholesCall(callValueBS[j], S[j], X[j], T[j], R[j], V[j]);
     }
-    binomialOptionsEntry(callValue,
-                         S,
-                         X,
-                         R,
-                         V,
-                         T,
-                         std::min(numOptions - i * batch_size, batch_size));
+
+    auto start = std::chrono::high_resolution_clock::now();
+    BO.run(callValue,
+           S,
+           X,
+           R,
+           V,
+           T,
+           std::min(numOptions - i * batch_size, batch_size));
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<real> elapsed_seconds = end - start;
+    gpuTime = (real)elapsed_seconds.count();
+    gpuTiming.push_back(gpuTime);
+    real optionsPerSecond =
+        std::min(numOptions - i * batch_size, batch_size) / gpuTime;
+
 
     for (size_t j = 0; j < std::min(numOptions - i * batch_size, batch_size);
          j++) {
@@ -287,18 +303,22 @@ int main(int argc, char **argv)
     }
 
     errorVal = sumDelta / sumRef;
-    printf("Error val: %g\n", errorVal);
+    printf("Error val: %g Throughput: %g (options/sec)\n",
+           errorVal,
+           optionsPerSecond);
   }
+  auto t_end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<real> elapsed_seconds = t_end - t_start;
+  std::cout << "Total Duration was " << elapsed_seconds.count() << " (s) \n";
+  real sum_of_elems = std::accumulate(gpuTiming.begin(),
+                                      gpuTiming.end(),
+                                      decltype(gpuTiming)::value_type(0));
+  std::cout << "Total GPU Time was " << sum_of_elems << " (s) \n";
+  std::cout << "Average Throughput " << numOptions / sum_of_elems
+            << " (options/sec) \n";
+  std::cout << "Average Throughput (including host) "
+            << numOptions / elapsed_seconds.count() << " (options/sec) \n";
 
-  auto end = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<real> elapsed_seconds = end - start;
-  gpuTime = (real)elapsed_seconds.count();
-
-  printf("Options count            : %i     \n", numOptions);
-  printf("Time steps               : %i     \n", NUM_STEPS);
-  printf("Total binomialOptionsGPU() time: %f msec\n", gpuTime * 1000);
-  printf("Options per second       : %f     \n",
-         numOptions / (gpuTime * NUM_ITERATIONS));
 
   if (errorVal > 5e-4) {
     printf("Test failed! %f\n", errorVal);
