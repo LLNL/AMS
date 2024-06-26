@@ -18,8 +18,14 @@
 
 #ifndef DOUBLE_PRECISION
 typedef float real;
+#ifdef __ENABLE_MPI__
+#define BO_MPI_REAL MPI_FLOAT
+#endif
 #else
 typedef double real;
+#ifdef __ENABLE_MPI__
+#define BO_MPI_REAL MPI_DOUBLE
+#endif
 #endif
 
 
