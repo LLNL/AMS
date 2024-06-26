@@ -9,6 +9,7 @@
  *
  */
 
+#include <cuda_runtime.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -236,6 +237,10 @@ int main(int argc, char **argv)
     return EXIT_FAILURE;
   }
 
+  if (rank == 0) {
+    printf("The number of ranks are %d\n", size);
+  }
+
 
   size_t numOptions = std::atoi(argv[1]);
   size_t batch_size = std::atoi(argv[2]);
@@ -269,6 +274,19 @@ int main(int argc, char **argv)
 
 
   printf("Running GPU binomial tree...\n");
+
+  int deviceCount = 0;
+  cudaError_t error_id = cudaGetDeviceCount(&deviceCount);
+
+  cudaDeviceProp deviceProp;
+  int dev, driverVersion = 0, runtimeVersion = 0;
+  cudaGetDevice(&dev);
+  cudaGetDeviceProperties(&deviceProp, dev);
+  printf("\nDevice %d/%d: Rank: %d \"%s\"\n",
+         dev,
+         deviceCount,
+         rank,
+         deviceProp.name);
 
   auto start = std::chrono::high_resolution_clock::now();
   sumDelta = 0;

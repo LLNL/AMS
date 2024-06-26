@@ -6,11 +6,14 @@
 import datetime
 import os
 import shutil
+import json
 from pathlib import Path
 
 import kosh
 
 from ams.util import get_unique_fn
+from ams.util import mkdir
+from ams.config import AMSInstance
 
 
 class AMSDataStore:
@@ -42,13 +45,20 @@ class AMSDataStore:
         """
 
         create_store_directories(store_path)
-
+        self._root_path = Path(store_path)
         self._delete_contents = delete_all_contents
         self._name = name
-        self._store_path = Path(store_path) / Path(store_name)
+        self._store_path = Path(store_path).absolute() / Path(store_name)
         self._AMS_schema = kosh.KoshSchema(required=AMSDataStore.data_schema)
         self._store = None
         self._entry_paths = {k: Path(store_path) / Path(k) for k in self.__class__.valid_entries}
+
+        # FIXME: I don't like the fact that we have 2 representations of the information of the store
+        if not (Path(store_path) / Path("ams_config.json")).exists():
+            with open(str(Path(store_path) / Path("ams_config.json")), "w") as fd:
+                config = AMSInstance.create_config(store_path, store_name, name)
+                print("Store creates config", config)
+                json.dump(config, fd, indent=6)
 
     def is_open(self):
         """
@@ -68,6 +78,20 @@ class AMSDataStore:
         self._store = kosh.connect(str(self._store_path), delete_all_contents=self._delete_contents)
 
         return self
+
+    @property
+    def store_path(self):
+        return self._store_path
+
+    @property
+    def root_path(self):
+        return self._root_path
+
+    def get_candidate_path(self):
+        return self._entry_paths["candidates"]
+
+    def get_data_path(self):
+        return self._entry_paths["data"]
 
     def _get_or_create_dataset(self, ensemble, entry, version):
         """
@@ -516,6 +540,4 @@ def create_store_directories(store_path):
         store_path.mkdir(parents=True, exist_ok=True)
 
     for fn in list(AMSDataStore.valid_entries):
-        _tmp = store_path / Path(fn)
-        if not _tmp.exists():
-            _tmp.mkdir(parents=True, exist_ok=True)
+        mkdir(store_path, fn)

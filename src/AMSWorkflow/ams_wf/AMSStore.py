@@ -77,7 +77,7 @@ class AddToStore(StoreCommand):
 
     def __init__(self, entry=None, file="", metadata=None, copy=True, version=None, **kwargs):
         """
-        Initializes the 'SearchStore' class with the specific query
+        Initializes the 'AddToStore' class with the specific query
 
         Args:
             entry: Optional name of an ensemble to search for names
@@ -126,7 +126,7 @@ class RemoveFromStore(StoreCommand):
 
     def __init__(self, entry=None, metadata=None, version=None, purge=False):
         """
-        Initializes the 'SearchStore' class with the specific query
+        Initializes the 'RemoveFromStore' class with the specific query
 
         Args:
             entry: Optional name of an ensemble to search for names
