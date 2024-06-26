@@ -20,6 +20,10 @@
 #include <numeric>
 #include <vector>
 
+#ifdef __ENABLE_MPI__
+#include <mpi.h>
+#endif
+
 #include "binomialOptions.h"
 #include "kernel.hpp"
 #include "realtype.h"
@@ -217,14 +221,21 @@ extern "C" void binomialOptionsEntry(real *callValue,
 
 int main(int argc, char **argv)
 {
-  printf("[%s] - Starting...\n", argv[0]);
-
   FILE *file;
+  int size = 1;
+  int rank = 0;
+
+#ifdef __ENABLE_MPI__
+  MPI_Init(&argc, &argv);
+  MPI_Comm_size(MPI_COMM_WORLD, &size);
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+#endif
 
   if (argc != 3) {
     std::cout << "USAGE: " << argv[0] << " num-options batch_size";
     return EXIT_FAILURE;
   }
+
 
   size_t numOptions = std::atoi(argv[1]);
   size_t batch_size = std::atoi(argv[2]);
@@ -235,8 +246,6 @@ int main(int argc, char **argv)
   int *otype;
 
   real sumDelta, sumRef, gpuTime, errorVal;
-
-  printf("Reading input data...\n");
 
 #define PAD 256
 #define LINESIZE 64
@@ -264,10 +273,12 @@ int main(int argc, char **argv)
   sumDelta = 0;
   sumRef = 0;
 
-  BinomialOptions BO(batch_size);
+  BinomialOptions BO(batch_size, rank, size);
   std::vector<real> gpuTiming;
 
-
+#ifdef __ENABLE_MPI__
+  MPI_Barrier(MPI_COMM_WORLD);
+#endif
   auto t_start = std::chrono::high_resolution_clock::now();
   for (size_t i = 0; i < numOptions; i += batch_size) {
     for (int j = 0; j < std::min(numOptions - i * batch_size, batch_size);
@@ -291,9 +302,7 @@ int main(int argc, char **argv)
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<real> elapsed_seconds = end - start;
     gpuTime = (real)elapsed_seconds.count();
-    gpuTiming.push_back(gpuTime);
-    real optionsPerSecond =
-        std::min(numOptions - i * batch_size, batch_size) / gpuTime;
+    double gDuration = gpuTime;
 
 
     for (size_t j = 0; j < std::min(numOptions - i * batch_size, batch_size);
@@ -303,22 +312,50 @@ int main(int argc, char **argv)
     }
 
     errorVal = sumDelta / sumRef;
-    printf("Error val: %g Throughput: %g (options/sec)\n",
-           errorVal,
-           optionsPerSecond);
-  }
-  auto t_end = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<real> elapsed_seconds = t_end - t_start;
-  std::cout << "Total Duration was " << elapsed_seconds.count() << " (s) \n";
-  real sum_of_elems = std::accumulate(gpuTiming.begin(),
-                                      gpuTiming.end(),
-                                      decltype(gpuTiming)::value_type(0));
-  std::cout << "Total GPU Time was " << sum_of_elems << " (s) \n";
-  std::cout << "Average Throughput " << numOptions / sum_of_elems
-            << " (options/sec) \n";
-  std::cout << "Average Throughput (including host) "
-            << numOptions / elapsed_seconds.count() << " (options/sec) \n";
+    double gErrorVal = errorVal;
+#ifdef __ENABLE_MPI__
+    MPI_Reduce(
+        &errorVal, &gErrorVal, 1, BO_MPI_REAL, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(
+        &gpuTime, &gDuration, 1, BO_MPI_REAL, MPI_SUM, 0, MPI_COMM_WORLD);
+#endif
 
+    if (rank == 0) {
+      real optionsPerSecond = std::min(numOptions - i * batch_size, batch_size);
+      optionsPerSecond = (optionsPerSecond * size) / gpuTime;
+
+      gErrorVal /= size;
+      gpuTime = gDuration / size;
+      gpuTiming.push_back(gpuTime);
+      printf(
+          "Error val: %g Throughput: %g (options/sec) Average duration: %g\n",
+          gErrorVal,
+          optionsPerSecond,
+          gpuTime);
+    }
+  }
+#ifdef __ENABLE_MPI__
+  MPI_Barrier(MPI_COMM_WORLD);
+#endif
+  if (rank == 0) {
+    auto t_end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<real> elapsed_seconds = t_end - t_start;
+    std::cout << "Total Duration was " << elapsed_seconds.count() << " (s) \n";
+    std::cout << "Total number of options was " << size * numOptions
+              << " (s) \n";
+    real sum_of_elems = std::accumulate(gpuTiming.begin(),
+                                        gpuTiming.end(),
+                                        decltype(gpuTiming)::value_type(0));
+    std::cout << "Total GPU Time was " << sum_of_elems << " (s) \n";
+    std::cout << "Average Throughput " << (size * numOptions) / sum_of_elems
+              << " (options/sec) \n";
+    std::cout << "Average Throughput (including host) "
+              << numOptions / elapsed_seconds.count() << " (options/sec) \n";
+  }
+
+#ifdef __ENABLE_MPI__
+  MPI_Finalize();
+#endif
 
   if (errorVal > 5e-4) {
     printf("Test failed! %f\n", errorVal);
