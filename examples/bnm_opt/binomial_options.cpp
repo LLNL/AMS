@@ -264,7 +264,8 @@ int main(int argc, char **argv)
   real *V = new real[batch_size];
   real *callValue = new real[batch_size];
   real *callValueBS = new real[batch_size];
-  srand(123);
+  // Adding rank to allow ranks to compute different random data, yet remain deterministic
+  srand(123 + rank);
 
 
   printf("Running GPU binomial tree...\n");
