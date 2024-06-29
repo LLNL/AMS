@@ -165,6 +165,18 @@ class AMSWorkflow
     Store(num_elements, mInputs, outputs, predicate);
   }
 
+  bool updateModel()
+  {
+    if (!DB) return false;
+    bool local = DB->updateModel();
+#ifdef __ENABLE_MPI__
+    bool global = false;
+    MPI_Allreduce(&local, &global, 1, MPI_CXX_BOOL, MPI_LAND, comm);
+    return global;
+#else
+    return local;
+#endif
+  }
 
 public:
   AMSWorkflow()
@@ -318,9 +330,16 @@ public:
       return;
     }
 
-    if (DB && DB->updateModel()) {
-      UQModel->updateModel("");
+    CALIPER(CALI_MARK_BEGIN("UPDATEMODEL");)
+    if (updateModel()) {
+      auto model = DB->getLatestModel();
+      CINFO(Workflow,
+            rId == 0,
+            "Updating surrogate model with %s",
+            model.c_str())
+      UQModel->updateModel(model);
     }
+    CALIPER(CALI_MARK_END("UPDATEMODEL");)
 
     // The predicate with which we will split the data on a later step
     bool *predicate = rm.allocate<bool>(totalElements, appDataLoc);

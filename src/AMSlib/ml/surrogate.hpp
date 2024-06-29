@@ -135,7 +135,7 @@ private:
   inline void _load(const std::string& model_path,
                     const std::string& device_name)
   {
-    DBG(Surrogate, "Using model at double precision");
+    DBG(Surrogate, "Using model at double precision: %s", model_path.c_str());
     _load_torch(model_path, torch::Device(device_name), torch::kFloat64);
   }
 
@@ -145,7 +145,7 @@ private:
   inline void _load(const std::string& model_path,
                     const std::string& device_name)
   {
-    DBG(Surrogate, "Using model at single precision");
+    DBG(Surrogate, "Using model at single precision: %s", model_path.c_str());
     _load_torch(model_path, torch::Device(device_name), torch::kFloat32);
   }
 

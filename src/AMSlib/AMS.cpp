@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
  */
 
+#include "AMS.h"
+
 #include <limits.h>
 #include <unistd.h>
 
@@ -17,7 +19,6 @@
 #include <utility>
 #include <vector>
 
-#include "AMS.h"
 #include "include/AMS.h"
 #include "ml/uq.hpp"
 #include "wf/basedb.hpp"
@@ -268,6 +269,7 @@ public:
   std::unordered_map<std::string, int> ams_candidate_models;
   AMSDBType dbType = AMSDBType::AMS_NONE;
   ams::ResourceManager &memManager;
+  int rId;
 
 private:
   void dumpEnv()
@@ -339,7 +341,7 @@ private:
 
     std::string db_path = entry["fs_path"].get<std::string>();
     auto &DB = ams::db::DBManager::getInstance();
-    DB.instantiate_fs_db(dbType, db_path);
+    DB.instantiate_fs_db(rId, dbType, db_path);
     DBG(AMS,
         "Configured AMS File system database to point to %s using file "
         "type %s",
@@ -372,21 +374,25 @@ private:
     std::string rmq_user = getEntry<std::string>(rmq_entry, "rabbitmq-user");
     std::string rmq_vhost = getEntry<std::string>(rmq_entry, "rabbitmq-vhost");
     std::string rmq_cert = getEntry<std::string>(rmq_entry, "rabbitmq-cert");
-    std::string rmq_in_queue =
-        getEntry<std::string>(rmq_entry, "rabbitmq-inbound-queue");
     std::string rmq_out_queue =
         getEntry<std::string>(rmq_entry, "rabbitmq-outbound-queue");
+    std::string exchange =
+        getEntry<std::string>(rmq_entry, "rabbitmq-exchange");
+    std::string routing_key =
+        getEntry<std::string>(rmq_entry, "rabbitmq-routing-key");
 
     auto &DB = ams::db::DBManager::getInstance();
-    DB.instantiate_rmq_db(port,
+    DB.instantiate_rmq_db(rId,
+                          port,
                           host,
                           rmq_name,
                           rmq_pass,
                           rmq_user,
                           rmq_vhost,
                           rmq_cert,
-                          rmq_in_queue,
-                          rmq_out_queue);
+                          rmq_out_queue,
+                          exchange,
+                          routing_key);
   }
 
   void parseDatabase(json &jRoot)
@@ -485,6 +491,8 @@ private:
 public:
   AMSWrap() : memManager(ams::ResourceManager::getInstance())
   {
+    rId = get_rank_id();
+
     auto log_stats = setup_loggers();
     DBG(AMS,
         "Enable Log %d stored under %s",
@@ -772,10 +780,12 @@ AMSCAbstrModel AMSQueryModel(const char *domain_model)
   return _amsWrap.get_model_index(domain_model);
 }
 
-void AMSConfigureFSDatabase(AMSDBType db_type, const char *db_path)
+void AMSConfigureFSDatabase(uint64_t rId,
+                            AMSDBType db_type,
+                            const char *db_path)
 {
   auto &db_instance = ams::db::DBManager::getInstance();
-  db_instance.instantiate_fs_db(db_type, std::string(db_path));
+  db_instance.instantiate_fs_db(rId, db_type, std::string(db_path));
 }
 
 #ifdef __cplusplus

@@ -25,8 +25,11 @@ void memUsage(double& vm_usage, double& resident_set);
               "[AMS:%s:%s] ",                      \
               ams::util::getVerbosityKey(vl),      \
               GETNAME(id));                        \
+      fflush(ams::util::out(vl));                  \
       fprintf(ams::util::out(vl), __VA_ARGS__);    \
+      fflush(ams::util::out(vl));                  \
       fprintf(ams::util::out(vl), "\n");           \
+      fflush(ams::util::out(vl));                  \
     }                                              \
   } while (0);
 

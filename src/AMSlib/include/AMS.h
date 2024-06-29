@@ -111,7 +111,7 @@ void AMSDestroyExecutor(AMSExecutor executor);
 
 void AMSSetAllocator(AMSResourceType resource, const char *alloc_name);
 const char *AMSGetAllocatorName(AMSResourceType device);
-void AMSConfigureFSDatabase(AMSDBType db_type, const char *db_path);
+void AMSConfigureFSDatabase(uint64_t rId, AMSDBType db_type, const char *db_path);
 
 #ifdef __cplusplus
 }

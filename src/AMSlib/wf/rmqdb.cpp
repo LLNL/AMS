@@ -109,7 +109,7 @@ void AMSMessage::swap(const AMSMessage& other)
   _data = other._data;
 }
 
-AMSMessage::AMSMessage(int id, uint8_t* data)
+AMSMessage::AMSMessage(int id, uint64_t rId, uint8_t* data)
     : _id(id),
       _num_elements(0),
       _input_dim(0),
@@ -119,10 +119,7 @@ AMSMessage::AMSMessage(int id, uint8_t* data)
 {
   auto header = AMSMsgHeader::decode(data);
 
-  int current_rank = 0;
-#ifdef __ENABLE_MPI__
-  MPI_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &current_rank));
-#endif
+  int current_rank = rId;
   _rank = header.mpi_rank;
   CWARNING(AMSMessage,
            _rank != current_rank,
@@ -141,10 +138,81 @@ AMSMessage::AMSMessage(int id, uint8_t* data)
 }
 
 /**
- * RMQConsumerHandler
+ * AMSMessageInbound
  */
 
-bool RMQConsumerHandler::onSecuring(AMQP::TcpConnection* connection, SSL* ssl)
+bool AMSMessageInbound::isTraining()
+{
+  auto split = splitString(body, ":");
+  return split[0] == "UPDATE";
+}
+
+std::string AMSMessageInbound::getModelPath()
+{
+  auto split = splitString(body, ":");
+  if (split[0] == "UPDATE") {
+    return split[1];
+  }
+  return {};
+}
+
+std::vector<std::string> AMSMessageInbound::splitString(std::string str,
+                                                        std::string delimiter)
+{
+  size_t pos = 0;
+  std::string token;
+  std::vector<std::string> res;
+  while ((pos = str.find(delimiter)) != std::string::npos) {
+    token = str.substr(0, pos);
+    res.push_back(token);
+    str.erase(0, pos + delimiter.length());
+  }
+  res.push_back(str);
+  return res;
+}
+
+/**
+ * RMQHandler
+ */
+
+RMQHandler::RMQHandler(uint64_t rId,
+                       std::shared_ptr<struct event_base> loop,
+                       std::string cacert)
+    : AMQP::LibEventHandler(loop.get()),
+      _rId(rId),
+      _loop(loop),
+      _cacert(std::move(cacert))
+{
+  established = establish_connection.get_future();
+  closed = close_connection.get_future();
+  ftr_error = error_connection.get_future();
+}
+
+bool RMQHandler::waitToEstablish(unsigned ms, int repeat)
+{
+  if (waitFuture(established, ms, repeat)) {
+    auto status = established.get();
+    DBG(RMQHandler, "Connection Status: %d", status);
+    return status == CONNECTED;
+  }
+  return false;
+}
+
+bool RMQHandler::waitToClose(unsigned ms, int repeat)
+{
+  if (waitFuture(closed, ms, repeat)) {
+    return closed.get() == CLOSED;
+  }
+  return false;
+}
+
+bool RMQHandler::connectionValid()
+{
+  std::chrono::milliseconds span(1);
+  return ftr_error.wait_for(span) != std::future_status::ready;
+}
+
+bool RMQHandler::onSecuring(AMQP::TcpConnection* connection, SSL* ssl)
 {
   ERR_clear_error();
   unsigned long err;
@@ -153,9 +221,6 @@ bool RMQConsumerHandler::onSecuring(AMQP::TcpConnection* connection, SSL* ssl)
 #else
   int ret = SSL_use_certificate_chain_file(ssl, _cacert.c_str());
 #endif
-  // FIXME: with openssl 3.0
-  // Set => SSL_set_options(ssl, SSL_OP_IGNORE_UNEXPECTED_EOF);
-
   if (ret != 1) {
     std::string error("openssl: error loading ca-chain (" + _cacert +
                       ") + from [");
@@ -164,129 +229,301 @@ bool RMQConsumerHandler::onSecuring(AMQP::TcpConnection* connection, SSL* ssl)
       error += std::string(ERR_reason_error_string(err));
     }
     error += "]";
-    throw std::runtime_error(error);
+    establish_connection.set_value(FAILED);
+    return false;
   } else {
-    DBG(RMQConsumerHandler, "Success logged with ca-chain %s", _cacert.c_str())
+    DBG(RMQHandler, "Success logged with ca-chain %s", _cacert.c_str())
     return true;
   }
+}
+
+// /**
+//    *  @brief Method that is called by the AMQP library when the login attempt
+//    *  succeeded. After this the connection is ready to use.
+//    *  @param[in]  connection      The connection that can now be used
+//    */
+// void RMQHandler::onReady(AMQP::TcpConnection* connection)
+// {
+//   DBG(RMQHandler,
+//       "[rank=%d] Sucessfuly logged in (connection %p). Connection ready to "
+//       "use.",
+//       _rank,
+//       connection)
+
+//   _channel = std::make_shared<AMQP::TcpChannel>(connection);
+//   _channel->onError([&](const char* message) {
+//     CFATAL(RMQHandler,
+//            false,
+//            "[rank=%d] Error on channel: %s",
+//            _rank,
+//            message)
+//   });
+
+//   _channel->declareQueue(_queue)
+//       .onSuccess([&](const std::string& name,
+//                      uint32_t messagecount,
+//                      uint32_t consumercount) {
+//         CDEBUG(RMQHandler,
+//                   _rank == 0,
+//                   "[rank=%d] declared queue: %s (messagecount=%d, "
+//                   "consumercount=%d)",
+//                   _rank,
+//                   _queue.c_str(),
+//                   messagecount,
+//                   consumercount)
+//         // We can now instantiate the shared buffer between AMS and RMQ
+//         _rchannel =
+//             std::make_shared<AMQP::Reliable<AMQP::Tagger>>(*_channel.get());
+//         establish_connection.set_value(CONNECTED);
+//       })
+//       .onError([&](const char* message) {
+//         CFATAL(RMQHandler,
+//                false,
+//                "[ERROR][rank=%d] Error while creating broker queue (%s): "
+//                "%s",
+//                _rank,
+//                _queue.c_str(),
+//                message)
+//         establish_connection.set_value(FAILED);
+//       });
+// }
+
+void RMQHandler::onError(AMQP::TcpConnection* connection, const char* message)
+{
+  WARNING(RMQHandler, "[r%d] fatal error on TCP connection: %s", _rId, message)
+  try {
+    error_connection.set_value(ERROR);
+  } catch (const std::future_error& e) {
+    DBG(RMQHandler, "[r%d] future already set.", _rId)
+  }
+}
+
+void RMQHandler::onDetached(AMQP::TcpConnection* connection)
+{
+  DBG(RMQHandler, "[r%d] Connection is detached.", _rId)
+  close_connection.set_value(CLOSED);
+}
+
+bool RMQHandler::waitFuture(std::future<RMQConnectionStatus>& future,
+                            unsigned ms,
+                            int repeat)
+{
+  std::chrono::milliseconds span(ms);
+  int iters = 0;
+  std::future_status status;
+  while ((status = future.wait_for(span)) == std::future_status::timeout &&
+         (iters++ < repeat))
+    std::future<RMQConnectionStatus> established;
+  return status == std::future_status::ready;
+}
+
+/**
+ * RMQConsumerHandler
+ */
+
+std::tuple<uint64_t, std::string> RMQConsumerHandler::getLatestModel()
+{
+  std::string model = "";
+  uint64_t latest_tag = 0;
+  for (AMSMessageInbound& e : *_messages) {
+    if (latest_tag < e.id) {
+      model = e.getModelPath();
+      latest_tag = e.id;
+    }
+  }
+  return std::make_tuple(latest_tag, model);
+}
+
+AMSMessageInbound RMQConsumerHandler::popMessages()
+{
+  if (!_messages->empty()) {
+    AMSMessageInbound msg = _messages->back();
+    _messages->pop_back();
+    return msg;
+  }
+  return AMSMessageInbound();
+}
+
+AMSMessageInbound RMQConsumerHandler::getMessages(uint64_t delivery_tag,
+                                                  bool erase)
+{
+  if (!_messages->empty()) {
+    auto it = std::find_if(_messages->begin(),
+                           _messages->end(),
+                           [&delivery_tag](const AMSMessageInbound& e) {
+                             return e.id == delivery_tag;
+                           });
+    if (it != _messages->end()) {
+      AMSMessageInbound msg(std::move(*it));
+      if (erase) _messages->erase(it);
+      return msg;
+    }
+  }
+  return AMSMessageInbound();
 }
 
 void RMQConsumerHandler::onReady(AMQP::TcpConnection* connection)
 {
   DBG(RMQConsumerHandler,
-      "[rank=%d] Sucessfuly logged in. Connection ready to use.",
-      _rank)
+      "[r%d] Sucessfuly logged in. Connection ready to use.",
+      _rId)
 
   _channel = std::make_shared<AMQP::TcpChannel>(connection);
   _channel->onError([&](const char* message) {
-    CFATAL(RMQConsumerHandler,
-           false,
-           "[rank=%d] Error on channel: %s",
-           _rank,
-           message)
+    WARNING(RMQConsumerHandler, "[r%d] Error on channel: %s", _rId, message)
+    establish_connection.set_value(FAILED);
   });
 
-  _channel->declareQueue(_queue)
-      .onSuccess([&](const std::string& name,
-                     uint32_t messagecount,
-                     uint32_t consumercount) {
-        if (messagecount > 0 || consumercount > 1) {
-          CWARNING(RMQConsumerHandler,
-                   _rank == 0,
-                   "[rank=%d] declared queue: %s (messagecount=%d, "
-                   "consumercount=%d)",
-                   _rank,
-                   _queue.c_str(),
-                   messagecount,
-                   consumercount)
-        }
-        // We can now install callback functions for when we will consumme messages
-        // callback function that is called when the consume operation starts
-        auto startCb = [](const std::string& consumertag) {
-          DBG(RMQConsumerHandler,
-              "consume operation started with tag: %s",
-              consumertag.c_str())
-        };
+  _channel->declareExchange(_exchange, _extype)
+      .onSuccess([&, this]() {
+        DBG(RMQConsumerHandler,
+            "[r%d] declared exchange %s (type: %d)",
+            _rId,
+            _exchange.c_str(),
+            _extype)
+        establish_connection.set_value(CONNECTED);
+        _channel->declareQueue(_queue)
+            .onSuccess([&, this](const std::string& name,
+                                 uint32_t messagecount,
+                                 uint32_t consumercount) {
+              CDEBUG(RMQConsumerHandler,
+                     _rId == 0,
+                     "[r%d] declared queue: %s (messagecount=%d, "
+                     "consumercount=%d)",
+                     _rId,
+                     name.c_str(),
+                     messagecount,
+                     consumercount)
+              _channel->bindQueue(_exchange, name, _routing_key)
+                  .onSuccess([&, name, this]() {
+                    // establish_connection.set_value(CONNECTED);
+                    // establish_connection = set_future_silent(std::move(establish_connection), CONNECTED);
 
-        // callback function that is called when the consume operation failed
-        auto errorCb = [](const char* message) {
-          CFATAL(RMQConsumerHandler,
-                 false,
-                 "consume operation failed: %s",
-                 message);
-        };
-        // callback operation when a message was received
-        auto messageCb = [&](const AMQP::Message& message,
-                             uint64_t deliveryTag,
-                             bool redelivered) {
-          // acknowledge the message
-          _channel->ack(deliveryTag);
-          std::string msg(message.body(), message.bodySize());
-          DBG(RMQConsumerHandler,
-              "message received [tag=%lu] : '%s' of size %lu B from "
-              "'%s'/'%s'",
-              deliveryTag,
-              msg.c_str(),
-              message.bodySize(),
-              message.exchange().c_str(),
-              message.routingkey().c_str())
-          _messages->push_back(std::make_tuple(std::move(msg),
-                                               message.exchange(),
-                                               message.routingkey(),
-                                               deliveryTag,
-                                               redelivered));
-        };
+                    INFO(RMQConsumerHandler,
+                         "[r%d] Bounded queue %s to exchange %s with "
+                         "routing key = %s",
+                         _rId,
+                         name.c_str(),
+                         _exchange.c_str(),
+                         _routing_key.c_str())
 
-        /* callback that is called when the consumer is cancelled by RabbitMQ (this
-          * only happens in rare situations, for example when someone removes the queue
-          * that you are consuming from)
-          */
-        auto cancelledCb = [](const std::string& consumertag) {
-          WARNING(RMQConsumerHandler,
-                  "consume operation cancelled by the RabbitMQ server: %s",
-                  consumertag.c_str())
-        };
+                    // We can now install callback functions for when we will consumme messages
+                    // callback function that is called when the consume operation starts
+                    auto startCb = [&](const std::string& consumertag) {
+                      DBG(RMQConsumerHandler,
+                          "[r%d] consume operation started with tag: %s",
+                          _rId,
+                          consumertag.c_str())
+                    };
 
-        // start consuming from the queue, and install the callbacks
-        _channel->consume(_queue)
-            .onReceived(messageCb)
-            .onSuccess(startCb)
-            .onCancelled(cancelledCb)
-            .onError(errorCb);
-      })
+                    // callback function that is called when the consume operation failed
+                    auto errorCb = [&](const char* message) {
+                      WARNING(RMQConsumerHandler,
+                              "[r%d] consume operation failed: %s",
+                              _rId,
+                              message);
+                    };
+                    // callback operation when a message was received
+                    auto messageCb = [&](const AMQP::Message& message,
+                                         uint64_t deliveryTag,
+                                         bool redelivered) {
+                      // acknowledge the message
+                      _channel->ack(deliveryTag);
+                      // _on_message_received(message, deliveryTag, redelivered);
+                      std::string msg(message.body(), message.bodySize());
+                      INFO(RMQConsumerHandler,
+                           "[r%d] message received [tag=%d] : '%s' of size "
+                           "%d B from "
+                           "'%s'/'%s'",
+                           _rId,
+                           deliveryTag,
+                           msg.c_str(),
+                           message.bodySize(),
+                           message.exchange().c_str(),
+                           message.routingkey().c_str())
+                      _messages->push_back(
+                          AMSMessageInbound(deliveryTag,
+                                            _rId,
+                                            msg,
+                                            message.exchange(),
+                                            message.routingkey(),
+                                            redelivered));
+                    };
+
+                    /* callback that is called when the consumer is cancelled by RabbitMQ (this
+                  * only happens in rare situations, for example when someone removes the queue
+                  * that you are consuming from)
+                  */
+                    auto cancelledCb = [&](const std::string& consumertag) {
+                      WARNING(RMQConsumerHandler,
+                              "[r%d] consume operation cancelled by the "
+                              "RabbitMQ server: %s",
+                              _rId,
+                              consumertag.c_str())
+                    };
+
+                    DBG(RMQConsumerHandler,
+                        "[r%d] starting consume operation",
+                        _rId)
+
+                    // start consuming from the queue, and install the callbacks
+                    _channel->consume(name)
+                        .onReceived(std::move(messageCb))
+                        .onSuccess(std::move(startCb))
+                        .onCancelled(std::move(cancelledCb))
+                        .onError(std::move(errorCb));
+                  })  //consume
+                  .onError([&](const char* message) {
+                    WARNING(RMQConsumerHandler,
+                            "[r%d] creating queue: %s",
+                            _rId,
+                            message)
+                    establish_connection.set_value(FAILED);
+                  });  //consume
+            })         //bindQueue
+            .onError([&](const char* message) {
+              WARNING(RMQConsumerHandler,
+                      "[r%d] failed to bind queue to exchange: %s",
+                      _rId,
+                      message)
+              // bool res = set_future_silent(std::move(establish_connection), FAILED);
+              // establish_connection.set_value(FAILED);
+            });  //bindQueue
+      })         //declareExchange
       .onError([&](const char* message) {
-        CFATAL(RMQConsumerHandler,
-               false,
-               "[ERROR][rank=%d] Error while creating broker queue (%s): "
-               "%s",
-               _rank,
-               _queue.c_str(),
-               message)
-      });
+        WARNING(RMQConsumerHandler,
+                "[r%d] failed to create exchange: %s",
+                _rId,
+                message)
+        establish_connection.set_value(FAILED);
+      });  //declareExchange
 }
 
 /**
  * RMQConsumer
  */
 
-RMQConsumer::RMQConsumer(const AMQP::Address& address,
+RMQConsumer::RMQConsumer(uint64_t rId,
+                         const AMQP::Address& address,
                          std::string cacert,
-                         std::string queue)
-    : _rank(0), _queue(queue), _cacert(cacert), _handler(nullptr)
+                         std::string exchange,
+                         std::string routing_key)
+    : _rId(rId),
+      _cacert(cacert),
+      _routing_key(routing_key),
+      _exchange(exchange),
+      _handler(nullptr)
 {
-#ifdef __ENABLE_MPI__
-  MPI_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &_rank));
-#endif
 #ifdef EVTHREAD_USE_PTHREADS_IMPLEMENTED
   evthread_use_pthreads();
 #endif
   CDEBUG(RMQConsumer,
-         _rank == 0,
+         _rId == 0,
          "Libevent %s (LIBEVENT_VERSION_NUMBER = %#010x)",
          event_get_version(),
          event_get_version_number());
   CDEBUG(RMQConsumer,
-         _rank == 0,
+         _rId == 0,
          "%s (OPENSSL_VERSION_NUMBER = %#010x)",
          OPENSSL_VERSION_TEXT,
          OPENSSL_VERSION_NUMBER);
@@ -296,69 +533,26 @@ RMQConsumer::RMQConsumer(const AMQP::Address& address,
   OPENSSL_init_ssl(0, NULL);
 #endif
   CINFO(RMQConsumer,
-        _rank == 0,
-        "RabbitMQ address: %s:%d/%s (queue = %s)",
+        _rId == 0,
+        "RabbitMQ address: %s:%d/%s (exchange = %s / routing key = %s)",
         address.hostname().c_str(),
         address.port(),
         address.vhost().c_str(),
-        _queue.c_str())
+        _exchange.c_str(),
+        _routing_key.c_str())
 
   _loop = std::shared_ptr<struct event_base>(event_base_new(),
                                              [](struct event_base* event) {
                                                event_base_free(event);
                                              });
-  _handler = std::make_shared<RMQConsumerHandler>(_loop, _cacert, _queue);
+  _handler = std::make_shared<RMQConsumerHandler>(
+      rId, _loop, _cacert, _exchange, _routing_key, AMQP::fanout);
   _connection = new AMQP::TcpConnection(_handler.get(), address);
-}
-
-inbound_msg RMQConsumer::pop_messages()
-{
-  if (!_messages.empty()) {
-    inbound_msg msg = _messages.back();
-    _messages.pop_back();
-    return msg;
-  }
-  return std::make_tuple("", "", "", -1, false);
-}
-
-inbound_msg RMQConsumer::get_messages(uint64_t delivery_tag)
-{
-  if (!_messages.empty()) {
-    auto it = std::find_if(_messages.begin(),
-                           _messages.end(),
-                           [&delivery_tag](const inbound_msg& e) {
-                             return std::get<3>(e) == delivery_tag;
-                           });
-    if (it != _messages.end()) return *it;
-  }
-  return std::make_tuple("", "", "", -1, false);
 }
 
 /**
  * RMQPublisherHandler
  */
-
-RMQPublisherHandler::RMQPublisherHandler(
-    std::shared_ptr<struct event_base> loop,
-    std::string cacert,
-    std::string queue)
-    : AMQP::LibEventHandler(loop.get()),
-      _loop(loop),
-      _rank(0),
-      _cacert(std::move(cacert)),
-      _queue(queue),
-      _nb_msg_ack(0),
-      _nb_msg(0),
-      _channel(nullptr),
-      _rchannel(nullptr)
-{
-#ifdef __ENABLE_MPI__
-  MPI_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &_rank));
-#endif
-  established = establish_connection.get_future();
-  closed = close_connection.get_future();
-  _ftr_error = _error_connection.get_future();
-}
 
 void RMQPublisherHandler::publish(AMSMessage&& msg)
 {
@@ -380,167 +574,73 @@ void RMQPublisherHandler::publish(AMSMessage&& msg)
                 data = msg.data(),
                 &_messages = this->_messages]() mutable {
           DBG(RMQPublisherHandler,
-              "[rank=%d] message #%d (Addr:%p) got acknowledged "
+              "[r%d] message #%d (Addr:%p) got acknowledged "
               "successfully "
               "by "
               "RMQ "
               "server",
-              _rank,
+              _rId,
               id,
               data)
-          this->free_ams_message(id, _messages);
+          this->freeMessage(id, _messages);
           _nb_msg_ack++;
         })
         .onNack([this, id = msg.id(), data = msg.data()]() mutable {
           WARNING(RMQPublisherHandler,
-                  "[rank=%d] message #%d (%p) received negative "
+                  "[r%d] message #%d (%p) received negative "
                   "acknowledged "
                   "by "
                   "RMQ "
                   "server",
-                  _rank,
+                  _rId,
                   id,
                   data)
         })
         .onError([this, id = msg.id(), data = msg.data()](
                      const char* err_message) mutable {
           WARNING(RMQPublisherHandler,
-                  "[rank=%d] message #%d (%p) did not get send: %s",
-                  _rank,
+                  "[r%d] message #%d (%p) did not get send: %s",
+                  _rId,
                   id,
                   data,
                   err_message)
         });
   } else {
     WARNING(RMQPublisherHandler,
-            "[rank=%d] The reliable channel was not ready for message #%d.",
-            _rank,
+            "[r%d] The reliable channel was not ready for message #%d.",
+            _rId,
             msg.id())
   }
   _nb_msg++;
 }
 
-/**
-   *  @brief  Wait (blocking call) until connection has been established or that ms * repeat is over.
-   *  @param[in]  ms            Number of milliseconds the function will wait on the future
-   *  @param[in]  repeat        Number of times the function will wait
-   *  @return     True if connection has been established
-   */
-bool RMQPublisherHandler::waitToEstablish(unsigned ms, int repeat)
-{
-  if (waitFuture(established, ms, repeat)) {
-    auto status = established.get();
-    DBG(RMQPublisherHandler, "Connection Status: %d", status);
-    return status == CONNECTED;
-  }
-  return false;
-}
-
-/**
-   *  @brief  Wait (blocking call) until connection has been closed or that ms * repeat is over.
-   *  @param[in]  ms            Number of milliseconds the function will wait on the future
-   *  @param[in]  repeat        Number of times the function will wait
-   *  @return     True if connection has been closed
-   */
-bool RMQPublisherHandler::waitToClose(unsigned ms, int repeat)
-{
-  if (waitFuture(closed, ms, repeat)) {
-    return closed.get() == CLOSED;
-  }
-  return false;
-}
-
-/**
-   *  @brief  Check if the connection can be used to send messages.
-   *  @return     True if connection is valid (i.e., can send messages)
-   */
-bool RMQPublisherHandler::connection_valid()
-{
-  std::chrono::milliseconds span(1);
-  return _ftr_error.wait_for(span) != std::future_status::ready;
-}
-
-void RMQPublisherHandler::flush()
-{
-  uint32_t tries = 0;
-  while (auto unAck = unacknowledged()) {
-    DBG(RMQPublisherHandler,
-        "Waiting for %lu messages to be acknowledged",
-        unAck);
-
-    if (++tries > 10) break;
-    std::this_thread::sleep_for(std::chrono::milliseconds(50 * tries));
-  }
-  free_all_messages(_messages);
-}
-
-// TODO: Code duplication between consummer and producer, create common base class
-bool RMQPublisherHandler::onSecuring(AMQP::TcpConnection* connection, SSL* ssl)
-{
-  ERR_clear_error();
-  unsigned long err;
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-  int ret = SSL_use_certificate_file(ssl, _cacert.c_str(), SSL_FILETYPE_PEM);
-#else
-  int ret = SSL_use_certificate_chain_file(ssl, _cacert.c_str());
-#endif
-  if (ret != 1) {
-    std::string error("openssl: error loading ca-chain (" + _cacert +
-                      ") + from [");
-    SSL_get_error(ssl, ret);
-    if ((err = ERR_get_error())) {
-      error += std::string(ERR_reason_error_string(err));
-    }
-    error += "]";
-    establish_connection.set_value(FAILED);
-    return false;
-  } else {
-    DBG(RMQPublisherHandler, "Success logged with ca-chain %s", _cacert.c_str())
-    return true;
-  }
-}
-
-/**
-   *  @brief Method that is called by the AMQP library when the login attempt
-   *  succeeded. After this the connection is ready to use.
-   *  @param[in]  connection      The connection that can now be used
-   */
 void RMQPublisherHandler::onReady(AMQP::TcpConnection* connection)
 {
   DBG(RMQPublisherHandler,
-      "[rank=%d] Sucessfuly logged in (connection %p). Connection ready to "
+      "[r%d] Sucessfuly logged in (connection %p). Connection ready to "
       "use.",
-      _rank,
+      _rId,
       connection)
 
   _channel = std::make_shared<AMQP::TcpChannel>(connection);
   _channel->onError([&](const char* message) {
-    CFATAL(RMQPublisherHandler,
-           false,
-           "[rank=%d] Error on channel: %s",
-           _rank,
-           message)
+    CFATAL(
+        RMQPublisherHandler, false, "[r%d] Error on channel: %s", _rId, message)
   });
 
   _channel->declareQueue(_queue)
       .onSuccess([&](const std::string& name,
                      uint32_t messagecount,
                      uint32_t consumercount) {
-        if (messagecount > 0 || consumercount > 1) {
-          CWARNING(RMQPublisherHandler,
-                   _rank == 0,
-                   "[rank=%d] declared queue: %s (messagecount=%d, "
-                   "consumercount=%d)",
-                   _rank,
-                   _queue.c_str(),
-                   messagecount,
-                   consumercount)
-        }
+        CDEBUG(RMQPublisherHandler,
+               _rId == 0,
+               "[r%d] declared queue: %s (messagecount=%d, "
+               "consumercount=%d)",
+               _rId,
+               _queue.c_str(),
+               messagecount,
+               consumercount)
         // We can now instantiate the shared buffer between AMS and RMQ
-        DBG(RMQPublisherHandler,
-            "[rank=%d] declared queue: %s",
-            _rank,
-            _queue.c_str())
         _rchannel =
             std::make_shared<AMQP::Reliable<AMQP::Tagger>>(*_channel.get());
         establish_connection.set_value(CONNECTED);
@@ -548,61 +648,16 @@ void RMQPublisherHandler::onReady(AMQP::TcpConnection* connection)
       .onError([&](const char* message) {
         CFATAL(RMQPublisherHandler,
                false,
-               "[ERROR][rank=%d] Error while creating broker queue (%s): "
+               "[r%d] Error while creating broker queue (%s): "
                "%s",
-               _rank,
+               _rId,
                _queue.c_str(),
                message)
         establish_connection.set_value(FAILED);
       });
 }
 
-void RMQPublisherHandler::onError(AMQP::TcpConnection* connection,
-                                  const char* message)
-{
-  WARNING(RMQPublisherHandler,
-          "[rank=%d] fatal error on TCP connection: %s",
-          _rank,
-          message)
-  try {
-    _error_connection.set_value(ERROR);
-  } catch (const std::future_error& e) {
-    DBG(RMQPublisherHandler, "[rank=%d] future already set.", _rank)
-  }
-}
-
-/**
-    *  @brief Final method that is called. This signals that no further calls to your
-    *  handler will be made about the connection.
-    *  @param  connection      The connection that can be destructed
-    */
-void RMQPublisherHandler::onDetached(AMQP::TcpConnection* connection)
-{
-  //  add your own implementation, like cleanup resources or exit the application
-  DBG(RMQPublisherHandler, "[rank=%d] Connection is detached.", _rank)
-  close_connection.set_value(CLOSED);
-}
-
-bool RMQPublisherHandler::waitFuture(std::future<RMQConnectionStatus>& future,
-                                     unsigned ms,
-                                     int repeat)
-{
-  std::chrono::milliseconds span(ms);
-  int iters = 0;
-  std::future_status status;
-  while ((status = future.wait_for(span)) == std::future_status::timeout &&
-         (iters++ < repeat))
-    std::future<RMQConnectionStatus> established;
-  return status == std::future_status::ready;
-}
-
-/**
-   *  @brief  Free the data pointed pointer in a vector and update vector.
-   *  @param[in]  addr            Address of memory to free.
-   *  @param[in]  buffer          The vector containing memory buffers
-   */
-void RMQPublisherHandler::free_ams_message(int msg_id,
-                                           std::vector<AMSMessage>& buf)
+void RMQPublisherHandler::freeMessage(int msg_id, std::vector<AMSMessage>& buf)
 {
   const std::lock_guard<std::mutex> lock(_mutex);
   auto it =
@@ -621,11 +676,7 @@ void RMQPublisherHandler::free_ams_message(int msg_id,
   buf.erase(it);
 }
 
-/**
-   *  @brief  Free the data pointed by each pointer in a vector.
-   *  @param[in]  buffer            The vector containing memory buffers
-   */
-void RMQPublisherHandler::free_all_messages(std::vector<AMSMessage>& buffer)
+void RMQPublisherHandler::freeAllMessages(std::vector<AMSMessage>& buffer)
 {
   const std::lock_guard<std::mutex> lock(_mutex);
   auto& rm = ams::ResourceManager::getInstance();
@@ -636,33 +687,45 @@ void RMQPublisherHandler::free_all_messages(std::vector<AMSMessage>& buffer)
   buffer.clear();
 }
 
+void RMQPublisherHandler::flush()
+{
+  uint32_t tries = 0;
+  while (auto unAck = unacknowledged()) {
+    DBG(RMQPublisherHandler,
+        "Waiting for %lu messages to be acknowledged",
+        unAck);
+
+    if (++tries > 10) break;
+    std::this_thread::sleep_for(std::chrono::milliseconds(50 * tries));
+  }
+  freeAllMessages(_messages);
+}
+
 /**
  * RMQPublisher
  */
 
-RMQPublisher::RMQPublisher(const AMQP::Address& address,
+RMQPublisher::RMQPublisher(uint64_t rId,
+                           const AMQP::Address& address,
                            std::string cacert,
                            std::string queue,
                            std::vector<AMSMessage>&& msgs_to_send)
-    : _rank(0),
+    : _rId(rId),
       _queue(queue),
       _cacert(cacert),
       _handler(nullptr),
       _buffer_msg(std::move(msgs_to_send))
 {
-#ifdef __ENABLE_MPI__
-  MPI_CALL(MPI_Comm_rank(MPI_COMM_WORLD, &_rank));
-#endif
 #ifdef EVTHREAD_USE_PTHREADS_IMPLEMENTED
   evthread_use_pthreads();
 #endif
   CDEBUG(RMQPublisher,
-         _rank == 0,
+         _rId == 0,
          "Libevent %s (LIBEVENT_VERSION_NUMBER = %#010x)",
          event_get_version(),
          event_get_version_number());
   CDEBUG(RMQPublisher,
-         _rank == 0,
+         _rId == 0,
          "%s (OPENSSL_VERSION_NUMBER = %#010x)",
          OPENSSL_VERSION_TEXT,
          OPENSSL_VERSION_NUMBER);
@@ -672,7 +735,7 @@ RMQPublisher::RMQPublisher(const AMQP::Address& address,
   OPENSSL_init_ssl(0, NULL);
 #endif
   CINFO(RMQPublisher,
-        _rank == 0,
+        _rId == 0,
         "RabbitMQ address: %s:%d/%s (queue = %s)",
         address.hostname().c_str(),
         address.port(),
@@ -684,7 +747,8 @@ RMQPublisher::RMQPublisher(const AMQP::Address& address,
                                                event_base_free(event);
                                              });
 
-  _handler = std::make_shared<RMQPublisherHandler>(_loop, _cacert, _queue);
+  _handler =
+      std::make_shared<RMQPublisherHandler>(_rId, _loop, _cacert, _queue);
   _connection = new AMQP::TcpConnection(_handler.get(), address);
 }
 
@@ -706,10 +770,6 @@ void RMQPublisher::publish(AMSMessage&& message)
   _handler->publish(std::move(message));
 }
 
-/**
-   *  @brief    Total number of messages successfully acknowledged
-   *  @return   Number of messages
-   */
 bool RMQPublisher::close(unsigned ms, int repeat)
 {
   _handler->flush();
@@ -721,18 +781,22 @@ bool RMQPublisher::close(unsigned ms, int repeat)
  * RMQInterface
  */
 
-bool RMQInterface::connect(std::string rmq_name,
+bool RMQInterface::connect(uint64_t rId,
+                           std::string rmq_name,
                            std::string rmq_password,
                            std::string rmq_user,
                            std::string rmq_vhost,
                            int service_port,
                            std::string service_host,
                            std::string rmq_cert,
-                           std::string inbouund_queue,
-                           std::string outbound_queue)
+                           std::string outbound_queue,
+                           std::string exchange,
+                           std::string routing_key)
 {
+  _rId = rId;
   _queue_sender = outbound_queue;
-  _queue_receiver = inbouund_queue;
+  _exchange = exchange;
+  _routing_key = routing_key;
   _cacert = rmq_cert;
 
   AMQP::Login login(rmq_user, rmq_password);
@@ -742,7 +806,7 @@ bool RMQInterface::connect(std::string rmq_name,
                                              rmq_vhost,
                                              /*is_secure*/ true);
   _publisher =
-      std::make_shared<RMQPublisher>(*_address, _cacert, _queue_sender);
+      std::make_shared<RMQPublisher>(_rId, *_address, _cacert, _queue_sender);
 
   _publisher_thread = std::thread([&]() { _publisher->start(); });
 
@@ -752,13 +816,23 @@ bool RMQInterface::connect(std::string rmq_name,
     FATAL(RabbitMQInterface, "Could not establish connection");
   }
 
+  _consumer = std::make_shared<RMQConsumer>(
+      _rId, *_address, _cacert, _exchange, _routing_key);
+  _consumer_thread = std::thread([&]() { _consumer->start(); });
+
+  if (!_consumer->waitToEstablish(100, 10)) {
+    _consumer->stop();
+    _consumer_thread.join();
+    FATAL(RabbitMQDB, "Could not establish consumer connection");
+  }
+
   connected = true;
   return connected;
 }
 
-void RMQInterface::restart(int rank)
+void RMQInterface::restartPublisher()
 {
-  std::vector<AMSMessage> messages = _publisher->get_buffer_msgs();
+  std::vector<AMSMessage> messages = _publisher->getMsgBuffer();
 
   AMSMessage& msg_min =
       *(std::min_element(messages.begin(),
@@ -768,9 +842,9 @@ void RMQInterface::restart(int rank)
                          }));
 
   DBG(RMQPublisher,
-      "[rank=%d] we have %lu buffered messages that will get re-send "
+      "[r%d] we have %lu buffered messages that will get re-send "
       "(starting from msg #%d).",
-      rank,
+      _rId,
       messages.size(),
       msg_min.id())
 
@@ -780,28 +854,36 @@ void RMQInterface::restart(int rank)
   _publisher.reset();
   connected = false;
 
-  _publisher = std::make_shared<RMQPublisher>(*_address,
-                                              _cacert,
-                                              _queue_sender,
-                                              std::move(messages));
+  _publisher = std::make_shared<RMQPublisher>(
+      _rId, *_address, _cacert, _queue_sender, std::move(messages));
   _publisher_thread = std::thread([&]() { _publisher->start(); });
   connected = true;
 }
 
 void RMQInterface::close()
 {
-  if (!_publisher_thread.joinable()) {
+  if (!_publisher_thread.joinable() || !_consumer_thread.joinable()) {
+    DBG(RMQInterface, "Threads are not joinable")
     return;
   }
   bool status = _publisher->close(100, 10);
-  CWARNING(RabbitMQDB, !status, "Could not gracefully close TCP connection")
+  CWARNING(RabbitMQDB,
+           !status,
+           "Could not gracefully close publisher TCP connection")
+
   DBG(RabbitMQInterface, "Number of messages sent: %d", _msg_tag)
   DBG(RabbitMQInterface,
       "Number of unacknowledged messages are %d",
       _publisher->unacknowledged())
   _publisher->stop();
-  //_consumer->stop();
   _publisher_thread.join();
-  //_consumer_thread.join();
+
+  status = _consumer->close(100, 10);
+  CWARNING(RabbitMQDB,
+           !status,
+           "Could not gracefully close consumer TCP connection")
+  _consumer->stop();
+  _consumer_thread.join();
+
   connected = false;
 }
