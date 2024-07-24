@@ -35,6 +35,7 @@ class MessageType(Enum):
     Process = 1
     NewModel = 2
     Terminate = 3
+    Delete = 4
 
 
 class DataBlob:
@@ -84,6 +85,9 @@ class QueueMessage:
 
     def is_process(self):
         return self.msg_type == MessageType.Process
+
+    def is_delete(self):
+        return self.msg_type == MessageType.Delete
 
     def is_new_model(self):
         return self.msg_type == MessageType.NewModel
@@ -161,6 +165,9 @@ class ForwardTask(Task):
                 inputs, outputs = self._action(item.data())
                 self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(inputs, outputs)))
                 self.datasize += inputs.nbytes + outputs.nbytes
+            elif item.is_delete():
+                print(f"Sending Delete Message Type {self.__class__.__name__}")
+                self.o_queue.put(item)
             elif item.is_new_model():
                 # This is not handled yet
                 continue
@@ -194,7 +201,8 @@ class FSLoaderTask(Task):
         """
 
         start = time.time()
-        for fn in glob.glob(self.pattern):
+        files = list(glob.glob(self.pattern))
+        for fn in files:
             with self.loader(fn) as fd:
                 input_data, output_data = fd.load()
                 row_size = input_data[0, :].nbytes + output_data[0, :].nbytes
@@ -205,6 +213,8 @@ class FSLoaderTask(Task):
                 for j, (i, o) in enumerate(zip(input_batches, output_batches)):
                     self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(i, o)))
                 self.datasize += input_data.nbytes + output_data.nbytes
+            print(f"Sending Delete Message Type {self.__class__.__name__}")
+            self.o_queue.put(QueueMessage(MessageType.Delete, fn))
         self.o_queue.put(QueueMessage(MessageType.Terminate, None))
 
         end = time.time()
@@ -366,6 +376,9 @@ class FSWriteTask(Task):
                     del data_files
                     self.o_queue.put(QueueMessage(MessageType.Terminate, None))
                     break
+                elif item.is_delete():
+                    print(f"Sending Delete Message Type {self.__class__.__name__}")
+                    self.o_queue.put(item)
                 elif item.is_process():
                     data = item.data()
                     if data.domain_name not in data_files:
@@ -436,6 +449,10 @@ class PushToStore(Task):
                 item = self.i_queue.get(block=True)
                 if item.is_terminate():
                     break
+                if item.is_delete():
+                    print(f"Sending Delete Message Type {self.__class__.__name__}")
+                    fn = item.data()
+                    Path(fn).unlink()
                 elif item.is_process():
                     with AMSMonitor(obj=self, tag="request_block", record=["nb_requests", "total_filesize"]):
                         self.nb_requests += 1
