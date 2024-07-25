@@ -162,8 +162,9 @@ class ForwardTask(Task):
                 self.o_queue.put(QueueMessage(MessageType.Terminate, None))
                 break
             elif item.is_process():
-                inputs, outputs = self._action(item.data())
-                self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(inputs, outputs)))
+                data = item.data()
+                inputs, outputs = self._action(data)
+                self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(inputs, outputs, data.domain_name)))
                 self.datasize += inputs.nbytes + outputs.nbytes
             elif item.is_delete():
                 print(f"Sending Delete Message Type {self.__class__.__name__}")
@@ -204,14 +205,15 @@ class FSLoaderTask(Task):
         files = list(glob.glob(self.pattern))
         for fn in files:
             with self.loader(fn) as fd:
-                input_data, output_data = fd.load()
+                domain_name, input_data, output_data = fd.load()
+                print("Domain Name is", domain_name)
                 row_size = input_data[0, :].nbytes + output_data[0, :].nbytes
                 rows_per_batch = int(np.ceil(BATCH_SIZE / row_size))
                 num_batches = int(np.ceil(input_data.shape[0] / rows_per_batch))
                 input_batches = np.array_split(input_data, num_batches)
                 output_batches = np.array_split(output_data, num_batches)
                 for j, (i, o) in enumerate(zip(input_batches, output_batches)):
-                    self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(i, o)))
+                    self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(i, o, domain_name)))
                 self.datasize += input_data.nbytes + output_data.nbytes
             print(f"Sending Delete Message Type {self.__class__.__name__}")
             self.o_queue.put(QueueMessage(MessageType.Delete, fn))

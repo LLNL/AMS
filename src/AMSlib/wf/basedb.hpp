@@ -427,6 +427,7 @@ public:
    * execution (rank-id)
    */
   hdf5DB(std::string path,
+         std::string domain_name,
          std::string fn,
          uint64_t rId,
          bool predicate = false);
@@ -1931,12 +1932,14 @@ public:
   * This should never be used for large scale simulations as txt/csv format will
   * be extremely slow.
   * @param[in] domainName name of the domain model to store data for
+  * @param[in] dbLabel filename to store data to (used only for hdf5)
   * @param[in] dbType Type of the database to create
   * @param[in] rId a unique Id for each process taking part in a distributed
   * @param[in] isDebug Whether this db will store both ml and physics predictions with the associated predicate
   * execution (rank-id)
   */
   std::shared_ptr<BaseDB> createDB(std::string& domainName,
+                                   std::string& dbLabel,
                                    AMSDBType dbType,
                                    uint64_t rId = 0,
                                    bool isDebug = false)
@@ -1958,13 +1961,11 @@ public:
 
     switch (dbType) {
       case AMSDBType::AMS_CSV:
-        return std::make_shared<csvDB>(fs_interface.path(), domainName, rId);
+        return std::make_shared<csvDB>(fs_interface.path(), dbLabel, rId);
 #ifdef __ENABLE_HDF5__
       case AMSDBType::AMS_HDF5:
-        return std::make_shared<hdf5DB>(fs_interface.path(),
-                                        domainName,
-                                        rId,
-                                        isDebug);
+        return std::make_shared<hdf5DB>(
+            fs_interface.path(), domainName, dbLabel, rId, isDebug);
 #endif
 #ifdef __ENABLE_RMQ__
       case AMSDBType::AMS_RMQ:
@@ -1985,25 +1986,32 @@ public:
   * This should never be used for large scale simulations as txt/csv format will
   * be extremely slow.
   * @param[in] domainName name of the domain model to store data for
+  * @param[in] dbLabel filename to store data to 
   * @param[in] rId a unique Id for each process taking part in a distributed
   * execution (rank-id)
   */
   std::shared_ptr<BaseDB> getDB(std::string& domainName,
+                                std::string& dbLabel,
                                 uint64_t rId = 0,
                                 bool isDebug = false)
   {
     DBG(DBManager,
-        "Requested DB Under Name: '%s' DB Configured to operate with '%s'",
+        "Requested DB for domain: '%s' Under Name: '%s' DB Configured to "
+        "operate with '%s'",
         domainName.c_str(),
+        dbLabel.c_str(),
         getDBTypeAsStr(dbType).c_str())
 
     if (dbType == AMSDBType::AMS_NONE) return nullptr;
 
-    if (domainName.empty()) return nullptr;
+    if (dbLabel.empty()) return nullptr;
 
-    auto db_iter = db_instances.find(std::string(domainName));
+    std::string key = domainName;
+    if (dbType == AMSDBType::AMS_HDF5) key = dbLabel;
+
+    auto db_iter = db_instances.find(std::string(key));
     if (db_iter == db_instances.end()) {
-      auto db = createDB(domainName, dbType, rId, isDebug);
+      auto db = createDB(domainName, dbLabel, dbType, rId, isDebug);
       db_instances.insert(std::make_pair(std::string(domainName), db));
       DBG(DBManager,
           "Creating new Database writting to file: %s",

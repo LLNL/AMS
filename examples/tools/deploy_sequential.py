@@ -163,7 +163,7 @@ class AMSDomainJob(AMSJob):
                     "model_path": "",
                     "uq_aggregate": "mean",
                     "threshold": 1,
-                    "db_label": str(util.get_unique_fn()),
+                    "db_label": name,
                 }
             else:
                 model_entry = {}

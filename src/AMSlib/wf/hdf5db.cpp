@@ -183,7 +183,11 @@ void hdf5DB::_store(size_t num_elements,
 }
 
 
-hdf5DB::hdf5DB(std::string path, std::string fn, uint64_t rId, bool predicate)
+hdf5DB::hdf5DB(std::string path,
+               std::string domain_name,
+               std::string fn,
+               uint64_t rId,
+               bool predicate)
     : FileDB(path, fn, predicate ? ".debug.h5" : ".h5", rId),
       predicateStore(predicate)
 {
@@ -193,8 +197,26 @@ hdf5DB::hdf5DB(std::string path, std::string fn, uint64_t rId, bool predicate)
 
   if (exists)
     HFile = H5Fopen(this->fn.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
-  else
+  else {
     HFile = H5Fcreate(this->fn.c_str(), H5F_ACC_EXCL, H5P_DEFAULT, H5P_DEFAULT);
+    hsize_t dims[1] = {domain_name.size()};
+    hid_t dataspace_id = H5Screate_simple(1, dims, NULL);
+    hid_t dataset_id = H5Dcreate(HFile,
+                                 "domain_name",
+                                 H5T_NATIVE_CHAR,
+                                 dataspace_id,
+                                 H5P_DEFAULT,
+                                 H5P_DEFAULT,
+                                 H5P_DEFAULT);
+    H5Dwrite(dataset_id,
+             H5T_NATIVE_CHAR,
+             H5S_ALL,
+             H5S_ALL,
+             H5P_DEFAULT,
+             domain_name.c_str());
+    H5Dclose(dataset_id);
+    H5Sclose(dataspace_id);
+  }
   HDF5_ERROR(HFile);
   totalElements = 0;
   HDType = -1;

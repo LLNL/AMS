@@ -156,11 +156,14 @@ class HDF5CLibReader(FileReader):
         dsets = self.fd.keys()
         input_map = self._map_name_to_index(dsets, "input")
         output_map = self._map_name_to_index(dsets, "output")
+        domain_name = None
+        if "domain_name" in dsets:
+            domain_name = "".join([chr(d) for d in self.fd["domain_name"]])
 
         input_data = np.array(self._pack_dsets_to_list(self.fd, input_map)).T
         output_data = np.array(self._pack_dsets_to_list(self.fd, output_map)).T
 
-        return input_data, output_data
+        return domain_name, input_data, output_data
 
     @classmethod
     def get_file_format_suffix(cls):
