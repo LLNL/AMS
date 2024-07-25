@@ -551,5 +551,5 @@ def create_store_directories(store_path):
     if not store_path.exists():
         store_path.mkdir(parents=True, exist_ok=True)
 
-        mkdir(store_path, fn)
+    for fn in list(AMSDataStore.valid_entries):
         mkdir(store_path, fn)

@@ -374,7 +374,7 @@ class FSWriteTask(Task):
                 if item.is_terminate():
                     for k, v in data_files.items():
                         v[0].close()
-                        self.o_queue.put(QueueMessage(MessageType.Process, v[0].file_name))
+                        self.o_queue.put(QueueMessage(MessageType.Process, (k, v[0].file_name)))
                     del data_files
                     self.o_queue.put(QueueMessage(MessageType.Terminate, None))
                     break
@@ -399,7 +399,11 @@ class FSWriteTask(Task):
 
                     if data_files[data.domain_name][1] >= 2 * 1024 * 1024 * 1024:
                         data_files[data.domain_name][0].close()
-                        self.o_queue.put(QueueMessage(MessageType.Process, data_files[data.domain_name][0].file_name))
+                        self.o_queue.put(
+                            QueueMessage(
+                                MessageType.Process, (data.domain_name, data_files[data.domain_name][0].file_name)
+                            )
+                        )
                         del data_files[data.domain_name]
 
         end = time.time()
@@ -458,14 +462,13 @@ class PushToStore(Task):
                 elif item.is_process():
                     with AMSMonitor(obj=self, tag="request_block", record=["nb_requests", "total_filesize"]):
                         self.nb_requests += 1
-                        src_fn = Path(item.data())
+                        domain_name, file_name = item.data()
+                        src_fn = Path(file_name)
                         dest_file = self.dir / src_fn.name
                         if src_fn != dest_file:
                             shutil.move(src_fn, dest_file)
-                        # TODO: Fix me candidates now will be "indexed by the name"
-                        warnings.warn("AMS Kosh manager does not operate with multi-models")
                         if self._store:
-                            db_store.add_candidates([str(dest_file)])
+                            db_store.add_candidates(domain_name, [str(dest_file)])
 
                         self.total_filesize += os.stat(src_fn).st_size
 

@@ -430,7 +430,7 @@ def main():
                 **stage_job_descr,
             )
             scheduled_jobs.append(d_job)
-            # scheduled_jobs.append(stage_job)
+            scheduled_jobs.append(stage_job)
         push_next_job(flux_handle, ams_store, scheduled_jobs)
         flux_handle.reactor_run()
 
