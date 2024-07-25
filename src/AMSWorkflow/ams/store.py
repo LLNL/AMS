@@ -118,20 +118,20 @@ class AMSDataStore:
         ds = ensemble.create(name=entry, metadata={"version": version})
         return ds
 
-    def _get_or_create_ensebmle(self):
+    def _get_or_create_ensebmle(self, domain_name):
         """
         Getter of the kosh-enseble this instance is operating upon.
 
         Returns:
             A kosh-ensebmle.
         """
-        ensemble = next(self._store.find_ensembles(name=self._name), None)
+        ensemble = next(self._store.find_ensembles(name=domain_name), None)
         if ensemble is None:
-            ensemble = self._store.create_ensemble(name=self._name)
+            ensemble = self._store.create_ensemble(name=domain_name)
 
         return ensemble
 
-    def _add_entry(self, entry, mime_type, data_files=list(), version=None, metadata=dict()):
+    def _add_entry(self, entry, domain_name, mime_type, data_files=list(), version=None, metadata=dict()):
         """
         Adds files of mime_type in the kosh-store and associates them appropriately.
 
@@ -147,7 +147,7 @@ class AMSDataStore:
 
         data_files = [str(Path(d).absolute()) for d in data_files]
 
-        ensemble = self._get_or_create_ensebmle()
+        ensemble = self._get_or_create_ensebmle(domain_name)
         metadata["date"] = str(datetime.datetime.now())
         ds = self._get_or_create_dataset(ensemble, entry, version)
 
@@ -156,7 +156,7 @@ class AMSDataStore:
 
         return
 
-    def add_data(self, data_files=list(), version=None, metadata=dict()):
+    def add_data(self, domain_name, data_files=list(), version=None, metadata=dict()):
         """
         Adds files in the kosh-store and associates them to the 'data' entry.
 
@@ -167,9 +167,9 @@ class AMSDataStore:
             version: The version to assign to all files
             metadata: The metadata to associate with this file
         """
-        self._add_entry("data", "hdf5", data_files, version, metadata)
+        self._add_entry("data", domain_name, "hdf5", data_files, version, metadata)
 
-    def add_model(self, model, version=None, metadata=dict()):
+    def add_model(self, domain_name, model, version=None, metadata=dict()):
         """
         Adds a model in the kosh-store and associates them to the 'models' entry.
 
@@ -180,9 +180,9 @@ class AMSDataStore:
             version: The version to assing to the model
             metadata: The metadata to associate with this model
         """
-        self._add_entry("models", "zip", [model], version, metadata)
+        self._add_entry("models", domain_name, "zip", [model], version, metadata)
 
-    def add_candidates(self, data_files=list(), version=None, metadata=dict()):
+    def add_candidates(self, domain_name, data_files=list(), version=None, metadata=dict()):
         """
         Adds files in the kosh-store and associates them to the 'candidates' entry.
 
@@ -193,9 +193,9 @@ class AMSDataStore:
             version: The version to assing to the model
             metadata: The metadata to associate with this model
         """
-        self._add_entry("candidates", "hdf5", data_files, version, metadata)
+        self._add_entry("candidates", domain_name, "hdf5", data_files, version, metadata)
 
-    def _remove_entry_file(self, entry, data_files=list(), delete_files=False):
+    def _remove_entry_file(self, domain_name, entry, data_files=list(), delete_files=False):
         """
         Remove files from kosh-store. When delete_files is true, delete the actual file as well
 
@@ -209,8 +209,11 @@ class AMSDataStore:
             return
 
         data_files = [str(Path(d).absolute()) for d in data_files]
+        if domain_name is None:
+            ensembles = self._store.find_ensembles()
+        else:
+            ensembles = self._store.find_ensembles(name=domain_name)
 
-        ensembles = self._store.find_ensembles(name=self._name)
         for e in ensembles:
             for dset in e.find_datasets(name=entry):
                 dset_files = [f.uri for f in dset.find()]
@@ -226,7 +229,7 @@ class AMSDataStore:
             for d in data_files:
                 os.remove(d)
 
-    def remove_data(self, data_files=list(), delete_files=False):
+    def remove_data(self, domain_name, data_files=list(), delete_files=False):
         """
         Remove data-files from kosh-store. When delete_files is true, delete the actual file as well
 
@@ -235,9 +238,9 @@ class AMSDataStore:
             delete_files: delete the file from persistent storage
         """
 
-        self._remove_entry_file("data", data_files, delete_files)
+        self._remove_entry_file(domain_name, "data", data_files, delete_files)
 
-    def remove_models(self, model=list(), delete_files=False):
+    def remove_models(self, domain_name, model=list(), delete_files=False):
         """
         Remove models from kosh-store. When delete_files is true, delete the actual file as well
 
@@ -249,9 +252,9 @@ class AMSDataStore:
         if not model:
             return
 
-        self._remove_entry_file("models", model, delete_files)
+        self._remove_entry_file(domain_name, "models", model, delete_files)
 
-    def remove_candidates(self, data_files=list(), delete_files=False):
+    def remove_candidates(self, domain_name, data_files=list(), delete_files=False):
         """
         Remove candidates from kosh-store. When delete_files is true, delete the actual file as well
 
@@ -260,27 +263,27 @@ class AMSDataStore:
             delete_files: delete the file from persistent storage
         """
 
-        self._remove_entry_file("candidates", data_files, delete_files)
+        self._remove_entry_file(domain_name, "candidates", data_files, delete_files)
 
-    def _get_entry_versions(self, entry, associcate_files=False):
+    def _get_entry_versions(self, domain_name, entry, associate_files=False):
         """
         Returns a list of versions existing for the specified entry
 
         Args:
             entry: The entry type we are looking for
-            associcate_files: Associate files in store with the versions
+            associate_files: Associate files in store with the versions
 
         Returns:
             A list of existing versions in our database or a dictionary of versions to lists associating files with the specific version
         """
-        ensembles = self._store.find_ensembles(name=self._name)
-        if associcate_files:
+        ensembles = self._store.find_ensembles(name=domain_name)
+        if associate_files:
             versions = dict()
         else:
             versions = list()
         for e in ensembles:
             for dset in e.find_datasets(name=entry):
-                if associcate_files:
+                if associate_files:
                     if dset.version not in versions:
                         versions[dset.version] = list()
                     for associated in dset.find():
@@ -289,7 +292,7 @@ class AMSDataStore:
                     versions.append(dset.version)
         return versions
 
-    def get_data_versions(self, associcate_files=False):
+    def get_data_versions(self, domain_name, associate_files=False):
         """
         Returns a list of versions existing for the data entry
 
@@ -297,9 +300,9 @@ class AMSDataStore:
         Returns:
             A list of existing versions in our database
         """
-        return self._get_entry_versions("data", associcate_files)
+        return self._get_entry_versions(domain_name, "data", associate_files)
 
-    def get_model_versions(self, associcate_files=False):
+    def get_model_versions(self, domain_name, associate_files=False):
         """
         Returns a list of versions existing for the model entry
 
@@ -308,9 +311,9 @@ class AMSDataStore:
             A list of existing model versions in our database
         """
 
-        return self._get_entry_versions("models", associcate_files)
+        return self._get_entry_versions(domain_name, "models", associate_files)
 
-    def get_candidate_versions(self, associcate_files=False):
+    def get_candidate_versions(self, domain_name, associate_files=False):
         """
         Returns a list of versions existing for the candidate entry
 
@@ -319,9 +322,9 @@ class AMSDataStore:
             A list of existing candidate versions in our database
         """
 
-        return self._get_entry_versions("candidates", associcate_files)
+        return self._get_entry_versions(domain_name, "candidates", associate_files)
 
-    def get_files(self, entry, versions):
+    def get_files(self, domain_name, entry, versions):
         """
         Returns a list of paths to files for the specified version
 
@@ -336,7 +339,7 @@ class AMSDataStore:
             A list of existing files in the kosh-store
         """
 
-        files = self._get_entry_versions(entry, True)
+        files = self._get_entry_versions(entry, domain_name, True)
 
         if len(files) == 0:
             return list()
@@ -421,20 +424,31 @@ class AMSDataStore:
 
         return self.close()
 
-    def get_raw_content(self):
+    def get_raw_content(self, domain_name, entry):
         """
         Returns a dictionary with all data in our AMS store
         """
 
-        ensembles = self._store.find_ensembles(name=self._name)
-        data = {"data": {}, "models": {}, "candidates": {}}
+        if domain_name is None:
+            ensembles = self._store.find_ensembles()
+        else:
+            ensembles = self._store.find_ensembles(name=domain_name)
+
+        if entry is None:
+            entries = AMSDataStore.valid_entries
+        else:
+            entries = {entry}
+
+        data = {}
         for e in ensembles:
-            for entry_type in AMSDataStore.valid_entries:
+            data[e.name] = {}
+            for entry_type in entries:
+                data[e.name][entry_type] = {}
                 for d in e.find_datasets(name=entry_type):
                     dset = list()
                     for associated in d.find():
                         dset.append(associated.listattributes(True))
-                    data[entry_type][d.version] = dset
+                    data[e.name][entry_type][d.version] = dset
         return data
 
     def move(self, src_entry, dest_entry, files):
@@ -455,6 +469,8 @@ class AMSDataStore:
         if dest_entry not in self.__class__.valid_entries:
             raise RuntimeError(f"Entry: {dest_entry} not a valid AMSDataStore entry")
 
+        raise NotImplemented("Function move does not take into account domain-names. Needs to be updated")
+
         dest_dir = self._entry_paths[dest_entry]
         new_files = list()
         for f in files:
@@ -465,7 +481,7 @@ class AMSDataStore:
         self._add_entry(dest_entry, "hdf5", new_files)
         self._remove_entry_file(src_entry, files, True)
 
-    def search(self, entry=None, version=None, metadata=dict()):
+    def search(self, domain_name=None, entry=None, version=None, metadata=dict()):
         """
         Search for items in the database that match the metadata
         Args:
@@ -479,34 +495,30 @@ class AMSDataStore:
             A list of matching entries described as dictionaries
         """
 
-        contents = self.get_raw_content()
-        if entry != None:
-            tmp_contents = contents[entry]
-            contents = {}
-            contents[entry] = tmp_contents
+        all_contents = self.get_raw_content(domain_name, entry)
 
         found = []
 
-        for e_name, entries in contents.items():
-            for ver, dsets in entries.items():
-                if version is not None:
-                    if (version != "latest") and (version != ver):
-                        continue
+        for d_name, contents in all_contents.items():
+            for e_name, entries in contents.items():
+                for ver, dsets in entries.items():
+                    if version is not None:
+                        if (version != "latest") and (version != ver):
+                            continue
 
-                for dset in dsets:
-                    insert = True
-                    for k, v in metadata.items():
-                        if k in dset.keys():
-                            if dset[k] != v:
+                    for dset in dsets:
+                        insert = True
+                        for k, v in metadata.items():
+                            if k in dset.keys():
+                                if dset[k] != v:
+                                    insert = False
+                                    break
+                            else:
                                 insert = False
                                 break
-                        else:
-                            insert = False
-                            break
-                    if insert:
-                        dset["ensemble_name"] = e_name
-                        dset["version"] = ver
-                        found.append(dset)
+                        if insert:
+                            value = {"domain": d_name, "entry": e_name, "version": ver, "file": dset["uri"]}
+                            found.append(value)
 
         if len(found) != 0 and version == "latest":
             found = [max(found, key=lambda item: item["version"])]
@@ -539,5 +551,5 @@ def create_store_directories(store_path):
     if not store_path.exists():
         store_path.mkdir(parents=True, exist_ok=True)
 
-    for fn in list(AMSDataStore.valid_entries):
+        mkdir(store_path, fn)
         mkdir(store_path, fn)

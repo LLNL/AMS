@@ -32,16 +32,16 @@ class TestStore(unittest.TestCase):
     def _add_entries(self, add_func, getter, elements, as_list=True):
         for i, f in enumerate(elements):
             if as_list:
-                add_func([f], version=i)
+                add_func("test", [f], version=i)
             else:
-                add_func(f, version=i)
+                add_func("test", f, version=i)
 
-        versions = getter()
+        versions = getter("test")
         self.assertTrue(len(versions) == len(elements), f"Adding elements using {add_func} not working properly")
 
     def _remove_entries(self, func, getter, elements):
-        func(elements, False)
-        return getter()
+        func("test", elements, False)
+        return getter("test")
 
     def test_store_open(self):
         ams_store = store.AMSDataStore(self.__class__.store_dir, "test.sql", "ams_test")
