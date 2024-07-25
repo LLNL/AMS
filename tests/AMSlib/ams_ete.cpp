@@ -130,14 +130,15 @@ void callBackSingle(void *cls, long elements, void **inputs, void **outputs)
 
 int main(int argc, char **argv)
 {
-  if (argc != 12) {
+  if (argc != 13) {
     std::cout << "Wrong cli\n";
     std::cout << argv[0]
               << " use_device(0|1) num_inputs num_outputs model_path "
                  "data_type(float|double) uq_policy(random|deltaUQ "
                  "(mean)|deltaUQ (max)) threshold(0) "
                  "num_iterations avg_num_values db_type(none|csv|hdf5) "
-                 "db_path(path to existing path to store data)";
+                 "db_path(path to existing path to store data) "
+                 "use_mpi(0|1)";
     return -1;
   }
 
@@ -154,6 +155,11 @@ int main(int argc, char **argv)
   int avg_elements = std::atoi(argv[9]);
   std::string db_type_str = std::string(argv[10]);
   std::string fs_path = std::string(argv[11]);
+#ifdef __ENABLE_MPI__
+  const bool use_mpi = static_cast<bool>(std::atoi(argv[12]));
+#else
+  const bool use_mpi = false;
+#endif // __ENABLE_MPI__
   AMSDBType db_type = ams::db::getDBType(db_type_str);
   AMSResourceType resource = AMSResourceType::AMS_HOST;
   srand(time(NULL));
@@ -171,6 +177,17 @@ int main(int argc, char **argv)
   AMSCAbstrModel model_descr = AMSRegisterAbstractModel(
       "test", uq_policy, threshold, model_path, nullptr, "test", -1);
 
+  int process_id = 0;
+  int world_size = 1;
+
+#ifdef __ENABLE_MPI__
+  if (use_mpi) {
+    MPI_Comm_rank(MPI_COMM_WORLD, &process_id);
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+  }
+#endif // __ENABLE_MPI__
+
+
   if (data_type == AMSDType::AMS_SINGLE) {
     Problem<float> prob(num_inputs, num_outputs);
 
@@ -178,8 +195,8 @@ int main(int argc, char **argv)
                                        AMSDType::AMS_SINGLE,
                                        resource,
                                        (AMSPhysicFn)callBackSingle,
-                                       0,
-                                       1);
+                                       process_id,
+                                       world_size);
 
     prob.ams_run(wf, resource, num_iterations, avg_elements);
   } else {
@@ -188,8 +205,8 @@ int main(int argc, char **argv)
                                        AMSDType::AMS_DOUBLE,
                                        resource,
                                        (AMSPhysicFn)callBackDouble,
-                                       0,
-                                       1);
+                                       process_id,
+                                       world_size);
     prob.ams_run(wf, resource, num_iterations, avg_elements);
   }
 
