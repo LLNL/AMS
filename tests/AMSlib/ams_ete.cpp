@@ -154,16 +154,11 @@ int main(int argc, char **argv)
   int avg_elements = std::atoi(argv[9]);
   std::string db_type_str = std::string(argv[10]);
   std::string fs_path = std::string(argv[11]);
-  int rank = 0;
   AMSDBType db_type = ams::db::getDBType(db_type_str);
   AMSResourceType resource = AMSResourceType::AMS_HOST;
   srand(time(NULL));
 
-#ifdef __AMS_ENABLE_MPI__
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-#endif
-
-  AMSConfigureFSDatabase(rank, db_type, fs_path.c_str());
+  AMSConfigureFSDatabase(db_type, fs_path.c_str());
 
   assert((uq_policy == AMSUQPolicy::AMS_DELTAUQ_MAX ||
           uq_policy == AMSUQPolicy::AMS_DELTAUQ_MEAN ||

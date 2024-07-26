@@ -212,6 +212,9 @@ hdf5DB::~hdf5DB()
 void hdf5DB::store(size_t num_elements,
                    std::vector<float*>& inputs,
                    std::vector<float*>& outputs,
+#ifdef __ENABLE_MPI__
+                   MPI_Comm comm,
+#endif
                    bool* predicate)
 {
   if (HDType == -1) {
@@ -231,6 +234,9 @@ void hdf5DB::store(size_t num_elements,
 void hdf5DB::store(size_t num_elements,
                    std::vector<double*>& inputs,
                    std::vector<double*>& outputs,
+#ifdef __ENABLE_MPI__
+                   MPI_Comm comm,
+#endif
                    bool* predicate)
 {
   if (HDType == -1) {

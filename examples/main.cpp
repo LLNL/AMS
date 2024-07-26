@@ -192,7 +192,7 @@ int run(const char *device_name,
 
 
   if (dbType != AMSDBType::AMS_RMQ) {
-    AMSConfigureFSDatabase(rId, dbType, db_config);
+    AMSConfigureFSDatabase(dbType, db_config);
   }
 
   AMSUQPolicy uq_policy;

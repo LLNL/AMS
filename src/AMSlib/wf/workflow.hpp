@@ -100,7 +100,7 @@ class AMSWorkflow
    * @param[in] outputs vector to 1-D vectors storing num_elements
    * items to be stored in the database
    */
-  void Store(size_t num_elements,
+  void store(size_t num_elements,
              std::vector<FPTypeValue *> &inputs,
              std::vector<FPTypeValue *> &outputs,
              bool *predicate = nullptr)
@@ -121,7 +121,11 @@ class AMSWorkflow
     bool *hPredicate = nullptr;
 
     if (appDataLoc == AMSResourceType::AMS_HOST) {
+#ifdef __ENABLE_MPI__
+      return DB->store(num_elements, inputs, outputs, comm, predicate);
+#else
       return DB->store(num_elements, inputs, outputs, predicate);
+#endif
     }
 
     for (int i = 0; i < inputs.size(); i++) {
@@ -144,7 +148,11 @@ class AMSWorkflow
     }
 
     // Store to database
+#ifdef __ENABLE_MPI__
+    DB->store(num_elements, hInputs, hOutputs, comm, hPredicate);
+#else
     DB->store(num_elements, hInputs, hOutputs, hPredicate);
+#endif
     rm.deallocate(hInputs, AMSResourceType::AMS_HOST);
     rm.deallocate(hOutputs, AMSResourceType::AMS_HOST);
     if (predicate) rm.deallocate(hPredicate, AMSResourceType::AMS_HOST);
@@ -152,7 +160,7 @@ class AMSWorkflow
     return;
   }
 
-  void Store(size_t num_elements,
+  void store(size_t num_elements,
              std::vector<const FPTypeValue *> &inputs,
              std::vector<FPTypeValue *> &outputs,
              bool *predicate = nullptr)
@@ -162,7 +170,7 @@ class AMSWorkflow
       mInputs.push_back(const_cast<FPTypeValue *>(I));
     }
 
-    Store(num_elements, mInputs, outputs, predicate);
+    store(num_elements, mInputs, outputs, predicate);
   }
 
   bool updateModel()
@@ -323,7 +331,7 @@ public:
       CALIPER(CALI_MARK_END("PHYSICS MODULE");)
       if (DB) {
         CALIPER(CALI_MARK_BEGIN("DBSTORE");)
-        Store(totalElements, tmpIn, origOutputs);
+        store(totalElements, tmpIn, origOutputs);
         CALIPER(CALI_MARK_END("DBSTORE");)
       }
       CALIPER(CALI_MARK_END("AMSEvaluate");)
@@ -435,12 +443,12 @@ public:
         DBG(Workflow,
             "Storing data (#elements = %d) to database",
             packedElements);
-        Store(packedElements, packedInputs, packedOutputs);
+        store(packedElements, packedInputs, packedOutputs);
       } else {
         DBG(Workflow,
             "Storing data (#elements = %d) to database including predicates",
             totalElements);
-        Store(totalElements, origInputs, origOutputs, predicate);
+        store(totalElements, origInputs, origOutputs, predicate);
       }
 
       CALIPER(CALI_MARK_END("DBSTORE");)

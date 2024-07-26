@@ -341,7 +341,7 @@ private:
 
     std::string db_path = entry["fs_path"].get<std::string>();
     auto &DB = ams::db::DBManager::getInstance();
-    DB.instantiate_fs_db(rId, dbType, db_path);
+    DB.instantiate_fs_db(dbType, db_path);
     DBG(AMS,
         "Configured AMS File system database to point to %s using file "
         "type %s",
@@ -382,8 +382,7 @@ private:
         getEntry<std::string>(rmq_entry, "rabbitmq-routing-key");
 
     auto &DB = ams::db::DBManager::getInstance();
-    DB.instantiate_rmq_db(rId,
-                          port,
+    DB.instantiate_rmq_db(port,
                           host,
                           rmq_name,
                           rmq_pass,
@@ -491,8 +490,6 @@ private:
 public:
   AMSWrap() : memManager(ams::ResourceManager::getInstance())
   {
-    rId = get_rank_id();
-
     auto log_stats = setup_loggers();
     DBG(AMS,
         "Enable Log %d stored under %s",
@@ -780,12 +777,10 @@ AMSCAbstrModel AMSQueryModel(const char *domain_model)
   return _amsWrap.get_model_index(domain_model);
 }
 
-void AMSConfigureFSDatabase(uint64_t rId,
-                            AMSDBType db_type,
-                            const char *db_path)
+void AMSConfigureFSDatabase(AMSDBType db_type, const char *db_path)
 {
   auto &db_instance = ams::db::DBManager::getInstance();
-  db_instance.instantiate_fs_db(rId, db_type, std::string(db_path));
+  db_instance.instantiate_fs_db(db_type, std::string(db_path));
 }
 
 #ifdef __cplusplus
