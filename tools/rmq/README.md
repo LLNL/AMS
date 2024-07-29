@@ -1,19 +1,34 @@
 # Tools to interact with RabbitMQ
 
 This folder contains several scripts to send and receive messages using
-RabbitMQ. They are useful to test and interact with AMSlib.
+RabbitMQ. They are useful to test and interact with AMSlib. Each script
+is completetly standalone and does not require the AMS Python package,
+however they require `pika` and `numpy`.
 
-## Send a message to AMSlib
-If you want to send a message to AMSlib, for example to force AMS to update its
-surrogate, you can do it using `send.py`:
+## Consume messages from AMSlib
+
+To receive, or consume, messages emitted by AMSlib you can use `recv_binary.py`:
 
 ```bash
-./send.py -c rmq-pds.json -t rmq-pds.crt -e ams-fanout -r training -n 1 -m
+python3 recv_binary.py -c rmq-credentials.json -t rmq-tls.crt -q test3
+```
+
+If the credentials match, every messages sent by a simulation integrated
+with AMS will be received by `recv_binary.py`.
+
+## Send a message to AMSlib
+
+### Send string messages
+To send a simple text message to AMSlib, for example to force AMS to update its
+surrogate model, you can do it using `send.py`:
+
+```bash
+python3 send.py -c rmq-credentials.json -t rmq-tls.crt -e ams-fanout -r training -n 1 -m
 "UPDATE:ConstantOneModel_cpu.pt"
 ```
 
 where `rmq-pds.json` contains the RabbitMQ credentials and `rmq-pds.crt` the
-TLS certificate. 
+TLS certificate. See `send.py -h` for more options.
 
 The RabbitMQ credentials file must follow this template:
 ```json
@@ -28,15 +43,23 @@ The RabbitMQ credentials file must follow this template:
 }
 ```
 
-> Note that you can use `send.py` to send any type of message to any RabbitMQ
+> Note that you can use `send.py` to send any type of string messages to any RabbitMQ
 > server.
 
-## Consume messages from AMSlib
+### Send binary-compatible AMSlib messages
 
-To receive, or consume, messages emitted by AMS you can use `recv_binary.py`:
+To send a message that mimics what each MPI rank in AMSlib would send to
+the AMS Python module, one can use `send_ams.py`. For example,
 
 ```bash
-./recv_binary.py -c rmq-pds.json -t rmq-pds.crt -q test3
+python3 send_ams.py -c rmq-credentials.json -t rmq-tls.crt -r test3 -n 10
 ```
 
+In another terminal, to receive the message just sent, you can run:
 
+```bash
+python3 recv_binary.py -c rmq-credentials.json -t rmq-tls.crt -q test3
+```
+
+This tool is useful to test the AMS python workflow without
+actually running a simulation.
