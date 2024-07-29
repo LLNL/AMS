@@ -50,6 +50,9 @@ class AMSInstance(metaclass=AMSSingleton):
     def db_store(self) -> str:
         return self._db_store
 
+    def __str__(self) -> str:
+        return f"name={self.name}, db_path={self.db_path}, db_type={self.db_type}, db_store={self._db_store}"
+
     @staticmethod
     def create_config(store_path, store_name, name):
         return {"name": name, "ams_persistent_db": {"path": str(store_path), "type": "dhdf5", "store": str(store_name)}}
@@ -68,7 +71,6 @@ class AMSInstance(metaclass=AMSSingleton):
 
         for key in {"path", "type"}:
             assert key in db, f"Config does not have {k} entry"
-
         return cls(config["name"], db["path"], db["type"], db["store"] if "store" in db else None)
 
     @classmethod

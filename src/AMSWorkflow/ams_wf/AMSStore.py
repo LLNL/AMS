@@ -5,6 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import argparse
+import time
 import json
 from pathlib import Path
 import shutil
@@ -258,7 +259,10 @@ def main():
     action = action_cls.from_cli(args)
 
     with AMSDataStore(action.ams_config.db_path, action.ams_config.db_store, action.ams_config.name, False) as store:
+        start = time.time()
         action(store)
+        end = time.time()
+        print(f"Total time passed: {end-start}")
 
 
 if __name__ == "__main__":

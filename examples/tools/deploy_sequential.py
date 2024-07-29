@@ -17,10 +17,7 @@ from ams import util
 def constuct_cli_cmd(executable, *args, **kwargs):
     command = [executable]
     for k, v in kwargs.items():
-        if len(k) == 1:
-            command.append(f"-{k}")
-        else:
-            command.append(f"--{k}")
+        command.append(str(k))
         command.append(str(v))
 
     for a in args:
@@ -43,6 +40,10 @@ class AMSJob:
     Class Modeling a Job scheduled by AMS.
     """
 
+    @classmethod
+    def generate_formatting(self, store):
+        return {"AMS_STORE_PATH": store.root_path}
+
     def __init__(
         self,
         name,
@@ -61,8 +62,12 @@ class AMSJob:
         self.environ = environ
         self._stdout = stdout
         self._stderr = stderr
-        self._cli_args = list(cli_args)
-        self._cli_kwargs = dict(cli_kwargs)
+        self._cli_args = []
+        self._cli_kwargs = {}
+        if cli_args is not None:
+            self._cli_args = list(cli_args)
+        if cli_kwargs is not None:
+            self._cli_kwargs = dict(cli_kwargs)
 
     def generate_cli_command(self):
         return constuct_cli_cmd(self.executable, *self._cli_args, **self._cli_kwargs)
@@ -154,10 +159,11 @@ class AMSDomainJob(AMSJob):
         ams_object["domain_models"] = dict()
 
         for i, name in enumerate(self.domain_names):
-            model = store.search(entry="models", version="latest", metadata={"domain": name})
+            models = store.search(domain_name=name, entry="models", version="latest")
+            print(json.dumps(models, indent=6))
             # This is the case in which we do not have any model
             # Thus we create a data gathering entry
-            if len(model) == 0:
+            if len(models) == 0:
                 model_entry = {
                     "uq_type": "random",
                     "model_path": "",
@@ -166,8 +172,14 @@ class AMSDomainJob(AMSJob):
                     "db_label": name,
                 }
             else:
-                model_entry = {}
-                raise NotImplementedError("Still missing support for passing explicit models")
+                model = models[0]
+                model_entry = {
+                    "uq_type": model["uq_type"],
+                    "model_path": model["file"],
+                    "uq_aggregate": "mean",
+                    "threshold": model["threshold"],
+                    "db_label": name,
+                }
 
             ams_object["ml_models"][f"model_{i}"] = model_entry
             ams_object["domain_models"][name] = f"model_{i}"
@@ -181,15 +193,15 @@ class AMSDomainJob(AMSJob):
         super().__init__(*args, **kwargs)
 
     @classmethod
-    def from_descr(cls, stage_dir, kwargs):
-        domain_job_resources = AMSJobResources(**kwargs["resources"])
+    def from_descr(cls, stage_dir, descr):
+        domain_job_resources = AMSJobResources(**descr["resources"])
         return cls(
-            name=kwargs["name"],
+            name=descr["name"],
             stage_dir=stage_dir,
-            domain_names=kwargs["domain_names"],
+            domain_names=descr["domain_names"],
             environ=None,
             resources=domain_job_resources,
-            **kwargs["cli"],
+            **descr["cli"],
         )
 
     def precede_deploy(self, store):
@@ -199,6 +211,46 @@ class AMSDomainJob(AMSJob):
         with open(self._ams_object_fn, "w") as fd:
             json.dump(self._ams_object, fd)
         self.environ["AMS_OBJECTS"] = str(self._ams_object_fn)
+
+
+class AMSMLJob(AMSJob):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    @classmethod
+    def from_descr(cls, store, descr):
+        formatting = AMSJob.generate_formatting(store)
+        resources = AMSJobResources(**descr["resources"])
+        cli_kwargs = descr["cli"].get("cli_kwargs", None)
+        if cli_kwargs is not None:
+            for k, v in cli_kwargs.items():
+                if isinstance(v, str):
+                    cli_kwargs[k] = v.format(**formatting)
+        cli_args = descr["cli"].get("cli_args", None)
+        if cli_args is not None:
+            for i, v in enumerate(cli_args):
+                cli_args[i] = v.format(**formatting)
+
+        return cls(
+            name=descr["name"],
+            environ=None,
+            stdout=descr["cli"].get("stdout", None),
+            stderr=descr["cli"].get("stderr", None),
+            executable=descr["cli"]["executable"],
+            resources=resources,
+            cli_kwargs=cli_kwargs,
+            cli_args=cli_args,
+        )
+
+
+class AMSMLTrainJob(AMSMLJob):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+
+class AMSSubSelectJob(AMSMLJob):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
 
 class AMSFSStageJob(AMSJob):
@@ -219,19 +271,19 @@ class AMSFSStageJob(AMSJob):
         _cli_args = list(cli_args)
         _cli_args.append("--store")
         _cli_kwargs = dict(cli_kwargs)
-        _cli_kwargs["dest"] = dest_dir
-        _cli_kwargs["src"] = src_dir
-        _cli_kwargs["pattern"] = "*.h5"
-        _cli_kwargs["db-type"] = "dhdf5"
-        _cli_kwargs["mechanism"] = "fs"
-        _cli_kwargs["policy"] = "process"
-        _cli_kwargs["persistent-db-path"] = store_dir
-        _cli_kwargs["src"] = src_dir
+        _cli_kwargs["--dest"] = dest_dir
+        _cli_kwargs["--src"] = src_dir
+        _cli_kwargs["--pattern"] = "*.h5"
+        _cli_kwargs["--db-type"] = "dhdf5"
+        _cli_kwargs["--mechanism"] = "fs"
+        _cli_kwargs["--policy"] = "process"
+        _cli_kwargs["--persistent-db-path"] = store_dir
+        _cli_kwargs["--src"] = src_dir
 
         if prune_module_path is not None:
             assert Path(prune_module_path).exists(), "Module path to user pruner does not exist"
-            _cli_kwargs["load"] = prune_module_path
-            _cli_kwargs["class"] = prune_class
+            _cli_kwargs["--load"] = prune_module_path
+            _cli_kwargs["--class"] = prune_class
 
         super().__init__(
             name="AMSStage",
@@ -253,26 +305,6 @@ class AMSFSStageJob(AMSJob):
             exclusive=False,
             gpus_per_task=domain_job.resources.gpus_per_task,
         )
-
-
-def main():
-    parser = argparse.ArgumentParser(description="AMS JOB descriptor")
-
-    parser.add_argument("--job-file", help="Jobs to be scheduled by AMS", required=True)
-
-    args = parser.parse_args()
-
-    fn = Path(args.job_file).absolute()
-    assert fn.exists(), f"Path {str(fn)} does not exist"
-
-    with open(fn, "r") as fd:
-        data = json.load(fd)
-
-    domain_jobs = list()
-    for v in data["domain-jobs"]:
-        print(v)
-        domain_jobs.append(BaseJob(**v))
-        print(domain_jobs[-1].generate_cli_command())
 
 
 class FluxJobStatus:
@@ -406,6 +438,10 @@ def main():
     # Get all the jobs to be scheduled
     domain_jobs = data["domain-jobs"]
     stage_job_descr = data["stage-job"]
+    # NOTE: I am contemplating whether we should have a single "sub-select" job or having
+    # multiple ones. The multiple ones sounds more generic, but more complex.
+    sub_select_job_descr = data["sub-select-jobs"][0]
+    train_job_descr = data["train-jobs"][0]
 
     # We create/open the store
     with AMSDataStore(data["db"]["kosh_path"], data["db"]["store-name"], data["db"]["name"]) as ams_store:
@@ -429,8 +465,16 @@ def main():
                 environ=os.environ,
                 **stage_job_descr,
             )
+            sub_select_job = AMSSubSelectJob.from_descr(ams_store, sub_select_job_descr)
+            sub_select_job.environ = os.environ
+
+            train_job = AMSMLTrainJob.from_descr(ams_store, train_job_descr)
+            train_job.environ = os.environ
+
             scheduled_jobs.append(d_job)
             scheduled_jobs.append(stage_job)
+            scheduled_jobs.append(sub_select_job)
+            scheduled_jobs.append(train_job)
         push_next_job(flux_handle, ams_store, scheduled_jobs)
         flux_handle.reactor_run()
 
