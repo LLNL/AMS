@@ -367,6 +367,7 @@ def submit_ams_job(
         gpus_per_task=resources.gpus_per_task,
         exclusive=resources.exclusive,
     )
+    print("Submitting ", command)
 
     jobspec.setattr_shell_option("mpi", "spectrum")
     jobspec.setattr_shell_option("gpu-affinity", "per-task")
