@@ -1,0 +1,331 @@
+import threading
+import logging
+import concurrent.futures
+import collections
+
+
+from flux.job.event import MAIN_EVENTS
+from flux.job import FluxExecutor
+
+
+# pylint: disable=too-many-instance-attributes
+class AMSFluxExecutorFuture(concurrent.futures.Future):
+    """A ``concurrent.futures.Future`` subclass that represents a single Flux job.
+
+    In addition to all of the ``flux.job.FluxExecutorFuture`` functionality,
+    ``AMSFluxExecutorFuture`` instances offer:
+
+    * The ``uri`` and ``add_uri_callback`` methods for retrieving the
+      Flux uri of the instance executing this job. This is convenient for
+      nested jobs
+
+    Valid events are contained in the ``EVENTS`` class attribute.
+    """
+
+    # NOTE: This is the primary difference of the original FluxExecutorFuture.
+    # FluxExecutorFuture uses frozensets without adding "memo" and requires all registered
+    # callbacks  to be part of the EVENTS. Thus we cannot inherit directly from it and
+    EVENTS = frozenset(("memo", *list(MAIN_EVENTS)))
+
+    @staticmethod
+    def __get_uri_cb(fut, eventlog):
+        if "uri" not in eventlog.context:
+            fut._set_uri(None, KeyError(f"uri does not exist in memo callback {eventlog}"))
+        fut._set_uri(eventlog.context["uri"])
+
+    def __init__(self, owning_thread_id, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Thread.ident of thread tasked with completing this future
+        self.__owning_thread_id = owning_thread_id
+        self.__jobid_condition = threading.Condition()
+        self.__jobid = None
+        self.__jobid_set = False  # True if the jobid has been set to something
+        self.__jobid_exception = None
+        self.__jobid_callbacks = []
+        # NOTE: These are the 'additional variables of the Future'
+        self.__uri_condition = threading.Condition()
+        self.__uri = None
+        self.__uri_set = False
+        self.__uri_exception = None
+        self.__uri_callbacks = []
+
+        self.__event_lock = threading.RLock()
+        self.__events_occurred = {state: collections.deque() for state in self.EVENTS}
+        self.__event_callbacks = {state: collections.deque() for state in self.EVENTS}
+        self.add_event_callback("memo", self.__get_uri_cb)
+
+    def _set_uri(self, uri, exc=None):
+        """Sets the Flux uri associated with the future.
+
+        If `exc` is not None, raise `exc` instead of returning the jobid
+        in calls to `Future.jobid()`. Useful if the job ID cannot be
+        retrieved.
+
+        Should only be used by Executor implementations and unit tests.
+        """
+        if self.__uri:
+            raise RuntimeError("invalid state: uri already set")
+
+        with self.__uri_condition:
+            self.__uri = uri
+            self.__uri_set = True
+            if exc is not None:
+                self.__uri_exception = exc
+            self.__uri_condition.notify_all()
+        for callback in self.__uri_callbacks:
+            self._invoke_flux_callback(callback)
+
+    def _set_jobid(self, jobid, exc=None):
+        """Sets the Flux jobid associated with the future.
+
+        If `exc` is not None, raise `exc` instead of returning the jobid
+        in calls to `Future.jobid()`. Useful if the job ID cannot be
+        retrieved.
+
+        Should only be used by Executor implementations and unit tests.
+        """
+        if self.__jobid_set:
+            # should be InvalidStateError in 3.8+
+            raise RuntimeError("invalid state: jobid already set")
+        with self.__jobid_condition:
+            self.__jobid = jobid
+            self.__jobid_set = True
+            if exc is not None:
+                self.__jobid_exception = exc
+            self.__jobid_condition.notify_all()
+        for callback in self.__jobid_callbacks:
+            self._invoke_flux_callback(callback)
+
+    def add_done_callback(self, *args, **kwargs):  # pylint: disable=arguments-differ
+        """Attaches a callable that will be called when the future finishes.
+
+        :param fn: A callable that will be called with this future as its only
+            argument when the future completes or is cancelled. The callable
+            will always be called by a thread in the same process in which
+            it was added. If the future has already completed or been
+            cancelled then the callable will be called immediately. These
+            callables are called in the order that they were added.
+        :return: ``self``
+        """
+        super().add_done_callback(*args, **kwargs)
+        return self
+
+    def uri(self, timeout=None):
+        """Return the uri of the Flux Instance that the future represents.
+
+        :param timeout: The number of seconds to wait for the jobid.
+            If None, then there is no limit on the wait time.
+
+        :return: a flux uri.
+
+        :raises concurrent.futures.TimeoutError: If the jobid is not available
+            before the given timeout.
+        :raises concurrent.futures.CancelledError: If the future was cancelled.
+        :raises RuntimeError: If the job could not be submitted (e.g. if
+            the jobspec was invalid).
+        """
+        if self.__uri_set:
+            return self._get_uri()
+        with self.__uri_condition:
+            self.__uri_condition.wait(timeout)
+            if self.__uri_set:
+                return self._get_uri()
+            raise concurrent.futures.TimeoutError()
+
+    def _get_uri(self):
+        """Get the jobid, checking for cancellation and invalid job ids."""
+        if self.__uri_exception is not None:
+            raise self.__uri_exception
+        return self.__uri
+
+    def jobid(self, timeout=None):
+        """Return the jobid of the Flux job that the future represents.
+
+        :param timeout: The number of seconds to wait for the jobid.
+            If None, then there is no limit on the wait time.
+
+        :return: a positive integer jobid.
+
+        :raises concurrent.futures.TimeoutError: If the jobid is not available
+            before the given timeout.
+        :raises concurrent.futures.CancelledError: If the future was cancelled.
+        :raises RuntimeError: If the job could not be submitted (e.g. if
+            the jobspec was invalid).
+        """
+        if self.__jobid_set:
+            return self._get_jobid()
+        with self.__jobid_condition:
+            self.__jobid_condition.wait(timeout)
+            if self.__jobid_set:
+                return self._get_jobid()
+            raise concurrent.futures.TimeoutError()
+
+    def _get_jobid(self):
+        """Get the jobid, checking for cancellation and invalid job ids."""
+        if self.__jobid_exception is not None:
+            raise self.__jobid_exception
+        return self.__jobid
+
+    def add_uri_callback(self, callback):
+        """Attaches a callable that will be called when the uri is ready.
+
+        Added callables are called in the order that they were added and may be called
+        in another thread.  If the callable raises an ``Exception`` subclass, it will
+        be logged and ignored.  If the callable raises a ``BaseException`` subclass,
+        the behavior is undefined.
+
+        :param callback: a callable taking the future as its only argument.
+        :return: ``self``
+        """
+        with self.__uri_condition:
+            if self.__uri is None:
+                self.__uri_callbacks.append(callback)
+                return self
+        self._invoke_flux_callback(callback)
+        return self
+
+    def add_jobid_callback(self, callback):
+        """Attaches a callable that will be called when the jobid is ready.
+
+        Added callables are called in the order that they were added and may be called
+        in another thread.  If the callable raises an ``Exception`` subclass, it will
+        be logged and ignored.  If the callable raises a ``BaseException`` subclass,
+        the behavior is undefined.
+
+        :param callback: a callable taking the future as its only argument.
+        :return: ``self``
+        """
+        with self.__jobid_condition:
+            if self.__jobid is None:
+                self.__jobid_callbacks.append(callback)
+                return self
+        self._invoke_flux_callback(callback)
+        return self
+
+    def _invoke_flux_callback(self, callback, *args):
+        try:
+            callback(self, *args)
+        except Exception:  # pylint: disable=broad-except
+            logging.getLogger(__name__).exception("exception calling callback for %r", self)
+
+    def exception(self, *args, **kwargs):  # pylint: disable=arguments-differ
+        """If this method is invoked from a jobid/event callback by an executor thread,
+        it will result in deadlock, since the current thread will wait
+        for work that the same thread is meant to do.
+
+        Head off this possibility by checking the current thread.
+        """
+        if not self.done() and threading.get_ident() == self.__owning_thread_id:
+            raise RuntimeError("Cannot wait for future from inside callback")
+        return super().exception(*args, **kwargs)
+
+    exception.__doc__ = concurrent.futures.Future.exception.__doc__
+
+    def result(self, *args, **kwargs):  # pylint: disable=arguments-differ
+        """If this method is invoked from a jobid/event callback by an executor thread,
+        it will result in deadlock, since the current thread will wait
+        for work that the same thread is meant to do.
+
+        Head off this possibility by checking the current thread.
+        """
+        if not self.done() and threading.get_ident() == self.__owning_thread_id:
+            raise RuntimeError("Cannot wait for future from inside callback")
+        return super().result(*args, **kwargs)
+
+    result.__doc__ = concurrent.futures.Future.result.__doc__
+
+    def set_exception(self, exception):
+        """When setting an exception on the future, set the jobid if it hasn't
+        been set already. The jobid will already have been set unless the exception
+        was generated before the job could be successfully submitted.
+        """
+        try:
+            self.jobid(0)
+        except concurrent.futures.TimeoutError:
+            # set jobid to something
+            self._set_jobid(None, RuntimeError(f"job could not be submitted due to {exception}"))
+            self._set_uri(None, RuntimeError(f"job could not be submitted due to {exception}"))
+        return super().set_exception(exception)
+
+    set_exception.__doc__ = concurrent.futures.Future.set_exception.__doc__
+
+    def cancel(self, *args, **kwargs):  # pylint: disable=arguments-differ
+        """If a thread is waiting for the future's jobid, and another
+        thread cancels the future, the waiting thread would never wake up
+        because the jobid would never be set.
+
+        When cancelling, set the jobid to something invalid.
+        """
+        if self.cancelled():  # if already cancelled, return True
+            return True
+        cancelled = super().cancel(*args, **kwargs)
+        if cancelled:
+            try:
+                self.jobid(0)
+            except concurrent.futures.TimeoutError:
+                # set jobid to something
+                self._set_jobid(None, concurrent.futures.CancelledError())
+                self._set_uri(None, concurrent.futures.CancelledError())
+        return cancelled
+
+    def add_event_callback(self, event, callback):
+        """Add a callback to be invoked when an event occurs.
+
+        The callback will be invoked, with the future as the first argument and the
+        ``flux.job.EventLogEvent`` as the second, whenever the event occurs. If the
+        event occurs multiple times, the callback will be invoked with each different
+        `EventLogEvent` instance. If the event never occurs, the callback
+        will never be invoked.
+
+        Added callables are called in the order that they were added and may be called
+        in another thread.  If the callable raises an ``Exception`` subclass, it will
+        be logged and ignored.  If the callable raises a ``BaseException`` subclass,
+        the behavior is undefined.
+
+        If the event has already occurred, the callback will be called immediately.
+
+        :param event: the name of the event to add the callback to.
+        :param callback: a callable taking the future and the event as arguments.
+        :return: ``self``
+        """
+        if event not in self.EVENTS:
+            raise ValueError(event)
+        with self.__event_lock:
+            self.__event_callbacks[event].append(callback)
+            for log_entry in self.__events_occurred[event]:
+                self._invoke_flux_callback(callback, log_entry)
+        return self
+
+    def _set_event(self, log_entry):
+        """Set an event on the future.
+
+        For use by Executor implementations and unit tests.
+
+        :param log_entry: an ``EventLogEvent``.
+        """
+        event_name = log_entry.name
+        if event_name not in self.EVENTS:
+            raise ValueError(event_name)
+        with self.__event_lock:
+            self.__events_occurred[event_name].append(log_entry)
+            # make a shallow copy of callbacks --- in case a user callback
+            # tries to add another callback for the same event
+            for callback in list(self.__event_callbacks[event_name]):
+                self._invoke_flux_callback(callback, log_entry)
+
+
+class AMSFluxExecutor(FluxExecutor):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def _create_future(self, factory, *factory_args):
+        if self._broken_event.is_set():
+            raise RuntimeError("Executor is broken, new futures cannot be scheduled")
+        with self._shutdown_lock:
+            if self._shutdown_event.is_set():
+                raise RuntimeError("cannot schedule new futures after shutdown")
+            future_owner_id = self._executor_threads[self._next_thread].ident
+            fut = AMSFluxExecutorFuture(future_owner_id)
+            self._submission_queues[self._next_thread].append(factory(*factory_args, fut))
+            self._next_thread = (self._next_thread + 1) % len(self._submission_queues)
+            return fut
