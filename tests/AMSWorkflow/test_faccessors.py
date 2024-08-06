@@ -140,7 +140,7 @@ class TestReader(unittest.TestCase):
 
     def _cmp(self, writer_cls, reader_cls, fn):
         inputs, outputs = self._write(writer_cls, fn)
-        read_inputs, read_outputs = self._read(reader_cls, fn)
+        _, read_inputs, read_outputs = self._read(reader_cls, fn)
         self.assertTrue(
             np.array_equal(read_inputs, inputs), msg=f"Writting with {writer_cls} and reading with {reader_cls}"
         )

@@ -38,6 +38,8 @@ def main():
         required=True,
     )
 
+    parser.add_argument("--remote-uri", "-r", dest="remove_uri", required=True)
+
     args = parser.parse_args()
     if args.action == "start":
         daemon = AMSDaemon(args.config, args.certificate)

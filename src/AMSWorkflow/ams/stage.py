@@ -463,6 +463,8 @@ class PushToStore(Task):
                     with AMSMonitor(obj=self, tag="request_block", record=["nb_requests", "total_filesize"]):
                         self.nb_requests += 1
                         domain_name, file_name = item.data()
+                        if domain_name == None:
+                            domain_name = "unknown-domain"
                         src_fn = Path(file_name)
                         dest_file = self.dir / src_fn.name
                         if src_fn != dest_file:
@@ -553,9 +555,11 @@ class Pipeline(ABC):
         """
         executors = list()
         for a in self._tasks:
+            print(a)
             executors.append(exec_vehicle_cls(target=a))
 
         for e in executors:
+            print(e)
             e.start()
 
         for e in executors:

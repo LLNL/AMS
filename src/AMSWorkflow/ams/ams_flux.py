@@ -33,7 +33,7 @@ class AMSFluxExecutorFuture(concurrent.futures.Future):
             fut._set_uri(None, KeyError(f"uri does not exist in memo callback {eventlog}"))
         fut._set_uri(eventlog.context["uri"])
 
-    def __init__(self, owning_thread_id, *args, **kwargs):
+    def __init__(self, owning_thread_id, flux_executor, track_uri, domain_descr, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Thread.ident of thread tasked with completing this future
         self.__owning_thread_id = owning_thread_id
@@ -48,11 +48,17 @@ class AMSFluxExecutorFuture(concurrent.futures.Future):
         self.__uri_set = False
         self.__uri_exception = None
         self.__uri_callbacks = []
+        self.__flux_executor = flux_executor
+        self.__domain_descr = domain_descr
 
         self.__event_lock = threading.RLock()
         self.__events_occurred = {state: collections.deque() for state in self.EVENTS}
         self.__event_callbacks = {state: collections.deque() for state in self.EVENTS}
-        self.add_event_callback("memo", self.__get_uri_cb)
+        if track_uri:
+            self.add_event_callback("memo", self.__get_uri_cb)
+
+    def get_domain_descr(self):
+        return self.__domain_descr
 
     def _set_uri(self, uri, exc=None):
         """Sets the Flux uri associated with the future.
@@ -166,6 +172,9 @@ class AMSFluxExecutorFuture(concurrent.futures.Future):
             raise self.__jobid_exception
         return self.__jobid
 
+    def flux_executor(self):
+        return self.__flux_executor
+
     def add_uri_callback(self, callback):
         """Attaches a callable that will be called when the uri is ready.
 
@@ -219,8 +228,6 @@ class AMSFluxExecutorFuture(concurrent.futures.Future):
             raise RuntimeError("Cannot wait for future from inside callback")
         return super().exception(*args, **kwargs)
 
-    exception.__doc__ = concurrent.futures.Future.exception.__doc__
-
     def result(self, *args, **kwargs):  # pylint: disable=arguments-differ
         """If this method is invoked from a jobid/event callback by an executor thread,
         it will result in deadlock, since the current thread will wait
@@ -231,8 +238,6 @@ class AMSFluxExecutorFuture(concurrent.futures.Future):
         if not self.done() and threading.get_ident() == self.__owning_thread_id:
             raise RuntimeError("Cannot wait for future from inside callback")
         return super().result(*args, **kwargs)
-
-    result.__doc__ = concurrent.futures.Future.result.__doc__
 
     def set_exception(self, exception):
         """When setting an exception on the future, set the jobid if it hasn't
@@ -246,8 +251,6 @@ class AMSFluxExecutorFuture(concurrent.futures.Future):
             self._set_jobid(None, RuntimeError(f"job could not be submitted due to {exception}"))
             self._set_uri(None, RuntimeError(f"job could not be submitted due to {exception}"))
         return super().set_exception(exception)
-
-    set_exception.__doc__ = concurrent.futures.Future.set_exception.__doc__
 
     def cancel(self, *args, **kwargs):  # pylint: disable=arguments-differ
         """If a thread is waiting for the future's jobid, and another
@@ -315,7 +318,8 @@ class AMSFluxExecutorFuture(concurrent.futures.Future):
 
 
 class AMSFluxExecutor(FluxExecutor):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, track_uri, *args, **kwargs):
+        self._track_uri = track_uri
         super().__init__(*args, **kwargs)
 
     def _create_future(self, factory, *factory_args):
@@ -325,7 +329,61 @@ class AMSFluxExecutor(FluxExecutor):
             if self._shutdown_event.is_set():
                 raise RuntimeError("cannot schedule new futures after shutdown")
             future_owner_id = self._executor_threads[self._next_thread].ident
-            fut = AMSFluxExecutorFuture(future_owner_id)
+            fut = AMSFluxExecutorFuture(future_owner_id, self, self.track_uri, None)
             self._submission_queues[self._next_thread].append(factory(*factory_args, fut))
             self._next_thread = (self._next_thread + 1) % len(self._submission_queues)
             return fut
+
+
+class AMSOrchestratorExecutor(AMSFluxExecutor):
+    def __init__(self, o_queue, domains, *args, **kwargs):
+        self.o_queue = o_queue
+        self._domains = domains
+        super().__init__(False, *args, **kwargs)
+
+    def submit(self, domain, *args, **kwargs):
+        """Submit a jobspec to Flux and return a ``FluxExecutorFuture``.
+
+        Accepts the same positional and keyword arguments as ``flux.job.submit``,
+        except for the ``flux.job.submit`` function's first argument, ``flux_handle``.
+
+        :param jobspec: jobspec defining the job request
+        :type jobspec: Jobspec or its string encoding
+        :param urgency: job urgency 0 (lowest) through 31 (highest)
+            (default is 16).  Priorities 0 through 15 are restricted to
+            the instance owner.
+        :type urgency: int
+        :param waitable: allow result to be fetched with ``flux.job.wait()``
+            (default is False).  Waitable=True is restricted to the
+            instance owner.
+        :type waitable: bool
+        :param debug: enable job manager debugging events to job eventlog
+            (default is False)
+        :type debug: bool
+        :param pre_signed: jobspec argument is already signed
+            (default is False)
+        :type pre_signed: bool
+
+        :raises RuntimeError: if ``shutdown`` has been called or if an error has
+            occurred and new jobs cannot be submitted (e.g. a remote Flux instance
+            can no longer be communicated with).
+        """
+        return self._create_future(domain, _SubmitPackage, args, kwargs)
+
+    def _create_future(self, domain, factory, *factory_args):
+        if self._broken_event.is_set():
+            raise RuntimeError("Executor is broken, new futures cannot be scheduled")
+        with self._shutdown_lock:
+            if self._shutdown_event.is_set():
+                raise RuntimeError("cannot schedule new futures after shutdown")
+            future_owner_id = self._executor_threads[self._next_thread].ident
+            fut = AMSFluxExecutorFuture(future_owner_id, self, self.track_uri, domain)
+            self._submission_queues[self._next_thread].append(factory(*factory_args, fut))
+            self._next_thread = (self._next_thread + 1) % len(self._submission_queues)
+            return fut
+
+    def get_o_queue(self):
+        return self.o_queue
+
+    def get_domains(self):
+        return self._domains

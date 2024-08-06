@@ -3,6 +3,9 @@ import unittest
 from pathlib import Path
 
 from ams import store
+from ams.store_types import AMSModelDescr
+from ams.store_types import UQType
+from ams.store_types import UQAggregate
 
 
 def create_file(directory, fn):
@@ -29,12 +32,12 @@ class TestStore(unittest.TestCase):
             cls.model_files.append(create_file(str(cls.store_dir), f"model_{i}.pt"))
             cls.candidate_files.append(create_file(str(cls.store_dir), f"candidate_file_{i}.h5"))
 
-    def _add_entries(self, add_func, getter, elements, as_list=True):
+    def _add_entries(self, add_func, getter, elements, *args, as_list=True):
         for i, f in enumerate(elements):
             if as_list:
-                add_func("test", [f], version=i)
+                add_func("test", [f], *args, version=i)
             else:
-                add_func("test", f, version=i)
+                add_func("test", f, *args, version=i)
 
         versions = getter("test")
         self.assertTrue(len(versions) == len(elements), f"Adding elements using {add_func} not working properly")
@@ -73,7 +76,19 @@ class TestStore(unittest.TestCase):
     def test_store_add_remove_query_model(self):
         ams_store = store.AMSDataStore(self.__class__.store_dir, "test.sql", "ams_test")
         ams_store = ams_store.open()
-        self._add_entries(ams_store.add_model, ams_store.get_model_versions, self.__class__.model_files, False)
+
+        model_descrs = []
+        for m in self.__class__.model_files:
+            model_descrs.append(AMSModelDescr(path=m, threshold=0.5, uq_type=UQType.Random))
+
+        self._add_entries(
+            ams_store.add_model,
+            ams_store.get_model_versions,
+            model_descrs,
+            0.1,
+            0.1,
+            as_list=False,
+        )
         versions = self._remove_entries(
             ams_store.remove_models, ams_store.get_candidate_versions, self.__class__.model_files
         )
@@ -83,7 +98,7 @@ class TestStore(unittest.TestCase):
     def test_store_add_data_as_list(self):
         ams_store = store.AMSDataStore(self.__class__.store_dir, "test.sql", "ams_test")
         ams_store = ams_store.open()
-        self._add_entries(ams_store.add_data, ams_store.get_data_versions, [self.__class__.h5_files], False)
+        self._add_entries(ams_store.add_data, ams_store.get_data_versions, [self.__class__.h5_files], as_list=False)
         versions = self._remove_entries(ams_store.remove_data, ams_store.get_data_versions, self.__class__.h5_files)
         self.assertTrue(len(versions) == 0, f"Store should be empty but isn't {versions}")
         ams_store.close()
@@ -92,7 +107,10 @@ class TestStore(unittest.TestCase):
         ams_store = store.AMSDataStore(self.__class__.store_dir, "test.sql", "ams_test")
         ams_store = ams_store.open()
         self._add_entries(
-            ams_store.add_candidates, ams_store.get_candidate_versions, [self.__class__.candidate_files], False
+            ams_store.add_candidates,
+            ams_store.get_candidate_versions,
+            [self.__class__.candidate_files],
+            as_list=False,
         )
         versions = self._remove_entries(
             ams_store.remove_candidates, ams_store.get_candidate_versions, self.__class__.candidate_files
