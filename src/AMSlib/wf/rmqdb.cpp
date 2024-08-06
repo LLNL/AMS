@@ -13,6 +13,38 @@ using namespace ams::db;
  * AMSMsgHeader
  */
 
+AMSMsgHeader::AMSMsgHeader(size_t mpi_rank,
+                           size_t domain_size,
+                           size_t num_elem,
+                           size_t in_dim,
+                           size_t out_dim,
+                           size_t type_size)
+    : hsize(static_cast<uint8_t>(AMSMsgHeader::size())),
+      dtype(static_cast<uint8_t>(type_size)),
+      mpi_rank(static_cast<uint16_t>(mpi_rank)),
+      domain_size(static_cast<uint16_t>(domain_size)),
+      num_elem(static_cast<uint32_t>(num_elem)),
+      in_dim(static_cast<uint16_t>(in_dim)),
+      out_dim(static_cast<uint16_t>(out_dim))
+{
+}
+
+AMSMsgHeader::AMSMsgHeader(uint16_t mpi_rank,
+                           uint16_t domain_size,
+                           uint32_t num_elem,
+                           uint16_t in_dim,
+                           uint16_t out_dim,
+                           uint8_t type_size)
+    : hsize(static_cast<uint8_t>(AMSMsgHeader::size())),
+      dtype(type_size),
+      mpi_rank(mpi_rank),
+      domain_size(domain_size),
+      num_elem(num_elem),
+      in_dim(in_dim),
+      out_dim(out_dim)
+{
+}
+
 size_t AMSMsgHeader::encode(uint8_t* data_blob)
 {
   if (!data_blob) return 0;
@@ -47,7 +79,6 @@ size_t AMSMsgHeader::encode(uint8_t* data_blob)
 
   return AMSMsgHeader::size();
 }
-
 
 AMSMsgHeader AMSMsgHeader::decode(uint8_t* data_blob)
 {
@@ -140,6 +171,22 @@ AMSMessage::AMSMessage(int id, uint64_t rId, uint8_t* data)
 /**
  * AMSMessageInbound
  */
+
+AMSMessageInbound::AMSMessageInbound(uint64_t id,
+                                     uint64_t rId,
+                                     std::string body,
+                                     std::string exchange,
+                                     std::string routing_key,
+                                     bool redelivered)
+    : id(id),
+      rId(rId),
+      body(std::move(body)),
+      exchange(std::move(exchange)),
+      routing_key(std::move(routing_key)),
+      redelivered(redelivered){};
+
+
+bool AMSMessageInbound::empty() { return body.empty() || routing_key.empty(); }
 
 bool AMSMessageInbound::isTraining()
 {
@@ -237,6 +284,17 @@ bool RMQHandler::onSecuring(AMQP::TcpConnection* connection, SSL* ssl)
   }
 }
 
+bool RMQHandler::onSecured(AMQP::TcpConnection* connection, const SSL* ssl)
+{
+  DBG(RMQHandler, "[r%d] Secured TLS connection has been established.", _rId)
+  return true;
+}
+
+void RMQHandler::onClosed(AMQP::TcpConnection* connection)
+{
+  DBG(RMQHandler, "[r%d] Connection is closed.", _rId)
+}
+
 void RMQHandler::onError(AMQP::TcpConnection* connection, const char* message)
 {
   WARNING(RMQHandler, "[r%d] fatal error on TCP connection: %s", _rId, message)
@@ -269,6 +327,21 @@ bool RMQHandler::waitFuture(std::future<RMQConnectionStatus>& future,
 /**
  * RMQConsumerHandler
  */
+
+RMQConsumerHandler::RMQConsumerHandler(uint64_t rId,
+                                       std::shared_ptr<struct event_base> loop,
+                                       std::string cacert,
+                                       std::string exchange,
+                                       std::string routing_key,
+                                       AMQP::ExchangeType extype)
+    : RMQHandler(rId, loop, cacert),
+      _exchange(exchange),
+      _extype(extype),
+      _routing_key(routing_key),
+      _messages(std::make_shared<std::vector<AMSMessageInbound>>()),
+      _channel(nullptr)
+{
+}
 
 std::tuple<uint64_t, std::string> RMQConsumerHandler::getLatestModel()
 {
@@ -323,7 +396,8 @@ void RMQConsumerHandler::onReady(AMQP::TcpConnection* connection)
     establish_connection.set_value(FAILED);
   });
 
-  _channel->declareExchange(_exchange, _extype)
+  // The exchange will be deleted once all bound queues are removed
+  _channel->declareExchange(_exchange, _extype, AMQP::autodelete)
       .onSuccess([&, this]() {
         DBG(RMQConsumerHandler,
             "[r%d] declared exchange %s (type: %d)",
@@ -331,26 +405,26 @@ void RMQConsumerHandler::onReady(AMQP::TcpConnection* connection)
             _exchange.c_str(),
             _extype)
         establish_connection.set_value(CONNECTED);
-        _channel->declareQueue(_queue)
+        _channel->declareQueue(AMQP::exclusive)
             .onSuccess([&, this](const std::string& name,
                                  uint32_t messagecount,
                                  uint32_t consumercount) {
               DBG(RMQConsumerHandler,
-                     "[r%d] declared queue: %s (messagecount=%d, "
-                     "consumercount=%d)",
-                     _rId,
-                     name.c_str(),
-                     messagecount,
-                     consumercount)
+                  "[r%d] declared queue: %s (messagecount=%d, "
+                  "consumercount=%d)",
+                  _rId,
+                  name.c_str(),
+                  messagecount,
+                  consumercount)
               _channel->bindQueue(_exchange, name, _routing_key)
                   .onSuccess([&, name, this]() {
                     DBG(RMQConsumerHandler,
-                         "[r%d] Bounded queue %s to exchange %s with "
-                         "routing key = %s",
-                         _rId,
-                         name.c_str(),
-                         _exchange.c_str(),
-                         _routing_key.c_str())
+                        "[r%d] Bounded queue %s to exchange %s with "
+                        "routing key = %s",
+                        _rId,
+                        name.c_str(),
+                        _exchange.c_str(),
+                        _routing_key.c_str())
 
                     // We can now install callback functions for when we will consumme messages
                     // callback function that is called when the consume operation starts
@@ -377,15 +451,15 @@ void RMQConsumerHandler::onReady(AMQP::TcpConnection* connection)
                       // _on_message_received(message, deliveryTag, redelivered);
                       std::string msg(message.body(), message.bodySize());
                       DBG(RMQConsumerHandler,
-                           "[r%d] message received [tag=%d] : '%s' of size "
-                           "%d B from "
-                           "'%s'/'%s'",
-                           _rId,
-                           deliveryTag,
-                           msg.c_str(),
-                           message.bodySize(),
-                           message.exchange().c_str(),
-                           message.routingkey().c_str())
+                          "[r%d] message received [tag=%d] : '%s' of size "
+                          "%d B from "
+                          "'%s'/'%s'",
+                          _rId,
+                          deliveryTag,
+                          msg.c_str(),
+                          message.bodySize(),
+                          message.exchange().c_str(),
+                          message.routingkey().c_str())
                       _messages->push_back(
                           AMSMessageInbound(deliveryTag,
                                             _rId,
@@ -432,7 +506,7 @@ void RMQConsumerHandler::onReady(AMQP::TcpConnection* connection)
                       _rId,
                       message)
             });  //bindQueue
-      }) //declareExchange
+      })         //declareExchange
       .onError([&](const char* message) {
         WARNING(RMQConsumerHandler,
                 "[r%d] failed to create exchange: %s",
@@ -461,25 +535,25 @@ RMQConsumer::RMQConsumer(uint64_t rId,
   evthread_use_pthreads();
 #endif
   DBG(RMQConsumer,
-         "Libevent %s (LIBEVENT_VERSION_NUMBER = %#010x)",
-         event_get_version(),
-         event_get_version_number());
+      "Libevent %s (LIBEVENT_VERSION_NUMBER = %#010x)",
+      event_get_version(),
+      event_get_version_number());
   DBG(RMQConsumer,
-         "%s (OPENSSL_VERSION_NUMBER = %#010x)",
-         OPENSSL_VERSION_TEXT,
-         OPENSSL_VERSION_NUMBER);
+      "%s (OPENSSL_VERSION_NUMBER = %#010x)",
+      OPENSSL_VERSION_TEXT,
+      OPENSSL_VERSION_NUMBER);
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
   SSL_library_init();
 #else
   OPENSSL_init_ssl(0, NULL);
 #endif
   DBG(RMQConsumer,
-        "RabbitMQ address: %s:%d/%s (exchange = %s / routing key = %s)",
-        address.hostname().c_str(),
-        address.port(),
-        address.vhost().c_str(),
-        _exchange.c_str(),
-        _routing_key.c_str())
+      "RabbitMQ address: %s:%d/%s (exchange = %s / routing key = %s)",
+      address.hostname().c_str(),
+      address.port(),
+      address.vhost().c_str(),
+      _exchange.c_str(),
+      _routing_key.c_str())
 
   _loop = std::shared_ptr<struct event_base>(event_base_new(),
                                              [](struct event_base* event) {
@@ -490,9 +564,101 @@ RMQConsumer::RMQConsumer(uint64_t rId,
   _connection = new AMQP::TcpConnection(_handler.get(), address);
 }
 
+void RMQConsumer::start() { event_base_dispatch(_loop.get()); }
+
+void RMQConsumer::stop() { event_base_loopexit(_loop.get(), NULL); }
+
+bool RMQConsumer::ready()
+{
+  return _connection->ready() && _connection->usable();
+}
+
+bool RMQConsumer::waitToEstablish(unsigned ms, int repeat)
+{
+  return _handler->waitToEstablish(ms, repeat);
+}
+
+AMSMessageInbound RMQConsumer::popMessages()
+{
+  return _handler->popMessages();
+};
+
+void RMQConsumer::delMessage(uint64_t delivery_tag)
+{
+  _handler->delMessage(delivery_tag);
+}
+
+AMSMessageInbound RMQConsumer::getMessages(uint64_t delivery_tag, bool erase)
+{
+  return _handler->getMessages(delivery_tag, erase);
+}
+
+std::tuple<uint64_t, std::string> RMQConsumer::getLatestModel()
+{
+  return _handler->getLatestModel();
+}
+
+bool RMQConsumer::close(unsigned ms, int repeat)
+{
+  _connection->close(false);
+  return _handler->waitToClose(ms, repeat);
+}
+
+RMQConsumer::~RMQConsumer()
+{
+  _connection->close(false);
+  delete _connection;
+}
+
 /**
  * RMQPublisherHandler
  */
+
+RMQPublisherHandler::RMQPublisherHandler(
+    uint64_t rId,
+    std::shared_ptr<struct event_base> loop,
+    std::string cacert,
+    std::string queue)
+    : RMQHandler(rId, loop, cacert),
+      _queue(queue),
+      _nb_msg_ack(0),
+      _nb_msg(0),
+      _channel(nullptr),
+      _rchannel(nullptr)
+{
+}
+
+/**
+ *  @brief  Return the messages that have NOT been acknowledged by the RabbitMQ server. 
+ *  @return     A vector of AMSMessage
+ */
+std::vector<AMSMessage>& RMQPublisherHandler::msgBuffer() { return _messages; }
+
+/**
+ *  @brief    Free AMSMessages held by the handler
+ */
+void RMQPublisherHandler::cleanup() { freeAllMessages(_messages); }
+
+/**
+ *  @brief    Total number of messages sent
+ *  @return   Number of messages
+ */
+int RMQPublisherHandler::msgSent() const { return _nb_msg; }
+
+/**
+ *  @brief    Total number of messages successfully acknowledged
+ *  @return   Number of messages
+ */
+int RMQPublisherHandler::msgAcknowledged() const { return _nb_msg_ack; }
+
+/**
+ *  @brief    Total number of messages unacknowledged
+ *  @return   Number of messages unacknowledged
+ */
+unsigned RMQPublisherHandler::unacknowledged() const
+{
+  return _rchannel->unacknowledged();
+}
 
 void RMQPublisherHandler::publish(AMSMessage&& msg)
 {
@@ -573,12 +739,12 @@ void RMQPublisherHandler::onReady(AMQP::TcpConnection* connection)
                      uint32_t messagecount,
                      uint32_t consumercount) {
         DBG(RMQPublisherHandler,
-               "[r%d] declared queue: %s (messagecount=%d, "
-               "consumercount=%d)",
-               _rId,
-               _queue.c_str(),
-               messagecount,
-               consumercount)
+            "[r%d] declared queue: %s (messagecount=%d, "
+            "consumercount=%d)",
+            _rId,
+            _queue.c_str(),
+            messagecount,
+            consumercount)
         // We can now instantiate the shared buffer between AMS and RMQ
         _rchannel =
             std::make_shared<AMQP::Reliable<AMQP::Tagger>>(*_channel.get());
@@ -659,24 +825,24 @@ RMQPublisher::RMQPublisher(uint64_t rId,
   evthread_use_pthreads();
 #endif
   DBG(RMQPublisher,
-         "Libevent %s (LIBEVENT_VERSION_NUMBER = %#010x)",
-         event_get_version(),
-         event_get_version_number());
+      "Libevent %s (LIBEVENT_VERSION_NUMBER = %#010x)",
+      event_get_version(),
+      event_get_version_number());
   DBG(RMQPublisher,
-         "%s (OPENSSL_VERSION_NUMBER = %#010x)",
-         OPENSSL_VERSION_TEXT,
-         OPENSSL_VERSION_NUMBER);
+      "%s (OPENSSL_VERSION_NUMBER = %#010x)",
+      OPENSSL_VERSION_TEXT,
+      OPENSSL_VERSION_NUMBER);
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
   SSL_library_init();
 #else
   OPENSSL_init_ssl(0, NULL);
 #endif
   DBG(RMQPublisher,
-        "RabbitMQ address: %s:%d/%s (queue = %s)",
-        address.hostname().c_str(),
-        address.port(),
-        address.vhost().c_str(),
-        _queue.c_str())
+      "RabbitMQ address: %s:%d/%s (queue = %s)",
+      address.hostname().c_str(),
+      address.port(),
+      address.vhost().c_str(),
+      _queue.c_str())
 
   _loop = std::shared_ptr<struct event_base>(event_base_new(),
                                              [](struct event_base* event) {
@@ -704,6 +870,41 @@ void RMQPublisher::publish(AMSMessage&& message)
 
   DBG(RMQPublisher, "Publishing message %d: %p", message.id(), message.data())
   _handler->publish(std::move(message));
+}
+
+bool RMQPublisher::ready_publish()
+{
+  return _connection->ready() && _connection->usable();
+}
+
+bool RMQPublisher::waitToEstablish(unsigned ms, int repeat)
+{
+  return _handler->waitToEstablish(ms, repeat);
+}
+
+unsigned RMQPublisher::unacknowledged() const
+{
+  return _handler->unacknowledged();
+}
+
+void RMQPublisher::start() { event_base_dispatch(_loop.get()); }
+
+void RMQPublisher::stop() { event_base_loopexit(_loop.get(), NULL); }
+
+bool RMQPublisher::connectionValid() { return _handler->connectionValid(); }
+
+std::vector<AMSMessage>& RMQPublisher::getMsgBuffer()
+{
+  return _handler->msgBuffer();
+}
+
+void RMQPublisher::cleanup() { _handler->cleanup(); }
+
+int RMQPublisher::msgSent() const { return _handler->msgSent(); }
+
+int RMQPublisher::msgAcknowledged() const
+{
+  return _handler->msgAcknowledged();
 }
 
 bool RMQPublisher::close(unsigned ms, int repeat)
@@ -737,7 +938,8 @@ bool RMQInterface::connect(std::string rmq_name,
   // WARNING: there is no guarantee of uniqueness here as each MPI rank will have its own generator
   unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
   std::default_random_engine generator(seed);
-  std::uniform_int_distribution<int> distrib(0, std::numeric_limits<int>::max());
+  std::uniform_int_distribution<int> distrib(0,
+                                             std::numeric_limits<int>::max());
   _rId = static_cast<uint64_t>(distrib(generator));
 
   AMQP::Login login(rmq_user, rmq_password);
