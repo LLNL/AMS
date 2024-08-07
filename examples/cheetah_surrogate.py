@@ -79,6 +79,14 @@ class CheetahSurrogateDeltaUQ(nn.Module):
     def forward(self, x, last=False, freeze=False):
         x = self.ipt(x)
         return self.DUQnet(x, last=last, freeze=freeze)
+    
+    def forward_with_anchors(self, x,  last=False, freeze=False, 
+                anchors=None,corrupt=False,
+                n_anchors=1,return_std=False):
+        x = self.ipt(x)
+        return self.DUQnet(x,  last=last, freeze=freeze, anchors=anchors,
+                           corrupt=corrupt,n_anchors=n_anchors,
+                           return_std=return_std)
         
 
 class deltaUQ(torch.nn.Module):
@@ -146,9 +154,9 @@ class deltaUQ_MLP(deltaUQ):
 
         p = self.last_layer(penultimate)
         p = p.reshape(n_anchors,x.shape[0],p.shape[1])
-        p = p.mean(0)
         if return_std:
             std = p.std(0)
+        p = p.mean(0)
 
         if last:
             return p, penultimate
