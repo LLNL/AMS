@@ -3,8 +3,7 @@ import torch
 from torch import nn
 from scipy import stats
 import sys
-sys.path.append('/usr/workspace/bartolds/robust-active-learning/al_ood_shift')
-from al_ood.models import cheetah_surrogate
+import cheetah_surrogate
         
 def sub_select_badge(num_elements, data, candidates, path_to_model):
     """
@@ -32,9 +31,9 @@ def sub_select_badge(num_elements, data, candidates, path_to_model):
     return X[badge_indexes, ...], Y[badge_indexes, ...]
 
 def model_loader(path, num_inputs, num_outputs):
-    model = cheetah_surrogate.CheetahSurrogate(num_inputs=num_inputs, num_classes=num_outputs)
-    #state_dict = f'/p/vast1/ams_ood/results/cheetah/weights/weight_cheetah_dataset_no_FAISS_1_CheetahSurrogate_0_mae_50_plateau_stop_gt_badge_1_18000_2.pth'
-    #model.load_state_dict(torch.load(state_dict))
+    model = cheetah_surrogate.CheetahSurrogateDeltaUQ(num_inputs=num_inputs, num_classes=num_outputs)
+    #state_dict = torch.load(path)
+    #model.load_state_dict(state_dict)
     model.cuda()
     model.device = 'cuda'
     model.embedding_dim = 128
