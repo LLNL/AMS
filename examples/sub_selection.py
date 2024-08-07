@@ -11,6 +11,8 @@ from ams.faccessors import get_writer
 from ams.store import AMSDataStore
 from ams.views import AMSDataView
 
+from BADGE import sub_select_badge
+
 
 class IdealGasView(AMSDataView):
     """
@@ -77,7 +79,8 @@ def main():
         # Open Views of data, candidates to start sub-selection process
         with IdealGasView(db, "data") as data:
             with IdealGasView(db, "candidates") as candidates:
-                sb_X, sb_Y = sub_select(args.elements, data, candidates, model[0])
+                #sb_X, sb_Y = sub_select(args.elements, data, candidates, model[0])
+                sb_X, sb_Y = sub_select_badge(args.elements, data, candidates, model[0])
                 # Pick the correct ams writer to store data
                 # Pick a data base suggested file name. This is not mandatory but is good practice.
                 ams_writer = get_writer(ams_config.db_type)
