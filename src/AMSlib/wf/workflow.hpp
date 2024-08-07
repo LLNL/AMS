@@ -121,11 +121,7 @@ class AMSWorkflow
     bool *hPredicate = nullptr;
 
     if (appDataLoc == AMSResourceType::AMS_HOST) {
-#ifdef __ENABLE_MPI__
-      return DB->store(num_elements, inputs, outputs, comm, predicate);
-#else
       return DB->store(num_elements, inputs, outputs, predicate);
-#endif
     }
 
     for (int i = 0; i < inputs.size(); i++) {
@@ -148,11 +144,7 @@ class AMSWorkflow
     }
 
     // Store to database
-#ifdef __ENABLE_MPI__
-    DB->store(num_elements, hInputs, hOutputs, comm, hPredicate);
-#else
     DB->store(num_elements, hInputs, hOutputs, hPredicate);
-#endif
     rm.deallocate(hInputs, AMSResourceType::AMS_HOST);
     rm.deallocate(hOutputs, AMSResourceType::AMS_HOST);
     if (predicate) rm.deallocate(hPredicate, AMSResourceType::AMS_HOST);
@@ -173,9 +165,15 @@ class AMSWorkflow
     store(num_elements, mInputs, outputs, predicate);
   }
 
-  bool updateModel()
+  /** \brief Check if we can perform a surrogate model update.
+   *  AMS can update surrogate model only when all MPI ranks have received 
+   * the latest model from RabbitMQ.
+   * @param[in] performUpdate Perform the model update if True
+   * @return True
+   */
+  bool updateModel(bool performUpdate = false)
   {
-    if (!DB) return false;
+    if (!DB || !performUpdate) return false;
     bool local = DB->updateModel();
 #ifdef __ENABLE_MPI__
     bool global = false;

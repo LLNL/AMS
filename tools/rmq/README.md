@@ -5,6 +5,16 @@ RabbitMQ. They are useful to test and interact with AMSlib. Each script
 is completetly standalone and does not require the AMS Python package,
 however they require `pika` and `numpy`.
 
+## Generate TLS certificate
+
+To use most of the tools related to RabbitMQ you might need to provide TLS certificates.
+To generate such certificate you can use OpenSSL, for example:
+
+```bash
+    openssl s_client -connect $REMOTE_HOST:$REMOTE_PORT -showcerts < /dev/null 2>/dev/null | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' > rmq-tls.crt
+```
+where `REMOTE_HOST` is the hostname of the RabbitMQ server and `REMOTE_PORT` is the port.
+
 ## Consume messages from AMSlib
 
 To receive, or consume, messages emitted by AMSlib you can use `recv_binary.py`:

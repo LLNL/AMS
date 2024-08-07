@@ -119,12 +119,13 @@ def callback(ch, method, properties, body, args = None):
             break
         domain_name, data_input, data_output = parse_data(stream, header_info)
         num_element = header_info["num_element"]
+        mpirank = header_info["mpirank"]
         # total size of byte we read for that message
         chunk_size = header_info["header_size"] + header_info["domain_size"] + header_info["data_size"]
 
         print(
             f" [{nbmsg}/{i}] Received from exchange=\"{method.exchange}\" routing_key=\"{method.routing_key}\"\n"
-            f"        > data ({domain_name})   : {len(stream)/(1024*1024)} MB / {num_element} elements\n")
+            f"        > [r{mpirank}] ({domain_name})   : {len(stream)/(1024*1024)} MB / {num_element} elements\n")
 
         if data_input.size > 0:
             all_messages.append(data_input)

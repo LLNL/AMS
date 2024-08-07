@@ -118,18 +118,12 @@ public:
   virtual void store(size_t num_elements,
                      std::vector<double*>& inputs,
                      std::vector<double*>& outputs,
-#ifdef __ENABLE_MPI__
-                     MPI_Comm comm = MPI_COMM_NULL,
-#endif
                      bool* predicate = nullptr) = 0;
 
 
   virtual void store(size_t num_elements,
                      std::vector<float*>& inputs,
                      std::vector<float*>& outputs,
-#ifdef __ENABLE_MPI__
-                     MPI_Comm comm = MPI_COMM_NULL,
-#endif
                      bool* predicate = nullptr) = 0;
 
   uint64_t getId() const { return id; }
@@ -287,9 +281,6 @@ public:
   virtual void store(size_t num_elements,
                      std::vector<float*>& inputs,
                      std::vector<float*>& outputs,
-#ifdef __ENABLE_MPI__
-                     MPI_Comm comm = MPI_COMM_NULL,
-#endif
                      bool* predicate = nullptr) override
   {
     CFATAL(CSV,
@@ -302,9 +293,6 @@ public:
   virtual void store(size_t num_elements,
                      std::vector<double*>& inputs,
                      std::vector<double*>& outputs,
-#ifdef __ENABLE_MPI__
-                     MPI_Comm comm = MPI_COMM_NULL,
-#endif
                      bool* predicate = nullptr) override
   {
 
@@ -467,9 +455,6 @@ public:
   void store(size_t num_elements,
              std::vector<float*>& inputs,
              std::vector<float*>& outputs,
-#ifdef __ENABLE_MPI__
-             MPI_Comm comm = MPI_COMM_NULL,
-#endif
              bool* predicate = nullptr) override;
 
 
@@ -487,9 +472,6 @@ public:
   void store(size_t num_elements,
              std::vector<double*>& inputs,
              std::vector<double*>& outputs,
-#ifdef __ENABLE_MPI__
-             MPI_Comm comm = MPI_COMM_NULL,
-#endif
              bool* predicate = nullptr) override;
 
   /**
@@ -614,9 +596,6 @@ public:
   void store(size_t num_elements,
              std::vector<TypeValue*>& inputs,
              std::vector<TypeValue*>& outputs,
-#ifdef __ENABLE_MPI__
-             MPI_Comm comm = MPI_COMM_NULL,
-#endif
              bool predicate = nullptr) override
   {
 
@@ -1605,11 +1584,9 @@ private:
   std::thread _consumer_thread;
   /** @brief True if connected to RabbitMQ */
   bool connected;
-  /** @brief True if _rId is set to the correct MPI rank */
-  bool set_rank;
 
 public:
-  RMQInterface() : connected(false), set_rank(false), _rId(0) {}
+  RMQInterface() : connected(false), _rId(0) {}
 
   /**
    * @brief Connect to a RabbitMQ server
@@ -1644,27 +1621,28 @@ public:
   bool isConnected() const { return connected; }
 
   /**
+   * @brief Set the internal ID of the interface (usually MPI rank).
+   * @param[in] id The ID
+   */
+  void setId(uint64_t id) { _rId = id; }
+
+  /**
    * @brief Try to restart the RabbitMQ publisher (restart the thread managing messages publishing)
    */
   void restartPublisher();
 
   /**
    * @brief Return the latest model and, by default, delete the corresponding message from the Consumer
-   * @param[in] comm MPI communicator which can be used to determinate the rank of the sender
    * @param[in] domain_name The name of the domain
    * @param[in] num_elements The number of elements for inputs/outputs
    * @param[in] inputs A vector containing arrays of inputs, each array has num_elements elements
    * @param[in] outputs A vector containing arrays of outputs, each array has num_elements elements
    */
   template <typename TypeValue>
-  void publish(
-#ifdef __ENABLE_MPI__
-      MPI_Comm comm,
-#endif
-      std::string& domain_name,
-      size_t num_elements,
-      std::vector<TypeValue*>& inputs,
-      std::vector<TypeValue*>& outputs)
+  void publish(std::string& domain_name,
+               size_t num_elements,
+               std::vector<TypeValue*>& inputs,
+               std::vector<TypeValue*>& outputs)
   {
     DBG(RMQInterface,
         "[tag=%d] stores %ld elements of input/output "
@@ -1673,24 +1651,6 @@ public:
         num_elements,
         inputs.size(),
         outputs.size())
-
-#ifdef __ENABLE_MPI__
-    if (set_rank) {
-      int flag = 0;
-      int rank = 0;
-      MPI_Initialized(&flag);
-      if (flag && comm != MPI_COMM_NULL) {
-        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-        _rId = rank;
-        set_rank = true;
-      } else {
-        WARNING(RMQInterface,
-                "MPI is not initialized while __ENABLE_MPI__ is defined. "
-                "Message "
-                "will not have MPI rank.")
-      }
-    }
-#endif
 
     AMSMessage msg(_msg_tag, _rId, domain_name, num_elements, inputs, outputs);
 
@@ -1770,6 +1730,17 @@ public:
   RabbitMQDB(RMQInterface& interface, std::string& domain, uint64_t id)
       : BaseDB(id), appDomain(domain), interface(interface)
   {
+    /* We set manually the MPI rank here because when
+    * RMQInterface was statically initialized, MPI was not
+    * necessarily initialized and ready. So we provide the
+    * option of setting the distributed ID afterward.
+    * 
+    * Note: this ID is encoded into AMSMessage but for
+    * logging we use a randomly generated ID to stay
+    * consistent over time (some logging could happen
+    * before setId is called).
+    */
+    interface.setId(id);
   }
 
   /**
@@ -1780,44 +1751,29 @@ public:
    * @param[in] inputs Vector of 1-D vectors containing the inputs to be sent
    * @param[in] outputs Vector of 1-D vectors, each 1-D vectors contains
    * 'num_elements' values to be sent
-   * @param[in] comm MPI communicator which can be used to determinate the rank of the sender
    * @param[in] predicate (NOT SUPPORTED YET) Series of predicate
    */
   PERFFASPECT()
   void store(size_t num_elements,
              std::vector<double*>& inputs,
              std::vector<double*>& outputs,
-#ifdef __ENABLE_MPI__
-             MPI_Comm comm = MPI_COMM_NULL,
-#endif
              bool* predicate = nullptr) override
   {
     CFATAL(RMQDB,
            predicate != nullptr,
            "RMQ database does not support storing uq-predicates")
-#ifdef __ENABLE_MPI__
-    interface.publish(comm, appDomain, num_elements, inputs, outputs);
-#else
     interface.publish(appDomain, num_elements, inputs, outputs);
-#endif
   }
 
   void store(size_t num_elements,
              std::vector<float*>& inputs,
              std::vector<float*>& outputs,
-#ifdef __ENABLE_MPI__
-             MPI_Comm comm = MPI_COMM_NULL,
-#endif
              bool* predicate = nullptr) override
   {
     CFATAL(RMQDB,
            predicate != nullptr,
            "RMQ database does not support storing uq-predicates")
-#ifdef __ENABLE_MPI__
-    interface.publish(comm, appDomain, num_elements, inputs, outputs);
-#else
     interface.publish(appDomain, num_elements, inputs, outputs);
-#endif
   }
 
   /**
