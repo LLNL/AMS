@@ -3,6 +3,8 @@ import torch
 from torch import nn
 from scipy import stats
 import sys
+import time
+from math import ceil
 import cheetah_surrogate
         
 def sub_select_badge(num_elements, data, candidates, path_to_model):
@@ -40,7 +42,8 @@ def model_loader(path, num_inputs, num_outputs):
     model.target_classes = num_outputs
     return model
 
-def badge_select(model, candidates, budget):
+
+def badge_select(model, candidates, budget, batch_size=2048):
     """
     Selects next set of points
 
@@ -62,21 +65,45 @@ def badge_select(model, candidates, budget):
     model.eval()
 
     print(f'\nThere are {len(candidates)} points in the unlabeled dataset')
-    # This is the only line (besides constructor) that needs to change. We set the predict_labels argument to false
-    # instead of true, which makes it use the labels in the unlabeled_dataset object
     print("\n************************\ncomputing candidate embeddings\n************************\n")
-    gradEmbedding = get_grad_embedding(model, candidates)
-    print(f'\nTheir embeddings have shape {gradEmbedding.shape}')
+    GPU_memory_constraint = 500000
+    if len(candidates)>100e6: GPU_memory_constraint = 400000
+    chosen = []
+    examples_seen = 0
+    if len(candidates)>GPU_memory_constraint:
+        print(f'\nWe detected that the unlabeled dataset may be too large to fit in memory, so we will use BADGE iteratively.')
+        start = time.time()
+        for chunk in range(ceil(len(candidates)/GPU_memory_constraint)):
+            print(f'\nIteration {chunk}')
+            candidates_chunk = candidates[chunk*GPU_memory_constraint:(chunk+1)*GPU_memory_constraint]
+            gradEmbedding_chunk = get_grad_embedding(model, candidates_chunk, batch_size)
+            print(f'\nThe embeddings have shape {gradEmbedding_chunk.shape}')
+            print("\n************************\nselecting candidates\n************************\n")
+            budget_chunk = budget * (len(gradEmbedding_chunk)/len(candidates))
+            chosen_chunk = init_centers(gradEmbedding_chunk.cpu().numpy(), budget_chunk, model.device)
+            chosen_chunk = list(np.array(chosen_chunk)+examples_seen)
+            chosen+=chosen_chunk 
+            examples_seen += len(gradEmbedding_chunk)
+        assert abs(len(chosen)-budget) < chunk + 2, f'{len(chosen)} chosen, with {budget} budget, in {chunk} chunks'
+        chosen = chosen[:budget]
+        end = time.time()
+        print(f'\nFrom {len(candidates)} points, selected {len(chosen)} in {(end-start)/60} minutes!')
+        return chosen
 
-
+    # We set the predict_labels argument to false to use the labels in the unlabeled_dataset object
+    gradEmbedding = get_grad_embedding(model, candidates, batch_size)
+    print(f'\nThe embeddings have shape {gradEmbedding.shape}')
+    start = time.time()
     print("\n************************\nselecting candidates\n************************\n")
     chosen = init_centers(gradEmbedding.cpu().numpy(), budget, model.device)
-    print(f'\nFrom {len(candidates)} points, selected {budget}.')
+    end = time.time()
+    print(f'\nFrom {len(candidates)} points, selected {budget} in {(end-start)/60} minutes!')
     return chosen
+
 
 def get_grad_embedding(model,
                        candidates,
-                       batch_size = 1024,
+                       batch_size,
                        loss_type = 'MSE'):
     
     if loss_type == 'MSE':
