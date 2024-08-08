@@ -38,12 +38,13 @@ class AMSMessage(object):
         - 2 bytes are the output dimension. Limit max: 65535
         - 2 bytes are for aligning memory to 8
 
-            |_Header_|_Datatype_|___Rank___|__DomainSize__|__#elems__|___InDim____|___OutDim___|_Pad_|.real data.|
+            |_Header_|_Datatype_|_Rank_|_DomainSize_|_#elems_|_InDim_|_OutDim_|_Pad_|_DomainName_|.Real_Data.|
 
-        Then the data starts at 16 and is structered as pairs of input/outputs.
-        Let K be the total number of elements, then we have K pairs of inputs/outputs (either float or double):
+        Then the data starts at byte 16 with the domain name, then the real data and 
+        is structured as pairs of input/outputs. Let K be the total number of elements,
+        then we have K pairs of inputs/outputs (either float or double):
 
-            |__Header_(16B)__|__Input 1__|__Output 1__|...|__Input_K__|__Output_K__|
+            |__Header_(16B)__|_Domain_Name_|__Input 1__|__Output 1__|...|__Input_K__|__Output_K__|
 
         """
         return "BBHHIHHH"
@@ -55,20 +56,23 @@ class AMSMessage(object):
         """
         return "="
 
-    def encode(self, num_elem: int, input_dim: int, output_dim: int, dtype_byte: int = 4) -> bytes:
+    def encode(self, num_elem: int, domain_name: str, input_dim: int, output_dim: int, dtype_byte: int = 4) -> bytes:
         """
         For debugging and testing purposes, this function encode a message identical to what AMS would send
         """
-        header_format = self.endianness() + self.header_format()
+        header_format = self.ams_endianness() + self.ams_header_format()
         hsize = struct.calcsize(header_format)
         assert dtype_byte in [4, 8]
         dt = "f" if dtype_byte == 4 else "d"
         mpi_rank = 0
         data = np.random.rand(num_elem * (input_dim + output_dim))
-        header_content = (hsize, dtype_byte, mpi_rank, data.size, input_dim, output_dim)
+        domain_name_size = len(domain_name)
+        domain_name = bytes(domain_name, "utf-8")
+        padding = 0
+        header_content = (hsize, dtype_byte, mpi_rank, domain_name_size, data.size, input_dim, output_dim, padding)
         # float or double
-        msg_format = f"{header_format}{data.size}{dt}"
-        return struct.pack(msg_format, *header_content, *data)
+        msg_format = f"{header_format}{domain_name_size}s{data.size}{dt}"
+        return struct.pack(msg_format, *header_content, domain_name, *data)
 
     def _parse_header(self, body: str) -> dict:
         """

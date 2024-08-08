@@ -5,9 +5,9 @@
  * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
  */
 
-#include <vector>
-
 #include "eos_ams.hpp"
+
+#include <vector>
 
 template <typename FPType>
 void callBack(void *cls,
@@ -47,12 +47,22 @@ AMSEOS<FPType>::AMSEOS(EOS<FPType> *model,
                                                         uq_path,
                                                         "ideal_gas",
                                                         k_nearest);
+#ifdef __ENABLE_MPI__
+  wf_ = AMSCreateDistributedExecutor(model_descr,
+                                     dtype,
+                                     res_type,
+                                     (AMSPhysicFn)callBack<FPType>,
+                                     MPI_COMM_WORLD,
+                                     mpi_task,
+                                     mpi_nproc);
+#else
   wf_ = AMSCreateExecutor(model_descr,
                           dtype,
                           res_type,
                           (AMSPhysicFn)callBack<FPType>,
                           mpi_task,
                           mpi_nproc);
+#endif
 }
 
 template <typename FPType>

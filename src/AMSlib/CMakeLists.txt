@@ -17,6 +17,9 @@ if (WITH_HDF5)
   list(APPEND AMS_LIB_SRC wf/hdf5db.cpp)
 endif()
 
+if (WITH_RMQ)
+  list(APPEND AMS_LIB_SRC wf/rmqdb.cpp)
+endif()
 
 
 

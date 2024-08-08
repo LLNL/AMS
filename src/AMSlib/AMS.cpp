@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
  */
 
+#include "AMS.h"
+
 #include <limits.h>
 #include <unistd.h>
 
@@ -17,7 +19,6 @@
 #include <utility>
 #include <vector>
 
-#include "AMS.h"
 #include "include/AMS.h"
 #include "ml/uq.hpp"
 #include "wf/basedb.hpp"
@@ -268,6 +269,7 @@ public:
   std::unordered_map<std::string, int> ams_candidate_models;
   AMSDBType dbType = AMSDBType::AMS_NONE;
   ams::ResourceManager &memManager;
+  int rId;
 
 private:
   void dumpEnv()
@@ -372,10 +374,13 @@ private:
     std::string rmq_user = getEntry<std::string>(rmq_entry, "rabbitmq-user");
     std::string rmq_vhost = getEntry<std::string>(rmq_entry, "rabbitmq-vhost");
     std::string rmq_cert = getEntry<std::string>(rmq_entry, "rabbitmq-cert");
-    std::string rmq_in_queue =
-        getEntry<std::string>(rmq_entry, "rabbitmq-inbound-queue");
     std::string rmq_out_queue =
         getEntry<std::string>(rmq_entry, "rabbitmq-outbound-queue");
+    std::string exchange =
+        getEntry<std::string>(rmq_entry, "rabbitmq-exchange");
+    std::string routing_key =
+        getEntry<std::string>(rmq_entry, "rabbitmq-routing-key");
+    bool update_surrogate = getEntry<bool>(entry, "update_surrogate");
 
     auto &DB = ams::db::DBManager::getInstance();
     DB.instantiate_rmq_db(port,
@@ -385,8 +390,10 @@ private:
                           rmq_user,
                           rmq_vhost,
                           rmq_cert,
-                          rmq_in_queue,
-                          rmq_out_queue);
+                          rmq_out_queue,
+                          exchange,
+                          routing_key,
+                          update_surrogate);
   }
 
   void parseDatabase(json &jRoot)

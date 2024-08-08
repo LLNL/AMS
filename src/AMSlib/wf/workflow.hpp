@@ -86,7 +86,6 @@ class AMSWorkflow
   MPI_Comm comm;
 #endif
 
-
   /** @brief Is the evaluate a distributed execution **/
   bool isDistributed;
 
@@ -100,7 +99,7 @@ class AMSWorkflow
    * @param[in] outputs vector to 1-D vectors storing num_elements
    * items to be stored in the database
    */
-  void Store(size_t num_elements,
+  void store(size_t num_elements,
              std::vector<FPTypeValue *> &inputs,
              std::vector<FPTypeValue *> &outputs,
              bool *predicate = nullptr)
@@ -152,7 +151,7 @@ class AMSWorkflow
     return;
   }
 
-  void Store(size_t num_elements,
+  void store(size_t num_elements,
              std::vector<const FPTypeValue *> &inputs,
              std::vector<FPTypeValue *> &outputs,
              bool *predicate = nullptr)
@@ -162,9 +161,26 @@ class AMSWorkflow
       mInputs.push_back(const_cast<FPTypeValue *>(I));
     }
 
-    Store(num_elements, mInputs, outputs, predicate);
+    store(num_elements, mInputs, outputs, predicate);
   }
 
+  /** \brief Check if we can perform a surrogate model update.
+   *  AMS can update surrogate model only when all MPI ranks have received 
+   * the latest model from RabbitMQ.
+   * @return True if surrogate model can be updated
+   */
+  bool updateModel()
+  {
+    if (!DB || !DB->allowModelUpdate()) return false;
+    bool local = DB->updateModel();
+#ifdef __ENABLE_MPI__
+    bool global = false;
+    MPI_Allreduce(&local, &global, 1, MPI_CXX_BOOL, MPI_LAND, comm);
+    return global;
+#else
+    return local;
+#endif
+  }
 
 public:
   AMSWorkflow()
@@ -199,7 +215,6 @@ public:
         comm(MPI_COMM_NULL),
 #endif
         ePolicy(AMSExecPolicy::AMS_UBALANCED)
-
   {
     DB = nullptr;
     auto &dbm = ams::db::DBManager::getInstance();
@@ -311,16 +326,23 @@ public:
       CALIPER(CALI_MARK_END("PHYSICS MODULE");)
       if (DB) {
         CALIPER(CALI_MARK_BEGIN("DBSTORE");)
-        Store(totalElements, tmpIn, origOutputs);
+        store(totalElements, tmpIn, origOutputs);
         CALIPER(CALI_MARK_END("DBSTORE");)
       }
       CALIPER(CALI_MARK_END("AMSEvaluate");)
       return;
     }
 
-    if (DB && DB->updateModel()) {
-      UQModel->updateModel("");
+    CALIPER(CALI_MARK_BEGIN("UPDATEMODEL");)
+    if (updateModel()) {
+      auto model = DB->getLatestModel();
+      CINFO(Workflow,
+            rId == 0,
+            "Updating surrogate model with %s",
+            model.c_str())
+      UQModel->updateModel(model);
     }
+    CALIPER(CALI_MARK_END("UPDATEMODEL");)
 
     // The predicate with which we will split the data on a later step
     bool *predicate = rm.allocate<bool>(totalElements, appDataLoc);
@@ -416,12 +438,12 @@ public:
         DBG(Workflow,
             "Storing data (#elements = %d) to database",
             packedElements);
-        Store(packedElements, packedInputs, packedOutputs);
+        store(packedElements, packedInputs, packedOutputs);
       } else {
         DBG(Workflow,
             "Storing data (#elements = %d) to database including predicates",
             totalElements);
-        Store(totalElements, origInputs, origOutputs, predicate);
+        store(totalElements, origInputs, origOutputs, predicate);
       }
 
       CALIPER(CALI_MARK_END("DBSTORE");)
