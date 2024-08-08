@@ -1,7 +1,7 @@
 {
   "db" : {
     "dbType" : "rmq",
-      "rmq_config" : {
+    "rmq_config" : {
       "service-port": ,
       "service-host": "",
       "rabbitmq-erlang-cookie": "",
@@ -10,9 +10,11 @@
       "rabbitmq-user": "",
       "rabbitmq-vhost": "",
       "rabbitmq-cert": "",
-      "rabbitmq-inbound-queue": "",
-      "rabbitmq-outbound-queue": ""
-    }
+      "rabbitmq-outbound-queue": "",
+      "rabbitmq-exchange": "",
+      "rabbitmq-routing-key": ""
+    },
+    "update_surrogate": false
   },
   "ml_models" : {
     "random_50": {

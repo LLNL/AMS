@@ -86,7 +86,6 @@ class AMSWorkflow
   MPI_Comm comm;
 #endif
 
-
   /** @brief Is the evaluate a distributed execution **/
   bool isDistributed;
 
@@ -168,12 +167,11 @@ class AMSWorkflow
   /** \brief Check if we can perform a surrogate model update.
    *  AMS can update surrogate model only when all MPI ranks have received 
    * the latest model from RabbitMQ.
-   * @param[in] performUpdate Perform the model update if True
-   * @return True
+   * @return True if surrogate model can be updated
    */
-  bool updateModel(bool performUpdate = false)
+  bool updateModel()
   {
-    if (!DB || !performUpdate) return false;
+    if (!DB || !DB->allowModelUpdate()) return false;
     bool local = DB->updateModel();
 #ifdef __ENABLE_MPI__
     bool global = false;
@@ -217,7 +215,6 @@ public:
         comm(MPI_COMM_NULL),
 #endif
         ePolicy(AMSExecPolicy::AMS_UBALANCED)
-
   {
     DB = nullptr;
     auto &dbm = ams::db::DBManager::getInstance();

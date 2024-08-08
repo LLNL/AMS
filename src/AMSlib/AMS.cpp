@@ -380,6 +380,7 @@ private:
         getEntry<std::string>(rmq_entry, "rabbitmq-exchange");
     std::string routing_key =
         getEntry<std::string>(rmq_entry, "rabbitmq-routing-key");
+    bool update_surrogate = getEntry<bool>(entry, "update_surrogate");
 
     auto &DB = ams::db::DBManager::getInstance();
     DB.instantiate_rmq_db(port,
@@ -391,7 +392,8 @@ private:
                           rmq_cert,
                           rmq_out_queue,
                           exchange,
-                          routing_key);
+                          routing_key,
+                          update_surrogate);
   }
 
   void parseDatabase(json &jRoot)
