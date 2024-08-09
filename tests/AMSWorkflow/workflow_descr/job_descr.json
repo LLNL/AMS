@@ -1,0 +1,68 @@
+[
+  { "domain_name" : "test1",
+    "request_type": "register_job_spec",
+    "job_type": "sub_select",
+    "spec": {
+      "name" : "test_stage",
+      "executable" : "echo",
+      "cli_args" : [
+        "hello",
+        "this",
+        "is",
+        "a",
+        "sub_select",
+        "job"
+      ],
+      "stdout" : "test_stage1.out",
+      "stderr" : "test_stage1.err",
+      "resources" : {
+        "nodes": 1,
+        "tasks_per_node": 4,
+        "exclusive": true,
+        "cores_per_task": 10,
+        "gpus_per_task": 1
+      },
+      "ams_log": false
+    }
+  },
+  { "domain_name" : "test1",
+    "request_type": "register_job_spec",
+    "job_type": "train",
+    "spec": {
+      "executable" : "printenv",
+      "name" : "test_stage",
+      "cli_args" : [
+      ],
+      "stdout" : "test_train.out",
+      "stderr" : "test_train.err",
+      "resources" : {
+        "nodes": 1,
+        "tasks_per_node": 4,
+        "exclusive": true,
+        "cores_per_task": 10,
+        "gpus_per_task": 1
+      },
+      "ams_log": false
+    }
+  },
+  { 
+    "domain_name" : "test1",
+    "request_type": "new_candidates",
+    "size": 1024
+  },
+  { 
+    "domain_name" : "test1",
+    "request_type": "new_candidates",
+    "size": 10564
+  },
+  { 
+    "domain_name" : "test1",
+    "request_type": "new_candidates",
+    "size": 512
+  },
+  { 
+    "domain_name" : "test1",
+    "request_type": "new_candidates",
+    "size": 4548
+  }
+]

@@ -174,12 +174,15 @@ class AMSJob:
         if self._is_mpi:
             jobspec.setattr_shell_option("mpi", "spectrum")
             jobspec.setattr_shell_option("gpu-affinity", "per-task")
-        if self._stdout is not None:
+        jobspec.stdout = self.stdout
+        jobspec.stderr = self.stderr
+        if self._stdout is None:
             jobspec.stdout = "ams_test.out"
-        if self._stderr is not None:
+        if self._stderr is None:
             jobspec.stderr = "ams_test.err"
 
-        jobspec = self.environ
+        jobspec.environ = self.environ
+        jobspec.cwd = os.getcwd()
 
         return jobspec
 
@@ -375,6 +378,4 @@ def get_echo_job(message):
         gpus_per_task=0,
         exclusive=True,
     )
-    return jobspec
-    return jobspec
     return jobspec

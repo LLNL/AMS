@@ -3,14 +3,17 @@
 #
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+from dataclasses import dataclass
 import functools
 import logging
 import ssl
 import struct
 import traceback
+from pathlib import Path
 from typing import Callable, Tuple
 
 import numpy as np
+import json
 import pika
 
 
@@ -320,7 +323,7 @@ class AsyncConsumer(object):
         :param str cacert: The TLS certificate
         :param str queue: The queue to listen to
         :param Callable: on_message_cb this function will be called each time Pika receive a message
-        :param Callable: on_message_cb this function will be called when Pika will close the connection
+        :param Callable: on_close_cb this function will be called when Pika will close the connection
         :param int: prefetch_count Define consumer throughput, should be relative to resource and number of messages expected
 
         """
@@ -667,3 +670,99 @@ class AsyncConsumer(object):
                 if self._connection:
                     self._connection.ioloop.stop()
             self.logger.debug("Stopped RabbitMQ connection")
+
+
+class AMSSyncProducer:
+
+    def __init__(
+        self,
+        host: str,
+        port: str,
+        vhost: str,
+        user: str,
+        password: str,
+        cert: str,
+        publish_queue: str,
+        logger: logging.Logger = None,
+    ):
+
+        self.host = host
+        self.port = port
+        self.vhost = vhost
+        self.user = user
+        self.password = password
+        self.cert = cert
+        self._connected = False
+        self._publish_queue = publish_queue
+        self._num_sent_messages = 0
+        self._num_confirmed_messages = 0
+
+    def open(self):
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.verify_mode = ssl.CERT_REQUIRED
+        context.check_hostname = False
+        context.load_verify_locations(self.cert)
+        credentials = pika.PlainCredentials(self.user, self.password)
+        self.connection_parameters = pika.ConnectionParameters(
+            host=self.host,
+            port=self.port,
+            virtual_host=self.vhost,
+            credentials=credentials,
+            ssl_options=pika.SSLOptions(context),
+        )
+
+        self.connection = pika.BlockingConnection(self.connection_parameters)
+        self.channel = self.connection.channel()
+
+        result = self.channel.queue_declare(queue=self._publish_queue, exclusive=False)
+        self._publish_queue = result.method.queue
+        self._connected = True
+        return self
+
+    def close(self):
+        self.connection.close()
+
+    def __enter__(self):
+        return self.open()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def send_message(self, message):
+        self._num_sent_messages += 1
+        try:
+            self.channel.basic_publish(exchange="", routing_key=self._publish_queue, body=message)
+            self._num_confirmed_messages += 1
+        except pika.exceptions.UnroutableError:
+            print(f" [{self._num_sent_messages}] Message could not be confirmed")
+
+
+@dataclass
+class AMSRMQConfiguration:
+    service_port: int
+    service_host: str
+    rabbitmq_erlang_cookie: str
+    rabbitmq_name: str
+    rabbitmq_password: str
+    rabbitmq_user: str
+    rabbitmq_vhost: str
+    rabbitmq_cert: str
+    rabbitmq_inbound_queue: str
+    rabbitmq_outbound_queue: str
+    rabbitmq_ml_submit_queue: str
+    rabbitmq_ml_status_queue: str
+
+    def __post_init__(self):
+        if not Path(self.rabbitmq_cert).exists():
+            raise RuntimeError(f"Certificate rmq path: {self.rabbitmq_cert} does not exist")
+
+    @classmethod
+    def from_json(cls, json_file):
+        if not Path(json_file).exists():
+            raise RuntimeError(f"Certificate rmq path: {json_file} does not exist")
+
+        with open(json_file, "r") as fd:
+            data = json.load(fd)
+        data = {key.replace("-", "_"): value for key, value in data.items()}
+
+        return cls(**data)

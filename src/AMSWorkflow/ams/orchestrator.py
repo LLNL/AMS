@@ -15,9 +15,10 @@ from typing import Optional
 import flux
 from ams.monitor import AMSMonitor
 from ams.stage import RMQLoaderTask
+from ams.rmq import AMSSyncProducer, AMSRMQConfiguration
 from ams.stage import MessageType, QueueMessage
 from ams.ams_jobs import AMSJob
-from ams.ams_flux import AMSOrchestratorExecutor, AMSFluxExecutorFuture
+from ams.ams_flux import AMSFluxOrchestratorExecutor, AMSFluxExecutorFuture, AMSFakeFluxOrchestatorExecutor
 from functools import wraps
 
 
@@ -64,7 +65,7 @@ class DomainSpec:
 
     @staticmethod
     def done_train_cb(future):
-        if isinstance(future, AMSFluxExecutorFuture):
+        if not isinstance(future, AMSFluxExecutorFuture):
             raise TypeError(f"Done job call back received a future of an unsupported type: {type(future)}")
 
         domain_handle = future.get_domain_descr()
@@ -78,7 +79,7 @@ class DomainSpec:
         # TODO: Is it done/cancelled or failed?
         domain_handle.done_train()
 
-        flux_executor.o_queue.put(
+        flux_executor.get_o_queue().put(
             QueueMessage(MessageType.Process, {"request_type": "done-training", "domain": domain_handle.name})
         )
         domain_handle.state = JobState.IDLE
@@ -87,9 +88,9 @@ class DomainSpec:
 
     @staticmethod
     def done_sub_select_cb(future):
-        if isinstance(future, AMSFluxExecutorFuture):
+        if not isinstance(future, AMSFluxExecutorFuture):
             raise TypeError(f"Done job call back received a future of an unsupported type: {type(future)}")
-
+        print("Here", type(future))
         domain_handle = future.get_domain_descr()
         if domain_handle is None:
             raise ValueError("Domain description is not set")
@@ -234,6 +235,9 @@ class DomainSpec:
             raise TypeError(f"Job state needs to be of type JobState but was of type {type(value)}")
         self._state = value
 
+    def fully_described(self):
+        return self._sub_select_job_spec is not None and self._train_job_spec is not None
+
 
 class AvailableDomains(dict):
     """
@@ -307,6 +311,7 @@ class AMSJobReceiverStage(RMQLoaderTask):
         password: str,
         cert: str,
         rmq_queue: str,
+        from_file: Optional[str] = None,
         prefetch_count: Optional[int] = 1,
         signals=[signal.SIGTERM, signal.SIGINT, signal.SIGUSR1],
     ):
@@ -324,6 +329,7 @@ class AMSJobReceiverStage(RMQLoaderTask):
             signals=[signal.SIGTERM, signal.SIGINT, signal.SIGUSR1],
         )
         self.num_messages = 0
+        self._from_file = from_file
 
     def callback_message(self, ch, basic_deliver, properties, body):
         """
@@ -342,7 +348,14 @@ class AMSJobReceiverStage(RMQLoaderTask):
         """
         Busy loop of consuming messages from RMQ queue
         """
-        self.rmq_consumer.run()
+        if self._from_file is None:
+            self.rmq_consumer.run()
+        else:
+            with open(self._from_file, "r") as fd:
+                requests = json.load(fd)
+                for r in requests:
+                    item = [r]
+                    self.callback_message(None, None, None, json.dumps(item))
 
 
 class RequestProcessor:
@@ -365,6 +378,7 @@ class RequestProcessor:
         if domain not in self._domains:
             raise KeyError(f"Domain {domain} does not exist in tracking job descriptions")
 
+        print(f"Updating candidate from size {self._domains[domain].candidate_data} with {size}")
         self._domains[domain].candidate_data += size
 
     def register_job_spec(self, domain: str, spec: dict):
@@ -375,6 +389,7 @@ class RequestProcessor:
             self._domains[domain] = DomainSpec(domain)
 
         if spec["job_type"] == "sub_select":
+            print("Setting sub select spec")
             self._domains[domain].sub_select_job_spec = spec["spec"]
         elif spec["job_type"] == "train":
             self._domains[domain].train_job_spec = spec["spec"]
@@ -407,31 +422,36 @@ class RequestProcessor:
                         raise ValueError("Expected a domain name specification")
                     self.process_request(v["domain_name"], v)
 
-            for k, v in self._domains.items():
-                # Single request until it is serviced
-                if not v.state == JobState.IDLE:
-                    # NOTE: This is a very rough heuristic to drive the job scheduling policy.
-                    if not v.running() and v.estimated_effort() > 32 * 1024 * 1024:
-                        v.state = JobState.QUEUE
-                        self.o_queue.put(QueueMessage(MessageType.Process, {"request_type": "schedule", "domain": k}))
+            for i, (k, v) in enumerate(self._domains.items()):
+                # TODO: Here we need a better heuristic to decide when to schedule a job
+                # 1. Job can only be schedule when they are completely described, there is
+                # both a sub-selection job and a trainin job description
+                # 2. We don't have another job running
+                if v.state == JobState.IDLE and v.fully_described():
+                    v.state = JobState.QUEUE
+                    print(f"Scheduling  domain {k}")
+                    self.o_queue.put(QueueMessage(MessageType.Process, {"request_type": "schedule", "domain": k}))
+                else:
+                    print("Skip cause job is running")
 
 
 class TrainJobScheduler:
     """
     @brief a dataflow step that accepts (eventually) requests from the 'RequestProcessor'
-        to schedule jobs in an existing flux instance. A job in the context of the AMSOrchestratorExecutor
+        to schedule jobs in an existing flux instance. A job in the context of the AMSFluxOrchestratorExecutor
         is the pair of sub-selection job and a training job.
     """
 
-    def __init__(self, flux_uri: str, i_queue: Queue, o_queue: Queue, domains: AvailableDomains):
+    def __init__(self, flux_uri: str, i_queue: Queue, o_queue: Queue, domains: AvailableDomains, fake_flux=False):
         self._flux_uri = flux_uri
         self.i_queue = i_queue
         self.o_queue = o_queue
         self._domains = domains
+        self._fake_flux = fake_flux
 
-    def _schedule(self, flux_executor: flux.Flux, domain_name: str):
+    def _schedule(self, executor, domain_name: str):
         "Schedules the job described by 'domain_name'"
-        domain_handle = self.domains.get(domain_name, None)
+        domain_handle = self._domains.get(domain_name, None)
         if domain_handle is None:
             raise KeyError(f"{domain_name} does not exist in registered domains {self.domains.keys()}")
 
@@ -439,25 +459,197 @@ class TrainJobScheduler:
             raise ValueError(f"{domain_name} does not have a sub-select job specification")
         if domain_handle.train_job_spec is None:
             raise ValueError(f"{domain_name} does not have a train job specification")
-
         sub_select_spec = domain_handle.sub_select_job_spec.to_flux_jobspec()
         domain_handle.start_sub_select()
         domain_handle.state = JobState.SUBSELECT
-        submit_fut = flux_executor.submit(domain_handle, sub_select_spec)
+        submit_fut = executor.submit(domain_handle, sub_select_spec)
         submit_fut.add_done_callback(DomainSpec.done_sub_select_cb)
 
-    def __call__(self):
-        # The AMSOrchestratorExecutor context manager by defaults to the FluxExecutor context manager and calls 'shutdown' and
+    def _run(self, executor):
+        while True:
+            request = self.i_queue.get(block=True)
+            if request.is_terminate():
+                self.o_queue.put(QueueMessage(MessageType.Terminate, None))
+                break
+            elif request.is_process():
+                data = request.data()
+                if data["request_type"] == "schedule":
+                    self._schedule(executor, data["domain"])
+                self._schedule(executor, data["domain"])
+
+    def _local_run(self):
+        with AMSFakeFluxOrchestatorExecutor(self.o_queue, self._domains, max_workers=1) as fake_executor:
+            print("Scheduling with fake executor", type(fake_executor))
+            self._run(fake_executor)
+
+    def _flux_run(self):
+        # The AMSFluxOrchestratorExecutor context manager defaults to the FluxExecutor context manager and calls 'shutdown' and
         # waits for all pedning jobs/futures. As such we do not need any special
         # handling of the jobs. CallBacks will make it work
-        with AMSOrchestratorExecutor(threads=1, handle_args=(self._flux_uri,)) as flux_executor:
+        with AMSFluxOrchestratorExecutor(
+            self.o_queue, self._domains, threads=1, handle_args=(self._flux_uri,)
+        ) as flux_executor:
+            self._run(flux_executor)
+
+    def __call__(self):
+        if self._fake_flux:
+            self._local_run()
+        else:
+            self._flux_run()
+
+
+class RMQStatusUpdate:
+    def __init__(
+        self,
+        i_queue: Queue,
+        host: str,
+        port: int,
+        vhost: str,
+        user: str,
+        password: str,
+        cert: str,
+        publish_queue: str,
+        signals=[signal.SIGTERM, signal.SIGINT, signal.SIGUSR1],
+    ):
+
+        self.producer = AMSSyncProducer(host, port, vhost, user, password, cert, publish_queue)
+        self.publish_queue = publish_queue
+        self.i_queue = i_queue
+
+    def __call__(self):
+        with self.producer as fd:
             while True:
                 request = self.i_queue.get(block=True)
                 if request.is_terminate():
-                    self.o_queue.put(QueueMessage(MessageType.Terminate, None))
-                    break
+                    fd.send_message(json.dumps({"request_type": "terminate"}))
+                    return
                 elif request.is_process():
-                    data = request.data()
-                    if data["request_type"] == "schedule":
-                        self._schedule(flux_executor, data["domain"])
-                    self._schedule(flux_executor, data["domain"])
+                    fd.send_message(json.dumps(request.data()))
+
+
+class StatusPrinter:
+    def __init__(self, i_queue):
+        self.i_queue = i_queue
+
+    def __call__(self):
+        while True:
+            request = self.i_queue.get(block=True)
+            if request.is_terminate():
+                print("Received", json.dumps({"request_type": "terminate"}))
+                return
+            elif request.is_process():
+                print("Received", json.dumps(request.data()))
+
+
+class AMSRMQMessagePrinter(RMQLoaderTask):
+    """
+    A AMSJobReceiver receives job specifications for existing domains running on the
+    system and get status updates regarding how many new data elements are being inserted in our database.
+
+    Attributes:
+        o_queue: The output queue to write the transformed messages
+        credentials: A JSON file with the credentials to log on the RabbitMQ server.
+        certificates: TLS certificates
+        rmq_queue: The RabbitMQ queue to listen to.
+        prefetch_count: Number of messages prefected by RMQ (impact performance)
+    """
+
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        vhost: str,
+        user: str,
+        password: str,
+        cert: str,
+        rmq_queue: str,
+        prefetch_count: Optional[int] = 1,
+        signals=[signal.SIGTERM, signal.SIGINT, signal.SIGUSR1],
+    ):
+        super().__init__(
+            host,
+            port,
+            vhost,
+            user,
+            password,
+            cert,
+            rmq_queue,
+            "thread",
+            prefetch_count,
+            signals=[signal.SIGTERM, signal.SIGINT, signal.SIGUSR1],
+        )
+        self.num_messages = 0
+
+    def callback_message(self, ch, basic_deliver, properties, body):
+        """
+        Callback to be called each time the RMQ client consumes a message.
+        """
+        start_time = time.time()
+        data = json.loads(body)
+        self.num_messages += 1
+        self.total_time += time.time() - start_time
+
+    @AMSMonitor(record=["total_time", "num_messages"])
+    def __call__(self):
+        """
+        Busy loop of consuming messages from RMQ queue
+        """
+        self.rmq_consumer.run()
+
+
+def run(flux_uri, rmq_config, file=None, fake_flux=False, fake_rmq_update=False):
+    tasks = []
+    rmq_config = AMSRMQConfiguration.from_json(rmq_config)
+    rmq_o_queue = Queue()
+    tasks.append(
+        AMSJobReceiverStage(
+            rmq_o_queue,
+            rmq_config.service_host,
+            rmq_config.service_port,
+            rmq_config.rabbitmq_vhost,
+            rmq_config.rabbitmq_user,
+            rmq_config.rabbitmq_password,
+            rmq_config.rabbitmq_cert,
+            rmq_config.rabbitmq_ml_submit_queue,
+            from_file=file,
+        )
+    )
+
+    # Use the global lock in case of synchronization
+    global_lock = threading.Lock()
+    # All the training jobs in the system their status and at some point some loggin information
+    domains = AvailableDomains(global_lock)
+    # The queue to be used to push jobs into flux
+    flux_in_queue = Queue()
+    # The 'thread' that will transform rmq messages to scheduling events
+    tasks.append(RequestProcessor(rmq_o_queue, flux_in_queue, domains))
+    # The queue to be used to publish finished jobs etc
+    flux_out_queue = Queue()
+    # The flux scheduler
+    tasks.append(TrainJobScheduler(flux_uri, flux_in_queue, flux_out_queue, domains, fake_flux=fake_flux))
+    if not fake_rmq_update:
+        # The rmq publisher of done jobs
+        tasks.append(
+            RMQStatusUpdate(
+                flux_out_queue,
+                rmq_config.service_host,
+                rmq_config.service_port,
+                rmq_config.rabbitmq_vhost,
+                rmq_config.rabbitmq_user,
+                rmq_config.rabbitmq_password,
+                rmq_config.rabbitmq_cert,
+                rmq_config.rabbitmq_ml_status_queue,
+            )
+        )
+    else:
+        tasks.append(StatusPrinter(flux_out_queue))
+
+    threads = []
+    for t in tasks:
+        threads.append(threading.Thread(target=t))
+
+    for t in threads:
+        t.start()
+
+    for e in threads:
+        e.join()

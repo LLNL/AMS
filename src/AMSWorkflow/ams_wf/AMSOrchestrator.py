@@ -4,68 +4,50 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import argparse
-import os
-import sys
 
-from ams.orchestrator import AMSDaemon, FluxDaemonWrapper
+from ams import orchestrator
 
 
 def main():
-    daemon_actions = ["start", "wrap"]
     parser = argparse.ArgumentParser(description="AMS Machine Learning Daemon running on Training allocation")
     parser.add_argument(
-        "-a",
-        "--action",
-        dest="action",
-        choices=daemon_actions,
-        help="Decide whether to start daemon process directly or through flux wrap script",
-        required=True,
+        "--ml-uri", help="Flux uri of an already existing allocation to schedule ML training jobs", required=True
     )
 
     parser.add_argument(
-        "-c",
-        "--certificate",
-        dest="certificate",
-        help="Path to certificate file to establish connection",
-        required=True,
+        "--ams-rmq-config", "-a", help="AMS configuration file containing the rmq server configuration", required=True
     )
 
     parser.add_argument(
-        "-cfg",
-        "--config",
-        dest="config",
-        help="Path to AMS configuration file",
-        required=True,
+        "--job-file",
+        "-j",
+        help="A JSON file containing a list of AMSJob descriptions (to be used for debugging)",
+        required=False,
+        default=None,
     )
 
-    parser.add_argument("--remote-uri", "-r", dest="remove_uri", required=True)
+    parser.add_argument(
+        "--fake-flux",
+        help="Fake the flux job submission by executing subprocesses to be used for debugging",
+        action="store_true",
+    )
+
+    parser.add_argument(
+        "--fake-rmq-update",
+        help="Fake the flux job submission by executing subprocesses to be used for debugging",
+        action="store_true",
+    )
 
     args = parser.parse_args()
-    if args.action == "start":
-        daemon = AMSDaemon(args.config, args.certificate)
-        # Busy wait for messages and spawn ML training jobs
-        daemon()
-    elif args.action == "wrap":
-        daemon_cmd = [
-            "python",
-            __file__,
-            "--action",
-            "start",
-            "-c",
-            args.certificate,
-            "-cfg",
-            args.config,
-        ]
-        daemon = FluxDaemonWrapper(args.config, args.certificate)
-        daemon(daemon_cmd)
+
+    orchestrator.run(
+        args.ml_uri,
+        args.ams_rmq_config,
+        args.job_file,
+        args.fake_flux,
+        args.fake_rmq_update,
+    )
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("Interrupted")
-        try:
-            sys.exit(0)
-        except SystemExit:
-            os._exit(0)
+    main()

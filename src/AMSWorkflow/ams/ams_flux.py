@@ -1,15 +1,20 @@
 import threading
 import logging
-import concurrent.futures
+from concurrent.futures import Future
+from concurrent.futures import ThreadPoolExecutor
+import concurrent
 import collections
+import subprocess
+import types
 
 
 from flux.job.event import MAIN_EVENTS
 from flux.job import FluxExecutor
+import flux
 
 
 # pylint: disable=too-many-instance-attributes
-class AMSFluxExecutorFuture(concurrent.futures.Future):
+class AMSFluxExecutorFuture(Future):
     """A ``concurrent.futures.Future`` subclass that represents a single Flux job.
 
     In addition to all of the ``flux.job.FluxExecutorFuture`` functionality,
@@ -316,6 +321,9 @@ class AMSFluxExecutorFuture(concurrent.futures.Future):
             for callback in list(self.__event_callbacks[event_name]):
                 self._invoke_flux_callback(callback, log_entry)
 
+    def __repr__(self):
+        return f"<{self.__class__.__name__} at {hex(id(self))}>"
+
 
 class AMSFluxExecutor(FluxExecutor):
     def __init__(self, track_uri, *args, **kwargs):
@@ -329,15 +337,91 @@ class AMSFluxExecutor(FluxExecutor):
             if self._shutdown_event.is_set():
                 raise RuntimeError("cannot schedule new futures after shutdown")
             future_owner_id = self._executor_threads[self._next_thread].ident
-            fut = AMSFluxExecutorFuture(future_owner_id, self, self.track_uri, None)
+            fut = AMSFluxExecutorFuture(future_owner_id, self, self._track_uri, None)
             self._submission_queues[self._next_thread].append(factory(*factory_args, fut))
             self._next_thread = (self._next_thread + 1) % len(self._submission_queues)
             return fut
 
 
-class AMSOrchestratorExecutor(AMSFluxExecutor):
+class _WorkItem:
+    def __init__(self, future, spec):
+        self.future = future
+        self.spec = spec
+
+    def run(self):
+        if not self.future.set_running_or_notify_cancel():
+            return
+
+        try:
+            out = None
+            err = None
+            if self.spec.stdout is not None:
+                out = open(self.spec.stdout, "w")
+            if self.spec.stderr == self.spec.stdout:
+                err = out
+            elif self.spec.stderr is not None:
+                err = open(self.spec.stderr, "w")
+            print(self.spec.tasks[0])
+            print(self.spec.stdout)
+            print(self.spec)
+            proc = subprocess.run(
+                " ".join(self.spec.tasks[0]["command"]),
+                stdout=out,
+                stderr=err,
+                env=self.spec.environment,
+                cwd=self.spec.cwd,
+                shell=True,
+            )
+            result = proc.returncode
+        except BaseException as exc:
+            self.future.set_exception(exc)
+            # Break a reference cycle with the exception 'exc'
+            self = None
+        else:
+            self.future.set_result(result)
+            if self.spec.stdout is not None:
+                out.close()
+            if self.spec.stderr != self.spec.stdout:
+                err = out
+            elif self.spec.stderr is not None:
+                err.close()
+
+    __class_getitem__ = classmethod(types.GenericAlias)
+
+
+class AMSFakeFluxOrchestatorExecutor(ThreadPoolExecutor):
     def __init__(self, o_queue, domains, *args, **kwargs):
-        self.o_queue = o_queue
+        self._o_queue = o_queue
+        self._domains = domains
+        print("Args", args)
+        print("kwargs", kwargs)
+        super().__init__(*args, **kwargs)
+
+    def submit(self, domain, job_spec):
+        with self._shutdown_lock:
+            if self._broken:
+                raise RuntimeError(f"Thread is broken {self._broken}")
+
+            if self._shutdown:
+                raise RuntimeError("cannot schedule new futures after shutdown")
+            f = AMSFluxExecutorFuture(0, self, "", domain)
+            w = _WorkItem(f, job_spec)
+            print(w)
+
+            self._work_queue.put(w)
+            self._adjust_thread_count()
+            return f
+
+    def get_o_queue(self):
+        return self._o_queue
+
+    def get_domains(self):
+        return self._domains
+
+
+class AMSFluxOrchestratorExecutor(AMSFluxExecutor):
+    def __init__(self, o_queue, domains, *args, **kwargs):
+        self._o_queue = o_queue
         self._domains = domains
         super().__init__(False, *args, **kwargs)
 
@@ -368,7 +452,7 @@ class AMSOrchestratorExecutor(AMSFluxExecutor):
             occurred and new jobs cannot be submitted (e.g. a remote Flux instance
             can no longer be communicated with).
         """
-        return self._create_future(domain, _SubmitPackage, args, kwargs)
+        return self._create_future(domain, flux.job.executor._SubmitPackage, args, kwargs)
 
     def _create_future(self, domain, factory, *factory_args):
         if self._broken_event.is_set():
@@ -377,13 +461,12 @@ class AMSOrchestratorExecutor(AMSFluxExecutor):
             if self._shutdown_event.is_set():
                 raise RuntimeError("cannot schedule new futures after shutdown")
             future_owner_id = self._executor_threads[self._next_thread].ident
-            fut = AMSFluxExecutorFuture(future_owner_id, self, self.track_uri, domain)
+            fut = AMSFluxExecutorFuture(future_owner_id, self, self._track_uri, domain)
             self._submission_queues[self._next_thread].append(factory(*factory_args, fut))
             self._next_thread = (self._next_thread + 1) % len(self._submission_queues)
             return fut
 
     def get_o_queue(self):
-        return self.o_queue
+        return self._o_queue
 
-    def get_domains(self):
         return self._domains
