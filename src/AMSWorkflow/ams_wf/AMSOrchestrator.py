@@ -38,6 +38,12 @@ def main():
         action="store_true",
     )
 
+    parser.add_argument(
+        "--fake-rmq-publish",
+        help="Fake the RabbitMQ publish step",
+        action="store_true",
+    )
+
     args = parser.parse_args()
 
     orchestrator.run(
@@ -46,6 +52,7 @@ def main():
         args.job_file,
         args.fake_flux,
         args.fake_rmq_update,
+        args.fake_rmq_publish,
     )
 
 

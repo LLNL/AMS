@@ -547,6 +547,31 @@ class StatusPrinter:
             elif request.is_process():
                 print("Received", json.dumps(request.data()))
 
+class AMSFakeRMQUpdate:
+    def __init__(
+        self,
+        json_file: str,
+        host: str,
+        port: int,
+        vhost: str,
+        user: str,
+        password: str,
+        cert: str,
+        publish_queue: str,
+        signals=[signal.SIGTERM, signal.SIGINT, signal.SIGUSR1],
+    ):
+
+        self.producer = AMSSyncProducer(host, port, vhost, user, password, cert, publish_queue)
+        self.publish_queue = publish_queue
+        self.json_file = json_file
+
+    def __call__(self):
+        with self.producer as fd:
+            with open(self.json_file, "r") as fd:
+                requests = json.load(fd)
+                for r in requests:
+                    item = [r]
+                    fd.send_message(json.dumps(item))
 
 class AMSRMQMessagePrinter(RMQLoaderTask):
     """
@@ -604,10 +629,23 @@ class AMSRMQMessagePrinter(RMQLoaderTask):
         self.rmq_consumer.run()
 
 
-def run(flux_uri, rmq_config, file=None, fake_flux=False, fake_rmq_update=False):
+def run(flux_uri, rmq_config, file=None, fake_flux=False, fake_rmq_update=False. fake_rmq_publish=False):
     tasks = []
     rmq_config = AMSRMQConfiguration.from_json(rmq_config)
     rmq_o_queue = Queue()
+    if fake_rmq_publish:
+        tasks.append(
+            AMSFakeRMQUpdate(
+                file,
+                rmq_config.service_host,
+                rmq_config.service_port,
+                rmq_config.rabbitmq_vhost,
+                rmq_config.rabbitmq_user,
+                rmq_config.rabbitmq_password,
+                rmq_config.rabbitmq_cert,
+                rmq_config.rabbitmq_ml_submit_queue,
+            )
+        )
     tasks.append(
         AMSJobReceiverStage(
             rmq_o_queue,
@@ -618,7 +656,7 @@ def run(flux_uri, rmq_config, file=None, fake_flux=False, fake_rmq_update=False)
             rmq_config.rabbitmq_password,
             rmq_config.rabbitmq_cert,
             rmq_config.rabbitmq_ml_submit_queue,
-            from_file=file,
+            from_file=file if not fake_rmq_publish else None,
         )
     )
 
