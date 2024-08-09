@@ -629,7 +629,7 @@ class AMSRMQMessagePrinter(RMQLoaderTask):
         self.rmq_consumer.run()
 
 
-def run(flux_uri, rmq_config, file=None, fake_flux=False, fake_rmq_update=False. fake_rmq_publish=False):
+def run(flux_uri, rmq_config, file=None, fake_flux=False, fake_rmq_update=False, fake_rmq_publish=False):
     tasks = []
     rmq_config = AMSRMQConfiguration.from_json(rmq_config)
     rmq_o_queue = Queue()
