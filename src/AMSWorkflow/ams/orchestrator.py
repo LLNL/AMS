@@ -90,7 +90,7 @@ class DomainSpec:
     def done_sub_select_cb(future):
         if not isinstance(future, AMSFluxExecutorFuture):
             raise TypeError(f"Done job call back received a future of an unsupported type: {type(future)}")
-        print("Here", type(future))
+
         domain_handle = future.get_domain_descr()
         if domain_handle is None:
             raise ValueError("Domain description is not set")
@@ -423,10 +423,17 @@ class RequestProcessor:
                     self.process_request(v["domain_name"], v)
 
             for i, (k, v) in enumerate(self._domains.items()):
+                # TODO: We should not submit a job if size of candidates is 0 <-- be careful this can lead to edge cases
+                #       of receiving candidate size 0 and rescheduling some work.
                 # TODO: Here we need a better heuristic to decide when to schedule a job
                 # 1. Job can only be schedule when they are completely described, there is
                 # both a sub-selection job and a trainin job description
                 # 2. We don't have another job running
+                # 3. Maybe increase the priority through flux.
+                # 4. Priority list and some sorting criteria.
+                # 5. Use the "new_candidates" size message as a heuristic to drive the frequency of job submission.
+                #    or the priority of a submitted job.
+                # 6. Nice to have a 'programmable' way to drive a heuristic. Like a callable.
                 if v.state == JobState.IDLE and v.fully_described():
                     v.state = JobState.QUEUE
                     print(f"Scheduling  domain {k}")
