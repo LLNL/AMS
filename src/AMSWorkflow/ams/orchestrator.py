@@ -566,12 +566,12 @@ class AMSFakeRMQUpdate:
         self.json_file = json_file
 
     def __call__(self):
-        with self.producer as fd:
+        with self.producer as producer:
             with open(self.json_file, "r") as fd:
                 requests = json.load(fd)
                 for r in requests:
                     item = [r]
-                    fd.send_message(json.dumps(item))
+                    producer.send_message(json.dumps(item))
 
 class AMSRMQMessagePrinter(RMQLoaderTask):
     """
