@@ -219,6 +219,26 @@ extern "C" void binomialOptionsEntry(real *callValue,
                                      real *_T,
                                      size_t optN);
 
+void compute_start_end(float g_start,
+                       float g_end,
+                       float *l_start,
+                       float *l_end,
+                       float num_fractions,
+                       int fraction_id,
+                       int id,
+                       int total_size)
+{
+
+  float range = g_end - g_start;
+  float chunk_width = range / (float)num_fractions;
+  *l_start = g_start + fraction_id * chunk_width;
+  *l_end = *l_start + chunk_width;
+
+  float local_range = *l_end - *l_start;
+  float distributed_chunk = local_range / total_size;
+  *l_start = *l_start + distributed_chunk * id;
+  *l_end = *l_start + distributed_chunk;
+}
 
 int main(int argc, char **argv)
 {
@@ -232,7 +252,7 @@ int main(int argc, char **argv)
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 #endif
 
-  if (argc != 3) {
+  if (argc != 5) {
     std::cout << "USAGE: " << argv[0] << " num-options batch_size";
     return EXIT_FAILURE;
   }
@@ -244,6 +264,25 @@ int main(int argc, char **argv)
 
   size_t numOptions = std::atoi(argv[1]);
   size_t batch_size = std::atoi(argv[2]);
+  float num_fractions = std::atof(argv[3]);
+  int fraction_id = std::atoi(argv[4]);
+
+  float S_start;
+  float S_end;
+  compute_start_end(
+      5, 30, &S_start, &S_end, num_fractions, fraction_id, rank, size);
+
+  float X_start, X_end;
+  compute_start_end(
+      1.0f, 100.0f, &X_start, &X_end, num_fractions, fraction_id, rank, size);
+
+  float T_start, T_end;
+  compute_start_end(
+      0.25f, 10.0f, &T_start, &T_end, num_fractions, fraction_id, rank, size);
+
+  printf("Rank Id %d S-Start:%f S-End %f\n", rank, S_start, S_end);
+  printf("Rank Id %d X-Start:%f X-End %f\n", rank, X_start, X_end);
+  printf("Rank Id %d T-Start:%f T-End %f\n", rank, T_start, T_end);
 
   bool write_output = false;
 
@@ -302,9 +341,9 @@ int main(int argc, char **argv)
   for (size_t i = 0; i < numOptions; i += batch_size) {
     for (int j = 0; j < std::min(numOptions - i * batch_size, batch_size);
          j++) {
-      S[j] = randData(5.0f, 30.0f);
-      X[j] = randData(1.0f, 100.0f);
-      T[j] = randData(0.25f, 10.0f);
+      S[j] = randData(S_start, S_end);
+      X[j] = randData(X_start, X_end);
+      T[j] = randData(T_start, T_end);
       R[j] = 0.06f;
       V[j] = 0.10f;
       BlackScholesCall(callValueBS[j], S[j], X[j], T[j], R[j], V[j]);

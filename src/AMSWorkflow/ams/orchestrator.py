@@ -547,6 +547,7 @@ class StatusPrinter:
             elif request.is_process():
                 print("Received", json.dumps(request.data()))
 
+
 class AMSFakeRMQUpdate:
     def __init__(
         self,
@@ -571,7 +572,9 @@ class AMSFakeRMQUpdate:
                 requests = json.load(fd)
                 for r in requests:
                     item = [r]
+                    print(f"publishing {item}")
                     producer.send_message(json.dumps(item))
+
 
 class AMSRMQMessagePrinter(RMQLoaderTask):
     """

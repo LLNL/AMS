@@ -715,6 +715,8 @@ class AMSSyncProducer:
         self.channel = self.connection.channel()
 
         result = self.channel.queue_declare(queue=self._publish_queue, exclusive=False)
+        # TODO: assert if publish_queue is different than method.queue.
+        # Verify if this is guaranteed by the RMQ specification.
         self._publish_queue = result.method.queue
         self._connected = True
         return self
@@ -732,9 +734,10 @@ class AMSSyncProducer:
         self._num_sent_messages += 1
         try:
             self.channel.basic_publish(exchange="", routing_key=self._publish_queue, body=message)
-            self._num_confirmed_messages += 1
         except pika.exceptions.UnroutableError:
             print(f" [{self._num_sent_messages}] Message could not be confirmed")
+        else:
+            self._num_confirmed_messages += 1
 
 
 @dataclass

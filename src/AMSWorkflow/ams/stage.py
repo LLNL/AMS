@@ -24,7 +24,7 @@ import numpy as np
 from ams.config import AMSInstance
 from ams.faccessors import get_reader, get_writer
 from ams.monitor import AMSMonitor
-from ams.rmq import AMSMessage, AsyncConsumer
+from ams.rmq import AMSMessage, AsyncConsumer, AMSRMQConfiguration
 from ams.store import AMSDataStore
 from ams.util import get_unique_fn
 
@@ -119,19 +119,21 @@ class ForwardTask(Task):
         callback: A callback to be applied on every message before pushing it to the next stage.
     """
 
-    def __init__(self, i_queue, o_queue, callback):
+    def __init__(self, db_path, db_store, name, i_queue, o_queue, user_obj):
         """
         initializes a ForwardTask class with the queues and the callback.
         """
-        if not isinstance(callback, Callable):
-            raise TypeError(f"{callback} argument is not Callable")
+
+        self._db_path = db_path
+        self._db_store = db_store
+        self._db_name = name
 
         self.i_queue = i_queue
         self.o_queue = o_queue
-        self.callback = callback
+        self.user_obj = user_obj
         self.datasize = 0
 
-    def _action(self, data):
+    def _data_cb(self, data):
         """
         Apply an 'action' to the incoming data
 
@@ -141,11 +143,17 @@ class ForwardTask(Task):
         Returns:
             A pair of inputs, outputs of the data after the transformation
         """
-        inputs, outputs = self.callback(data.inputs, data.outputs)
+        inputs, outputs = self.user_obj.data_cb(data.inputs, data.outputs)
         # This can be too conservative, we may want to relax it later
         if not (isinstance(inputs, np.ndarray) and isinstance(outputs, np.ndarray)):
             raise TypeError(f"{self.callback.__name__} did not return numpy arrays")
         return inputs, outputs
+
+    def _model_update_cb(self, db, msg):
+        domain = msg["domain"]
+        model = db.search(domain, "models", version="latest")
+        _updated = self.user_obj.update_model_cb(domain, model)
+        print(f"Model update status: {_updated}")
 
     @AMSMonitor(record=["datasize"])
     def __call__(self):
@@ -155,23 +163,26 @@ class ForwardTask(Task):
         the tasks waiting on the output queues about the terminations and returns from the function.
         """
 
-        while True:
-            # This is a blocking call
-            item = self.i_queue.get(block=True)
-            if item.is_terminate():
-                self.o_queue.put(QueueMessage(MessageType.Terminate, None))
-                break
-            elif item.is_process():
-                data = item.data()
-                inputs, outputs = self._action(data)
-                self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(inputs, outputs, data.domain_name)))
-                self.datasize += inputs.nbytes + outputs.nbytes
-            elif item.is_delete():
-                print(f"Sending Delete Message Type {self.__class__.__name__}")
-                self.o_queue.put(item)
-            elif item.is_new_model():
-                # This is not handled yet
-                continue
+        with AMSDataStore(self.db_path, self.db_store, self.name) as db:
+            while True:
+                # This is a blocking call
+                item = self.i_queue.get(block=True)
+                if item.is_terminate():
+                    self.o_queue.put(QueueMessage(MessageType.Terminate, None))
+                    break
+                elif item.is_process():
+                    data = item.data()
+                    inputs, outputs = self._data_cb(data)
+                    self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(inputs, outputs, data.domain_name)))
+                    self.datasize += inputs.nbytes + outputs.nbytes
+                elif item.is_new_model():
+                    self._model_update_cb(db, data)
+                elif item.is_delete():
+                    print(f"Sending Delete Message Type {self.__class__.__name__}")
+                    self.o_queue.put(item)
+                elif item.is_new_model():
+                    # This is not handled yet
+                    continue
         return
 
 
@@ -223,9 +234,9 @@ class FSLoaderTask(Task):
         print(f"Spend {end - start} at {self.__class__.__name__}")
 
 
-class RMQLoaderTask(Task):
+class RMQDomainDataLoaderTask(Task):
     """
-    A RMQLoaderTask consumes data from RabbitMQ bundles the data of
+    A RMQDomainDataLoaderTask consumes 'AMSMessages' from RabbitMQ bundles the data of
     the files into batches and forwards them to the next task waiting on the
     output queuee.
 
@@ -264,7 +275,7 @@ class RMQLoaderTask(Task):
         # Signals can only be used within the main thread
         if self.policy != "thread":
             # We ignore SIGTERM, SIGUSR1, SIGINT by default so later
-            # we can override that handler only for RMQLoaderTask
+            # we can override that handler only for RMQDomainDataLoaderTask
             for s in self.signals:
                 self.orig_sig_handlers[s] = signal.getsignal(s)
                 signal.signal(s, signal.SIG_IGN)
@@ -326,11 +337,40 @@ class RMQLoaderTask(Task):
         """
         Busy loop of consuming messages from RMQ queue
         """
-        # Installing signal callbacks only for RMQLoaderTask
+        # Installing signal callbacks only for RMQDomainDataLoaderTask
         if self.policy != "thread":
             for s in self.signals:
                 signal.signal(s, self.signal_wrapper(self.__class__.__name__, os.getpid()))
         self.rmq_consumer.run()
+
+
+class RMQControlMessageTask(RMQDomainDataLoaderTask):
+    """
+    A RMQControlMessageTask consumes JSON-messages from RabbitMQ and forwards them to
+    the o_queue of the pruning Task.
+
+    Attributes:
+        o_queue: The output queue to write the transformed messages
+        credentials: A JSON file with the credentials to log on the RabbitMQ server.
+        certificates: TLS certificates
+        rmq_queue: The RabbitMQ queue to listen to.
+        prefetch_count: Number of messages prefected by RMQ (impact performance)
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def callback_message(self, ch, basic_deliver, properties, body):
+        """
+        Callback that will be called each time a message will be consummed.
+        the connection (or if a problem happened with the connection).
+        """
+        start_time = time.time()
+        data = json.loads(body)
+        if data["request_type"] == "done-training":
+            self.o_queue.put(QueueMessage(MessageType.NewModel, data))
+
+        self.total_time += time.time() - start_time
 
 
 class FSWriteTask(Task):
@@ -517,7 +557,7 @@ class Pipeline(ABC):
         if stage_dir is not None:
             self.stage_dir = stage_dir
 
-        self.actions = list()
+        self.user_action = None
 
         self.db_type = db_type
 
@@ -525,17 +565,21 @@ class Pipeline(ABC):
 
         self.store = store
 
-    def add_data_action(self, callback):
+    def add_user_action(self, obj):
         """
         Adds an action to be performed at the data before storing them in the filesystem
 
         Args:
             callback: A callback to be called on every input, output.
         """
-        if not callable(callback):
-            raise TypeError(f"{self.__class__.__name__} requires a callable as an argument")
 
-        self.actions.append(callback)
+        if not (hasattr(obj, "data_cb") and callable(getattr(obj, "data_cb"))):
+            raise TypeError(f"User provided object {obj} does not have data_cb")
+
+        if not (hasattr(obj, "update_model_cb") and callable(getattr(obj, "update_model_cb"))):
+            raise TypeError(f"User provided object {obj} does not have data_cb")
+
+        self.user_action = obj
 
     def _seq_execute(self):
         """
@@ -593,12 +637,22 @@ class Pipeline(ABC):
         # Every action requires 1 input and one output q. But the output
         # q is used as an inut q on the next action thus we need num actions -1.
         # 2 extra queues to store to data-store and publish on kosh
-        num_queues = 1 + len(self.actions) - 1 + 2
-        self._queues = [_qType() for i in range(num_queues)]
+        self._queues = [_qType() for i in range(4)]
 
         self._tasks = [self.get_load_task(self._queues[0], policy)]
-        for i, a in enumerate(self.actions):
-            self._tasks.append(ForwardTask(self._queues[i], self._queues[i + 1], a))
+        assert len(self.actions) == 1, "We only support a single user action"
+        self._tasks.append(
+            ForwardTask(
+                self.ams_config.db_path,
+                self.ams_config.db_store,
+                self.ams_config.name,
+                self._queues[0],
+                self._queues[1],
+                self.user_action,
+            )
+        )
+        if self.requires_model_update:
+            self._tasks.append(self.get_model_update_task(self._queues[0], policy))
 
         # After user actions we store into a file
         self._tasks.append(FSWriteTask(self._queues[-2], self._queues[-1], self._writer, self.stage_dir))
@@ -621,6 +675,17 @@ class Pipeline(ABC):
         self._link_pipeline(policy)
         # Execute them
         self._execute_tasks(policy)
+
+    @abstractmethod
+    def requires_model_update(self):
+        """
+        Returns whether the pipeline provides a model-update message parsing mechanism
+        """
+        pass
+
+    @abstractmethod
+    def get_model_update_task(self, o_queue, policy):
+        pass
 
     @abstractmethod
     def get_load_task(self, o_queue, policy):
@@ -731,6 +796,12 @@ class FSPipeline(Pipeline):
             args.pattern,
         )
 
+    def requires_model_update(self):
+        return False
+
+    def get_model_update_task(self, o_queue, policy):
+        raise RuntimeError("FSPipeline does not support model update")
+
 
 class RMQPipeline(Pipeline):
     """
@@ -746,7 +817,22 @@ class RMQPipeline(Pipeline):
         rmq_queue: The RMQ queue to listen to.
     """
 
-    def __init__(self, db_dir, store, dest_dir, stage_dir, db_type, host, port, vhost, user, password, cert, rmq_queue):
+    def __init__(
+        self,
+        db_dir,
+        store,
+        dest_dir,
+        stage_dir,
+        db_type,
+        host,
+        port,
+        vhost,
+        user,
+        password,
+        cert,
+        data_queue,
+        model_update_queue=None,
+    ):
         """
         Initialize a RMQPipeline that will write data to the 'dest_dir' and optionally publish
         these files to the kosh-store 'store' by using the stage_dir as an intermediate directory.
@@ -758,7 +844,8 @@ class RMQPipeline(Pipeline):
         self._user = user
         self._password = password
         self._cert = Path(cert)
-        self._rmq_queue = rmq_queue
+        self._data_queue = data_queue
+        self._model_update_queue = model_update_queue
 
     def get_load_task(self, o_queue, policy):
         """
@@ -767,10 +854,10 @@ class RMQPipeline(Pipeline):
         Args:
             o_queue: The queue the load task will push read data.
 
-        Returns: An RMQLoaderTask instance reading data from the
+        Returns: An RMQDomainDataLoaderTask instance reading data from the
         filesystem and forwarding the values to the o_queue.
         """
-        return RMQLoaderTask(
+        return RMQDomainDataLoaderTask(
             o_queue,
             self._host,
             self._port,
@@ -778,7 +865,29 @@ class RMQPipeline(Pipeline):
             self._user,
             self._password,
             self._cert,
-            self._rmq_queue,
+            self._data_queue,
+            policy,
+        )
+
+    def get_model_update_task(self, o_queue, policy):
+        """
+        Return a Task receives messages from the training job regarding the status of new models
+
+        Args:
+            o_queue: The queue to push the model update message.
+
+        Returns: An RMQControlMessageTask instance reading data from self._model_update_queue
+        and forwarding the values to the o_queue.
+        """
+        return RMQControlMessageTask(
+            o_queue,
+            self._host,
+            self._port,
+            self._vhost,
+            self._user,
+            self._password,
+            self._cert,
+            self._model_update_queue,
             policy,
         )
 
@@ -788,9 +897,8 @@ class RMQPipeline(Pipeline):
         Add cli arguments to the parser required by this Pipeline.
         """
         Pipeline.add_cli_args(parser)
-        parser.add_argument("-c", "--creds", help="Credentials file (JSON)", required=True)
-        parser.add_argument("-t", "--cert", help="TLS certificate file", required=True)
-        parser.add_argument("-q", "--queue", help="On which queue to receive messages", required=True)
+        parser.add_argument("-c", "--creds", help="AMS credentials file (JSON)", required=True)
+        parser.add_argument("-u", "--update-rmq-models", help="Update-rmq-models", action="store_true")
         return
 
     @classmethod
@@ -799,13 +907,7 @@ class RMQPipeline(Pipeline):
         Create RMQPipeline from the user provided CLI.
         """
 
-        # TODO: implement an interface so users can plug any parser for RMQ credentials
-        config = cls.parse_credentials(cls, args.creds)
-        host = config["service-host"]
-        port = config["service-port"]
-        vhost = config["rabbitmq-vhost"]
-        user = config["rabbitmq-user"]
-        password = config["rabbitmq-password"]
+        config = AMSRMQConfiguration.from_json(args.creds)
 
         return cls(
             args.persistent_db_path,
@@ -813,22 +915,18 @@ class RMQPipeline(Pipeline):
             args.dest_dir,
             args.stage_dir,
             args.db_type,
-            host,
-            port,
-            vhost,
-            user,
-            password,
-            args.cert,
-            args.queue,
+            config.service_host,
+            config.service_port,
+            config.rabbitmq_vhost,
+            config.rabbimq_user,
+            config.rabbitmq_password,
+            config.rabbitmq_cert,
+            config.rabbitmq_inbound_queue,
+            config.rabbitmq_ml_status_queue if args.update_rmq_models else None,
         )
 
-    @staticmethod
-    def parse_credentials(self, json_file: str) -> dict:
-        """Internal method to parse the credentials file"""
-        data = {}
-        with open(json_file, "r") as f:
-            data = json.load(f)
-        return data
+    def requires_model_update(self):
+        return self._model_update_queue != None
 
 
 def get_pipeline(src_mechanism="fs"):
