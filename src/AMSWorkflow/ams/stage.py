@@ -537,7 +537,7 @@ class Pipeline(ABC):
     supported_policies = {"sequential", "thread", "process"}
     supported_writers = {"shdf5", "dhdf5", "csv"}
 
-    def __init__(self, db_dir, store, dest_dir=None, stage_dir=None, db_type="hdf5"):
+    def __init__(self, db_dir, store, dest_dir=None, stage_dir=None, db_type="dhdf5"):
         """
         initializes the Pipeline class to write the final data in the 'dest_dir' using a file writer of type 'db_type'
         and optionally caching the data in the 'stage_dir' before making them available in the cache store.

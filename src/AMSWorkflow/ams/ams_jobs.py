@@ -4,6 +4,8 @@ import os
 from typing import Optional
 from dataclasses import dataclass, fields
 from ams import util
+from typing import Dict, List, Union, Optional, Mapping
+from pathlib import Path
 
 
 def constuct_cli_cmd(executable, *args, **kwargs):
@@ -36,7 +38,7 @@ class AMSJob:
     """
 
     @classmethod
-    def generate_formatting(self, store):
+    def generate_formatting(cls, store):
         return {"AMS_STORE_PATH": store.root_path}
 
     def __init__(
@@ -233,7 +235,7 @@ class AMSDomainJob(AMSJob):
         super().__init__(*args, **kwargs)
 
     @classmethod
-    def from_descr(cls, stage_dir, descr):
+    def from_descr(cls, descr, stage_dir=None):
         domain_job_resources = AMSJobResources(**descr["resources"])
         return cls(
             name=descr["name"],
@@ -293,7 +295,158 @@ class AMSSubSelectJob(AMSMLJob):
         super().__init__(*args, **kwargs)
 
 
-class AMSFSStageJob(AMSJob):
+class AMSStageJob(AMSJob):
+    def __init__(
+        self,
+        resources: Union[Dict[str, Union[str, int]], AMSJobResources],
+        dest: str,
+        persistent_db_path: str,
+        store: bool = True,
+        db_type: str = "dhdf5",
+        policy: str = "process",
+        prune_module_path: Optional[str] = None,
+        prune_class: Optional[str] = None,
+        environ: Optional[Mapping[str, str]] = None,
+        stdout: Optional[str] = None,
+        stderr: Optional[str] = None,
+        cli_args: List[str] = [],
+        cli_kwargs: Mapping[str, str] = {},
+    ):
+        _cli_args = list(cli_args)
+        if store:
+            _cli_args.append("--store")
+        else:
+            _cli_args.append("--no-store")
+
+        _cli_kwargs = dict(cli_kwargs)
+        _cli_kwargs["--dest"] = dest
+        _cli_kwargs["--persistent-db-path"] = persistent_db_path
+        _cli_kwargs["--db-type"] = db_type
+        _cli_kwargs["--policy"] = policy
+
+        if prune_module_path is not None:
+            assert Path(prune_module_path).exists(), "Module path to user pruner does not exist"
+            assert prune_class is not None, "When defining a pruning module please define the class"
+            _cli_kwargs["--load"] = prune_module_path
+            _cli_kwargs["--class"] = prune_class
+
+        super().__init__(
+            name="AMSStageJob",
+            executable="AMSDBStage",
+            environ=environ,
+            resources=resources,
+            stdout=stdout,
+            stderr=stderr,
+            cli_args=_cli_args,
+            cli_kwargs=_cli_kwargs,
+        )
+
+
+class AMSFSStageJob(AMSStageJob):
+    def __init__(
+        self,
+        resources: Union[Dict[str, Union[str, int]], AMSJobResources],
+        dest: str,
+        persistent_db_path: str,
+        src: str,
+        store: bool = True,
+        db_type="dhf5",
+        pattern="*.h5",
+        src_type: str = "shdf5",
+        prune_module_path: Optional[str] = None,
+        prune_class: Optional[str] = None,
+        environ: Optional[Mapping[str, str]] = None,
+        stdout: Optional[str] = None,
+        stderr: Optional[str] = None,
+        cli_args: List[str] = [],
+        cli_kwargs: Mapping[str, str] = {},
+    ):
+
+        _cli_args = list(cli_args)
+        _cli_kwargs = dict(cli_kwargs)
+        _cli_kwargs["--src"] = src
+        _cli_kwargs["--src-type"] = src_type
+        _cli_kwargs["--pattern"] = pattern
+        _cli_kwargs["--mechanism"] = "fs"
+
+        super().__init__(
+            resources,
+            dest,
+            persistent_db_path,
+            store,
+            db_type,
+            environ=environ,
+            stdout=stdout,
+            stderr=stderr,
+            prune_module_path=prune_module_path,
+            prune_class=prune_class,
+            cli_args=_cli_args,
+            cli_kwargs=_cli_kwargs,
+        )
+
+
+class AMSNetworkStageJob(AMSStageJob):
+    def __init__(
+        self,
+        resources: Union[Dict[str, Union[str, int]], AMSJobResources],
+        dest: str,
+        persistent_db_path: str,
+        creds: str,
+        store: bool = True,
+        db_type: str = "dhdf5",
+        update_models: bool = False,
+        prune_module_path: Optional[str] = None,
+        prune_class: Optional[str] = None,
+        environ: Optional[Mapping[str, str]] = None,
+        stdout: Optional[str] = None,
+        stderr: Optional[str] = None,
+        cli_args: List[str] = [],
+        cli_kwargs: Mapping[str, str] = {},
+    ):
+        _cli_args = list(cli_args)
+        if update_models:
+            _cli_args.append("--update-rmq-models")
+        _cli_kwargs = dict(cli_kwargs)
+        _cli_kwargs["--creds"] = creds
+        _cli_kwargs["--mechanism"] = "network"
+
+        super().__init__(
+            resources,
+            dest,
+            persistent_db_path,
+            store,
+            db_type,
+            environ=environ,
+            stdout=stdout,
+            stderr=stderr,
+            prune_module_path=prune_module_path,
+            prune_class=prune_class,
+            cli_args=_cli_args,
+            cli_kwargs=_cli_kwargs,
+        )
+
+    @classmethod
+    def from_descr(cls, descr, dest, persistent_db_path, creds, num_nodes, cores_per_node, gpus_per_node):
+        cores_per_instance = 5
+        total_cores = num_nodes * cores_per_node
+        instances = descr.pop("instances", 1)
+        requires_gpu = descr.pop("requires_gpu", False)
+
+        assert instances == 1, "We are missing support for multi-instance execution"
+        assert requires_gpu == False, "We are missing support for gpu stager execution"
+
+        resources = AMSJobResources(
+            nodes=1,
+            tasks_per_node=1,
+            cores_per_task=5,
+            exclusive=False,
+            gpus_per_task=None,
+        )
+
+        return cls(resources, dest, persistent_db_path, creds, **descr)
+
+
+class AMSFSTempStageJob(AMSJob):
     def __init__(
         self,
         store_dir,
@@ -377,5 +530,4 @@ def get_echo_job(message):
         cores_per_task=1,
         gpus_per_task=0,
         exclusive=True,
-    )
     return jobspec
