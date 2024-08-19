@@ -1,5 +1,6 @@
 from flux.job import JobspecV1
 import os
+import json
 
 from typing import Optional
 from dataclasses import dataclass, fields
@@ -83,7 +84,7 @@ class AMSJob:
         data["cli_args"] = self._cli_args
         data["cli_kwargs"] = self._cli_kwargs
         data["resources"] = self._resources
-        return f"{self.__class__.__name__}({data})"
+        return f"{self.__class__.__name__}\nCLI:{' '.join(self.generate_cli_command())}\nJOB-Descr:{data}"
 
     def precede_deploy(self, store):
         pass
@@ -228,11 +229,20 @@ class AMSDomainJob(AMSJob):
         return ams_object
 
     def __init__(self, domain_names, stage_dir, *args, **kwargs):
-        self.domain_names = domain_names
+        self._domain_names = domain_names
         self.stage_dir = stage_dir
         self._ams_object = None
         self._ams_object_fn = None
         super().__init__(*args, **kwargs)
+
+    @property
+    def domain_names(self):
+        """The domain_names property."""
+        return self._domain_names
+
+    @domain_names.setter
+    def domain_names(self, value):
+        self._domain_names = value
 
     @classmethod
     def from_descr(cls, descr, stage_dir=None):
@@ -256,8 +266,18 @@ class AMSDomainJob(AMSJob):
 
 
 class AMSMLJob(AMSJob):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, domain, *args, **kwargs):
+        self._domain = domain
         super().__init__(*args, **kwargs)
+
+    @property
+    def domain(self):
+        """The domain property."""
+        return self._domain
+
+    @domain.setter
+    def domain(self, value):
+        self._domain = value
 
     @classmethod
     def from_descr(cls, store, descr):
@@ -274,6 +294,7 @@ class AMSMLJob(AMSJob):
                 cli_args[i] = v.format(**formatting)
 
         return cls(
+            descr["domain_name"],
             name=descr["name"],
             environ=None,
             stdout=descr["cli"].get("stdout", None),
@@ -426,23 +447,7 @@ class AMSNetworkStageJob(AMSStageJob):
         )
 
     @classmethod
-    def from_descr(cls, descr, dest, persistent_db_path, creds, num_nodes, cores_per_node, gpus_per_node):
-        cores_per_instance = 5
-        total_cores = num_nodes * cores_per_node
-        instances = descr.pop("instances", 1)
-        requires_gpu = descr.pop("requires_gpu", False)
-
-        assert instances == 1, "We are missing support for multi-instance execution"
-        assert requires_gpu == False, "We are missing support for gpu stager execution"
-
-        resources = AMSJobResources(
-            nodes=1,
-            tasks_per_node=1,
-            cores_per_task=5,
-            exclusive=False,
-            gpus_per_task=None,
-        )
-
+    def from_descr(cls, descr, dest, persistent_db_path, creds, resources):
         return cls(resources, dest, persistent_db_path, creds, **descr)
 
 
@@ -524,10 +529,6 @@ def nested_instance_job_descr(num_nodes, cores_per_node, gpus_per_node, time="in
 
 def get_echo_job(message):
     jobspec = JobspecV1.from_command(
-        command=["pwd"],
-        num_tasks=1,
-        num_nodes=1,
-        cores_per_task=1,
-        gpus_per_task=0,
-        exclusive=True,
+        command=["echo", message], num_tasks=1, num_nodes=1, cores_per_task=1, gpus_per_task=0, exclusive=True
+    )
     return jobspec

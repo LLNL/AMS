@@ -1,11 +1,11 @@
-from ams.ams_jobs import AMSDomainJob, AMSFSStageJob, AMSNetworkStageJob
+from ams.ams_jobs import AMSDomainJob, AMSNetworkStageJob, AMSMLTrainJob, AMSSubSelectJob
+from ams.ams_jobs import AMSJob, AMSJobResources
 from ams.store import AMSDataStore
 import flux
 import json
 
-from typing import Tuple, Dict, List, Optional
-from ams_jobs import AMSJob
-from dataclasses import dataclass, fields
+from typing import Tuple, Dict, List, Optional, Set
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -57,28 +57,56 @@ class JobList(list):
         super().__setitem__(index, value)
 
 
-class WorkflowManager:
+class AMSWorkflowManager:
     """
     @brief Manages all job submissions of the current execution.
     """
 
-    def __init__(self, kosh_path: str, store_name: str, db_name: str, jobs: Dict[str, JobList]):
+    def __init__(
+        self,
+        kosh_path: str,
+        store_name: str,
+        db_name: str,
+        domain_jobs: JobList,
+        stage_jobs: JobList,
+        sub_select_jobs: JobList,
+        train_jobs: JobList,
+    ):
         self._kosh_path = kosh_path
         self._store_name = store_name
         self._db_name = db_name
-        self._jobs = jobs
+        self._domain_jobs = domain_jobs
+        self._stage_jobs = stage_jobs
+        self._sub_select_jobs = sub_select_jobs
+        self._train_jobs = train_jobs
+
+    def __str__(self):
+        out = ""
+        for job in self._domain_jobs:
+            out += str(job) + "\n"
+
+        for job in self._stage_jobs:
+            out += str(job) + "\n"
+
+        for job in self._sub_select_jobs:
+            out += str(job) + "\n"
+
+        for job in self._train_jobs:
+            out += str(job) + "\n"
+
+        return out
 
     @classmethod
-    def from_json(
+    def from_descr(
         cls,
-        domain_resources: Partition,
-        stage_resources: Partition,
-        train_resources: Partition,
         json_file: str,
         creds: Optional[str] = None,
     ):
 
-        def create_domain_list(domains: List[Dict]) -> List[JobList]:
+        def collect_domains(jobs: JobList) -> Set[str]:
+            return {job.domain for job in jobs}
+
+        def create_domain_list(domains: List[Dict]) -> JobList:
             jobs = JobList()
             for job_descr in domains:
                 jobs.append(AMSDomainJob.from_descr(job_descr))
@@ -115,12 +143,45 @@ class WorkflowManager:
         assert num_instances == 1, "We only support 1 instance at the moment"
         assert stage_type == "rmq", "We only support 'rmq' stagers"
 
-        stage_job = AMSNetworkStageJob.from_descr(
-            data["stage-job"],
-            store.get_candidate_path(),
-            store.root_path,
-            creds,
-            stage_resources.nnodes,
-            stage_resources.cores_per_node,
-            stage_resources.gpus_per_node,
+        stage_resources = AMSJobResources(nodes=1, tasks_per_node=1, cores_per_task=6, gpus_per_task=0)
+        stage_jobs = JobList()
+        stage_jobs.append(
+            AMSNetworkStageJob.from_descr(
+                data["stage-job"], store.get_candidate_path(), store.root_path, creds, stage_resources
+            )
+        )
+
+        sub_select_jobs = JobList()
+        assert "sub-select-jobs" in data, "We are expecting a subselection job"
+        for sjob in data["sub-select-jobs"]:
+            sub_select_jobs.append(AMSSubSelectJob.from_descr(store, sjob))
+
+        sub_select_domains = collect_domains(sub_select_jobs)
+
+        assert "train-jobs" in data, "We are expecting training jobs"
+
+        train_jobs = JobList()
+        for sjob in data["train-jobs"]:
+            train_jobs.append(AMSMLTrainJob.from_descr(store, sjob))
+
+        train_domains = collect_domains(train_jobs)
+        wf_domain_names = []
+        for job in domain_jobs:
+            wf_domain_names.append(*job.domain_names)
+
+        wf_domain_names = list(set(wf_domain_names))
+
+        for domain in wf_domain_names:
+            assert domain in train_domains, f"Domain {domain} misses a train description"
+            assert domain in sub_select_domains, f"Domain {domain} misses a subselection description"
+
+        store = AMSDataStore(data["db"]["kosh-path"], data["db"]["store-name"], data["db"]["name"])
+        return cls(
+            data["db"]["kosh-path"],
+            data["db"]["store-name"],
+            data["db"]["name"],
+            domain_jobs,
+            stage_jobs,
+            sub_select_jobs,
+            train_jobs,
         )

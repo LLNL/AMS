@@ -133,6 +133,18 @@ class ForwardTask(Task):
         self.user_obj = user_obj
         self.datasize = 0
 
+    @property
+    def db_path(self):
+        return self._db_path
+
+    @property
+    def db_store(self):
+        return self._db_store
+
+    @property
+    def db_name(self):
+        return self._db_name
+
     def _data_cb(self, data):
         """
         Apply an 'action' to the incoming data
@@ -146,7 +158,7 @@ class ForwardTask(Task):
         inputs, outputs = self.user_obj.data_cb(data.inputs, data.outputs)
         # This can be too conservative, we may want to relax it later
         if not (isinstance(inputs, np.ndarray) and isinstance(outputs, np.ndarray)):
-            raise TypeError(f"{self.callback.__name__} did not return numpy arrays")
+            raise TypeError(f"{self.user_obj.__name__}.data_cb did not return numpy arrays")
         return inputs, outputs
 
     def _model_update_cb(self, db, msg):
@@ -163,7 +175,7 @@ class ForwardTask(Task):
         the tasks waiting on the output queues about the terminations and returns from the function.
         """
 
-        with AMSDataStore(self.db_path, self.db_store, self.name) as db:
+        with AMSDataStore(self.db_path, self.db_store, self.db_name) as db:
             while True:
                 # This is a blocking call
                 item = self.i_queue.get(block=True)
@@ -176,6 +188,7 @@ class ForwardTask(Task):
                     self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(inputs, outputs, data.domain_name)))
                     self.datasize += inputs.nbytes + outputs.nbytes
                 elif item.is_new_model():
+                    data = item.data()
                     self._model_update_cb(db, data)
                 elif item.is_delete():
                     print(f"Sending Delete Message Type {self.__class__.__name__}")
@@ -640,7 +653,7 @@ class Pipeline(ABC):
         self._queues = [_qType() for i in range(4)]
 
         self._tasks = [self.get_load_task(self._queues[0], policy)]
-        assert len(self.actions) == 1, "We only support a single user action"
+
         self._tasks.append(
             ForwardTask(
                 self.ams_config.db_path,
@@ -651,7 +664,7 @@ class Pipeline(ABC):
                 self.user_action,
             )
         )
-        if self.requires_model_update:
+        if self.requires_model_update():
             self._tasks.append(self.get_model_update_task(self._queues[0], policy))
 
         # After user actions we store into a file
@@ -681,7 +694,7 @@ class Pipeline(ABC):
         """
         Returns whether the pipeline provides a model-update message parsing mechanism
         """
-        pass
+        return False
 
     @abstractmethod
     def get_model_update_task(self, o_queue, policy):
@@ -846,6 +859,8 @@ class RMQPipeline(Pipeline):
         self._cert = Path(cert)
         self._data_queue = data_queue
         self._model_update_queue = model_update_queue
+        print("Received a data queue of", self._data_queue)
+        print("Received a model_update queue of", self._model_update_queue)
 
     def get_load_task(self, o_queue, policy):
         """
@@ -894,7 +909,7 @@ class RMQPipeline(Pipeline):
     @staticmethod
     def add_cli_args(parser):
         """
-        Add cli arguments to the parser required by this Pipeline.
+        Add cli arguments to the parser required by this Pipelinereturn .
         """
         Pipeline.add_cli_args(parser)
         parser.add_argument("-c", "--creds", help="AMS credentials file (JSON)", required=True)
@@ -918,7 +933,7 @@ class RMQPipeline(Pipeline):
             config.service_host,
             config.service_port,
             config.rabbitmq_vhost,
-            config.rabbimq_user,
+            config.rabbitmq_user,
             config.rabbitmq_password,
             config.rabbitmq_cert,
             config.rabbitmq_inbound_queue,
@@ -926,7 +941,7 @@ class RMQPipeline(Pipeline):
         )
 
     def requires_model_update(self):
-        return self._model_update_queue != None
+        return self._model_update_queue is not None
 
 
 def get_pipeline(src_mechanism="fs"):
