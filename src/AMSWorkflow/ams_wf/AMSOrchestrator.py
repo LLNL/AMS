@@ -45,6 +45,7 @@ def main():
     )
 
     args = parser.parse_args()
+    print("Starting")
 
     orchestrator.run(
         args.ml_uri,

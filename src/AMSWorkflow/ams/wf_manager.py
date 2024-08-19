@@ -1,5 +1,8 @@
-from ams.ams_jobs import AMSDomainJob, AMSNetworkStageJob, AMSMLTrainJob, AMSSubSelectJob
+from ams.ams_jobs import AMSDomainJob, AMSNetworkStageJob, AMSMLTrainJob, AMSOrchestratorJob, AMSSubSelectJob
+import time
+from ams.ams_flux import AMSFluxExecutor
 from ams.ams_jobs import AMSJob, AMSJobResources
+from ams.rmq import AMSRMQConfiguration, AMSSyncProducer
 from ams.store import AMSDataStore
 import flux
 import json
@@ -64,6 +67,7 @@ class AMSWorkflowManager:
 
     def __init__(
         self,
+        rmq_config: str,
         kosh_path: str,
         store_name: str,
         db_name: str,
@@ -72,6 +76,7 @@ class AMSWorkflowManager:
         sub_select_jobs: JobList,
         train_jobs: JobList,
     ):
+        self._rmq_config = rmq_config
         self._kosh_path = kosh_path
         self._store_name = store_name
         self._db_name = db_name
@@ -79,6 +84,10 @@ class AMSWorkflowManager:
         self._stage_jobs = stage_jobs
         self._sub_select_jobs = sub_select_jobs
         self._train_jobs = train_jobs
+
+    @property
+    def rmq_config(self):
+        return self._rmq_config
 
     def __str__(self):
         out = ""
@@ -96,11 +105,63 @@ class AMSWorkflowManager:
 
         return out
 
+    def broadcast_train_specs(self, rmq_config):
+        with AMSSyncProducer(
+            rmq_config.service_host,
+            rmq_config.service_port,
+            rmq_config.rabbitmq_vhost,
+            rmq_config.rabbitmq_user,
+            rmq_config.rabbitmq_password,
+            rmq_config.rabbitmq_cert,
+            rmq_config.rabbitmq_ml_submit_queue,
+        ) as rmq_fd:
+
+            for ml_job in self._train_jobs:
+                request = json.dumps(
+                    {
+                        "domain_name": ml_job.domain,
+                        "job_type": "train",
+                        "spec": ml_job.to_dict(),
+                        "ams_log": True,
+                        "request_type": "register_job_spec",
+                    }
+                )
+                rmq_fd.send_message(request)
+
+            for subselect_job in self._sub_select_jobs:
+                request = json.dumps(
+                    {
+                        "domain_name": subselect_job.domain,
+                        "job_type": "sub_select",
+                        "spec": subselect_job.to_dict(),
+                        "ams_log": True,
+                        "request_type": "register_job_spec",
+                    }
+                )
+                rmq_fd.send_message(request)
+
+    def start(self, domain_uri, stage_uri, ml_uri):
+        ams_orchestartor_job = AMSOrchestratorJob(ml_uri, self.rmq_config)
+        rmq_config = AMSRMQConfiguration.from_json(self.rmq_config)
+        print(f"Starting ..... {ml_uri} ... {stage_uri} ... {domain_uri}")
+        start = time.time()
+        with AMSFluxExecutor(False, threads=1, handle_args=(ml_uri,)) as ml_executor:
+            print("Spawning Flux executor for root took", time.time() - start)
+            print("Submitting first job", ml_uri)
+            print(ams_orchestartor_job.to_flux_jobspec())
+            ml_future = ml_executor.submit(ams_orchestartor_job.to_flux_jobspec())
+            # blocking call till jobid is available
+            job_id = ml_future.jobid()
+            print("AMSOrchestratorJob ID is ", job_id)
+            # Publish all the specs of the training/subselection jobs
+            self.broadcast_train_specs(rmq_config)
+            ml_executor.shutdown(wait=True)
+
     @classmethod
     def from_descr(
         cls,
         json_file: str,
-        creds: Optional[str] = None,
+        rmq_config: Optional[str] = None,
     ):
 
         def collect_domains(jobs: JobList) -> Set[str]:
@@ -147,7 +208,7 @@ class AMSWorkflowManager:
         stage_jobs = JobList()
         stage_jobs.append(
             AMSNetworkStageJob.from_descr(
-                data["stage-job"], store.get_candidate_path(), store.root_path, creds, stage_resources
+                data["stage-job"], store.get_candidate_path(), store.root_path, rmq_config, stage_resources
             )
         )
 
@@ -177,6 +238,7 @@ class AMSWorkflowManager:
 
         store = AMSDataStore(data["db"]["kosh-path"], data["db"]["store-name"], data["db"]["name"])
         return cls(
+            rmq_config,
             data["db"]["kosh-path"],
             data["db"]["store-name"],
             data["db"]["name"],

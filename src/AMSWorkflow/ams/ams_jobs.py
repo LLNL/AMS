@@ -184,7 +184,7 @@ class AMSJob:
         if self._stderr is None:
             jobspec.stderr = "ams_test.err"
 
-        jobspec.environ = self.environ
+        jobspec.environment = dict(self.environ)
         jobspec.cwd = os.getcwd()
 
         return jobspec
@@ -505,6 +505,20 @@ class AMSFSTempStageJob(AMSJob):
         )
 
 
+class AMSOrchestratorJob(AMSJob):
+    def __init__(self, flux_uri, rmq_config):
+        super().__init__(
+            name="AMSOrchestrator",
+            executable="AMSOrchestrator",
+            stdout="AMSOrchestrator-log.out",
+            stderr="AMSOrchestrator-log.err",
+            environ=os.environ,
+            cli_kwargs={"--ml-uri": flux_uri, "--ams-rmq-config": rmq_config},
+            # NOTE: Not sure about cores_per_task
+            resources=AMSJobResources(nodes=1, tasks_per_node=1, cores_per_task=1, exclusive=False, gpus_per_task=0),
+        )
+
+
 def nested_instance_job_descr(num_nodes, cores_per_node, gpus_per_node, time="inf", stdout=None, stderr=None):
     jobspec = JobspecV1.from_nest_command(
         command=["sleep", time],
@@ -524,6 +538,7 @@ def nested_instance_job_descr(num_nodes, cores_per_node, gpus_per_node, time="in
     if stderr is not None:
         jobspec.stderr = stderr
     jobspec.cwd = os.getcwd()
+    jobspec.environ = dict(os.environ)
     return jobspec
 
 
