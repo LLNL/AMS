@@ -311,6 +311,7 @@ class RMQDomainDataLoaderTask(Task):
         Callback that will be called when RabbitMQ will close
         the connection (or if a problem happened with the connection).
         """
+        print("Adding terminate message")
         self.o_queue.put(QueueMessage(MessageType.Terminate, None))
 
     def callback_message(self, ch, basic_deliver, properties, body):
@@ -355,6 +356,7 @@ class RMQDomainDataLoaderTask(Task):
             for s in self.signals:
                 signal.signal(s, self.signal_wrapper(self.__class__.__name__, os.getpid()))
         self.rmq_consumer.run()
+        print("Returning")
 
 
 class RMQControlMessageTask(RMQDomainDataLoaderTask):

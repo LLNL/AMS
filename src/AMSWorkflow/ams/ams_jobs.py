@@ -538,7 +538,7 @@ def nested_instance_job_descr(num_nodes, cores_per_node, gpus_per_node, time="in
     if stderr is not None:
         jobspec.stderr = stderr
     jobspec.cwd = os.getcwd()
-    jobspec.environ = dict(os.environ)
+    jobspec.environment = dict(os.environ)
     return jobspec
 
 

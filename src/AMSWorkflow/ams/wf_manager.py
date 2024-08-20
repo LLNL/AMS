@@ -2,10 +2,11 @@ from ams.ams_jobs import AMSDomainJob, AMSNetworkStageJob, AMSMLTrainJob, AMSOrc
 import time
 from ams.ams_flux import AMSFluxExecutor
 from ams.ams_jobs import AMSJob, AMSJobResources
-from ams.rmq import AMSRMQConfiguration, AMSSyncProducer
+from ams.rmq import AMSFanOutProducer, AMSRMQConfiguration, AMSSyncProducer
 from ams.store import AMSDataStore
 import flux
 import json
+from flux.job.list import get_job
 
 from typing import Tuple, Dict, List, Optional, Set
 from dataclasses import dataclass
@@ -118,43 +119,61 @@ class AMSWorkflowManager:
 
             for ml_job in self._train_jobs:
                 request = json.dumps(
-                    {
-                        "domain_name": ml_job.domain,
-                        "job_type": "train",
-                        "spec": ml_job.to_dict(),
-                        "ams_log": True,
-                        "request_type": "register_job_spec",
-                    }
+                    [
+                        {
+                            "domain_name": ml_job.domain,
+                            "job_type": "train",
+                            "spec": ml_job.to_dict(),
+                            "ams_log": True,
+                            "request_type": "register_job_spec",
+                        }
+                    ]
                 )
                 rmq_fd.send_message(request)
 
             for subselect_job in self._sub_select_jobs:
                 request = json.dumps(
-                    {
-                        "domain_name": subselect_job.domain,
-                        "job_type": "sub_select",
-                        "spec": subselect_job.to_dict(),
-                        "ams_log": True,
-                        "request_type": "register_job_spec",
-                    }
+                    [
+                        {
+                            "domain_name": subselect_job.domain,
+                            "job_type": "sub_select",
+                            "spec": subselect_job.to_dict(),
+                            "ams_log": True,
+                            "request_type": "register_job_spec",
+                        }
+                    ]
                 )
                 rmq_fd.send_message(request)
 
     def start(self, domain_uri, stage_uri, ml_uri):
+        def done_cb(future):
+            job_id = future.jobid()
+            print(f"{job_id} is done")
+
         ams_orchestartor_job = AMSOrchestratorJob(ml_uri, self.rmq_config)
         rmq_config = AMSRMQConfiguration.from_json(self.rmq_config)
         print(f"Starting ..... {ml_uri} ... {stage_uri} ... {domain_uri}")
-        start = time.time()
         with AMSFluxExecutor(False, threads=1, handle_args=(ml_uri,)) as ml_executor:
-            print("Spawning Flux executor for root took", time.time() - start)
-            print("Submitting first job", ml_uri)
-            print(ams_orchestartor_job.to_flux_jobspec())
-            ml_future = ml_executor.submit(ams_orchestartor_job.to_flux_jobspec())
-            # blocking call till jobid is available
-            job_id = ml_future.jobid()
-            print("AMSOrchestratorJob ID is ", job_id)
+            with AMSFanOutProducer(
+                rmq_config.service_host,
+                rmq_config.service_port,
+                rmq_config.rabbitmq_vhost,
+                rmq_config.rabbitmq_user,
+                rmq_config.rabbitmq_password,
+                rmq_config.rabbitmq_cert,
+            ) as orchestrator_publisher:
+                flux_handle = flux.Flux(ml_uri)
+                ml_future = ml_executor.submit(ams_orchestartor_job.to_flux_jobspec())
+                print("Submitted cmd", " ".join(ams_orchestartor_job.generate_cli_command()))
+                ml_future.add_done_callback(done_cb)
+                job_id = ml_future.jobid()
+                print("JOB ID is:", job_id)
+                self.broadcast_train_specs(rmq_config)
+                time.sleep(30)
+                orchestrator_publisher.broadcast(json.dumps({"request_type": "terminate"}))
+                print("Before", get_job(flux_handle, job_id))
+
             # Publish all the specs of the training/subselection jobs
-            self.broadcast_train_specs(rmq_config)
             ml_executor.shutdown(wait=True)
 
     @classmethod

@@ -342,6 +342,11 @@ class AMSFluxExecutor(FluxExecutor):
             self._next_thread = (self._next_thread + 1) % len(self._submission_queues)
             return fut
 
+    @property
+    def shutdown_event(self):
+        """The _shutdown_event property."""
+        return self._shutdown_event
+
 
 class _WorkItem:
     def __init__(self, future, spec):
@@ -469,4 +474,5 @@ class AMSFluxOrchestratorExecutor(AMSFluxExecutor):
     def get_o_queue(self):
         return self._o_queue
 
+        return self._domains
         return self._domains

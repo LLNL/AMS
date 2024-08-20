@@ -10,12 +10,12 @@ import time
 from queue import Queue
 import warnings
 from enum import Enum
-from typing import Optional
+from typing import Optional, List
 
 import flux
 from ams.monitor import AMSMonitor
-from ams.stage import RMQLoaderTask
-from ams.rmq import AMSSyncProducer, AMSRMQConfiguration
+from ams.stage import RMQDomainDataLoaderTask
+from ams.rmq import AMSSyncProducer, AMSRMQConfiguration, AsyncConsumer, AsyncFanOutConsumer
 from ams.stage import MessageType, QueueMessage
 from ams.ams_jobs import AMSJob
 from ams.ams_flux import AMSFluxOrchestratorExecutor, AMSFluxExecutorFuture, AMSFakeFluxOrchestatorExecutor
@@ -103,9 +103,21 @@ class DomainSpec:
         domain_handle.done_sub_select()
 
         train_spec = domain_handle.train_job_spec.to_flux_jobspec()
-        domain_handle.state = JobState.TRAINING
-        submit_fut = flux_executor.submit(domain_handle, train_spec)
-        submit_fut.add_done_callback(DomainSpec.done_train_cb)
+        if not flux_executor.shutdown_event.is_set():
+            # NOTE: This brings a contention. submit will lock the shutdown lock.
+            # At this point we cannot intercept the submission call, thus there is
+            # a case in which shutdown_event is not set, but will be set until we call
+            # the submit. In any case this is not a bug, as it means that we are closing
+            # the simulation
+            domain_handle.state = JobState.TRAINING
+            try:
+                submit_fut = flux_executor.submit(domain_handle, train_spec)
+            except RuntimeError as e:
+                if not flux_executor.shutdown_event.is_set():
+                    raise
+                domain_handle.state = JobState.IDLE
+            else:
+                submit_fut.add_done_callback(DomainSpec.done_train_cb)
 
         # TODO: Overhere I will need to push some of the results in a tracking queue.
         # so that we have an idea on which jobs are done etc...
@@ -288,7 +300,7 @@ class AvailableDomains(dict):
         return len(self.keys())
 
 
-class AMSJobReceiverStage(RMQLoaderTask):
+class AMSJobReceiverStage(RMQDomainDataLoaderTask):
     """
     A AMSJobReceiver receives job specifications for existing domains running on the
     system and get status updates regarding how many new data elements are being inserted in our database.
@@ -378,7 +390,6 @@ class RequestProcessor:
         if domain not in self._domains:
             raise KeyError(f"Domain {domain} does not exist in tracking job descriptions")
 
-        print(f"Updating candidate from size {self._domains[domain].candidate_data} with {size}")
         self._domains[domain].candidate_data += size
 
     def register_job_spec(self, domain: str, spec: dict):
@@ -389,7 +400,6 @@ class RequestProcessor:
             self._domains[domain] = DomainSpec(domain)
 
         if spec["job_type"] == "sub_select":
-            print("Setting sub select spec")
             self._domains[domain].sub_select_job_spec = spec["spec"]
         elif spec["job_type"] == "train":
             self._domains[domain].train_job_spec = spec["spec"]
@@ -411,16 +421,20 @@ class RequestProcessor:
     def __call__(self):
         while True:
             request = self.i_queue.get(block=True)
-            if request.is_terminate():
-                self.o_queue.put(QueueMessage(MessageType.Terminate, None))
-                break
 
             if request.is_process():
                 data = request.data()
                 for v in data:
+                    if v["request_type"] == "terminate":
+                        self.o_queue.put(QueueMessage(MessageType.Terminate, None))
+                        return
+
                     if "domain_name" not in v:
                         raise ValueError("Expected a domain name specification")
                     self.process_request(v["domain_name"], v)
+            elif request.is_terminate():
+                self.o_queue.put(QueueMessage(MessageType.Terminate, None))
+                return
 
             for i, (k, v) in enumerate(self._domains.items()):
                 # TODO: We should not submit a job if size of candidates is 0 <-- be careful this can lead to edge cases
@@ -436,7 +450,6 @@ class RequestProcessor:
                 # 6. Nice to have a 'programmable' way to drive a heuristic. Like a callable.
                 if v.state == JobState.IDLE and v.fully_described():
                     v.state = JobState.QUEUE
-                    print(f"Scheduling  domain {k}")
                     self.o_queue.put(QueueMessage(MessageType.Process, {"request_type": "schedule", "domain": k}))
                 else:
                     print("Skip cause job is running")
@@ -486,7 +499,6 @@ class TrainJobScheduler:
 
     def _local_run(self):
         with AMSFakeFluxOrchestatorExecutor(self.o_queue, self._domains, max_workers=1) as fake_executor:
-            print("Scheduling with fake executor", type(fake_executor))
             self._run(fake_executor)
 
     def _flux_run(self):
@@ -572,11 +584,10 @@ class AMSFakeRMQUpdate:
                 requests = json.load(fd)
                 for r in requests:
                     item = [r]
-                    print(f"publishing {item}")
                     producer.send_message(json.dumps(item))
 
 
-class AMSRMQMessagePrinter(RMQLoaderTask):
+class AMSRMQMessagePrinter(RMQDomainDataLoaderTask):
     """
     A AMSJobReceiver receives job specifications for existing domains running on the
     system and get status updates regarding how many new data elements are being inserted in our database.
@@ -632,6 +643,47 @@ class AMSRMQMessagePrinter(RMQLoaderTask):
         self.rmq_consumer.run()
 
 
+class AMSShutdown(AsyncFanOutConsumer):
+    def __init__(
+        self,
+        consumers: List[RMQDomainDataLoaderTask],
+        host: str,
+        port: int,
+        vhost: str,
+        user: str,
+        password: str,
+        cert: str,
+        prefetch_count: int = 1,
+    ):
+        self._consumers = consumers
+        super().__init__(
+            host,
+            port,
+            vhost,
+            user,
+            password,
+            cert,
+            "",
+            prefetch_count,
+            on_message_cb=self.on_message_cb,
+            on_close_cb=self.on_close_cb,
+        )
+
+    def on_message_cb(self, ch, basic_deliver, properties, body):
+        message = json.loads(body)
+        if "request_type" in message:
+            if message["request_type"] == "terminate":
+                for consumer in self._consumers:
+                    consumer.rmq_consumer.stop()
+                self.stop()
+
+    def on_close_cb(self):
+        print("Closing")
+
+    def __call__(self):
+        self.run()
+
+
 def run(flux_uri, rmq_config, file=None, fake_flux=False, fake_rmq_update=False, fake_rmq_publish=False):
     tasks = []
     rmq_config = AMSRMQConfiguration.from_json(rmq_config)
@@ -649,18 +701,28 @@ def run(flux_uri, rmq_config, file=None, fake_flux=False, fake_rmq_update=False,
                 rmq_config.rabbitmq_ml_submit_queue,
             )
         )
-    tasks.append(
-        AMSJobReceiverStage(
-            rmq_o_queue,
-            rmq_config.service_host,
-            rmq_config.service_port,
-            rmq_config.rabbitmq_vhost,
-            rmq_config.rabbitmq_user,
-            rmq_config.rabbitmq_password,
-            rmq_config.rabbitmq_cert,
-            rmq_config.rabbitmq_ml_submit_queue,
-            from_file=file if not fake_rmq_publish else None,
-        )
+    job_receiver = AMSJobReceiverStage(
+        rmq_o_queue,
+        rmq_config.service_host,
+        rmq_config.service_port,
+        rmq_config.rabbitmq_vhost,
+        rmq_config.rabbitmq_user,
+        rmq_config.rabbitmq_password,
+        rmq_config.rabbitmq_cert,
+        rmq_config.rabbitmq_ml_submit_queue,
+        from_file=file if not fake_rmq_publish else None,
+    )
+
+    tasks.append(job_receiver)
+
+    gracefull_shutdown = AMSShutdown(
+        [job_receiver],
+        rmq_config.service_host,
+        rmq_config.service_port,
+        rmq_config.rabbitmq_vhost,
+        rmq_config.rabbitmq_user,
+        rmq_config.rabbitmq_password,
+        rmq_config.rabbitmq_cert,
     )
 
     # Use the global lock in case of synchronization
@@ -698,6 +760,8 @@ def run(flux_uri, rmq_config, file=None, fake_flux=False, fake_rmq_update=False,
 
     for t in threads:
         t.start()
+
+    gracefull_shutdown()
 
     for e in threads:
         e.join()
