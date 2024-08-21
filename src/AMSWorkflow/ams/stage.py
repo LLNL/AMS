@@ -311,7 +311,7 @@ class RMQDomainDataLoaderTask(Task):
         Callback that will be called when RabbitMQ will close
         the connection (or if a problem happened with the connection).
         """
-        print("Adding terminate message")
+        print("Adding terminate message at queue:", self.o_queue)
         self.o_queue.put(QueueMessage(MessageType.Terminate, None))
 
     def callback_message(self, ch, basic_deliver, properties, body):
@@ -343,7 +343,6 @@ class RMQDomainDataLoaderTask(Task):
 
     def stop(self):
         self.rmq_consumer.stop()
-        self.o_queue.put(QueueMessage(MessageType.Terminate, None))
         print(f"Spend {self.total_time} at {self.__class__.__name__}")
 
     @AMSMonitor(record=["datasize", "total_time"])
@@ -355,6 +354,7 @@ class RMQDomainDataLoaderTask(Task):
         if self.policy != "thread":
             for s in self.signals:
                 signal.signal(s, self.signal_wrapper(self.__class__.__name__, os.getpid()))
+        print(f"{self.__class__.__name__} PID is:", os.getpid())
         self.rmq_consumer.run()
         print("Returning")
 
@@ -425,12 +425,15 @@ class FSWriteTask(Task):
         with AMSMonitor(obj=self, tag="internal_loop", accumulate=False):
             while True:
                 # This is a blocking call
+                print(f"{self.__class__.__name__} Receives messages at queue:", self.i_queue)
                 item = self.i_queue.get(block=True)
+                print(f"{self.__class__.__name__} Received messages at queue:", self.i_queue)
                 if item.is_terminate():
                     for k, v in data_files.items():
                         v[0].close()
                         self.o_queue.put(QueueMessage(MessageType.Process, (k, v[0].file_name)))
                     del data_files
+                    print(f"Received Terminate {self.__class__.__name__}")
                     self.o_queue.put(QueueMessage(MessageType.Terminate, None))
                     break
                 elif item.is_delete():
@@ -507,8 +510,11 @@ class PushToStore(Task):
 
         with AMSMonitor(obj=self, tag="internal_loop", record=[]):
             while True:
+                print(f"{self.__class__.__name__} Receives messages at queue:", self.i_queue)
                 item = self.i_queue.get(block=True)
+                print(f"{self.__class__.__name__} Received messages at queue:", self.i_queue)
                 if item.is_terminate():
+                    print(f"Received Terminate {self.__class__.__name__}")
                     break
                 if item.is_delete():
                     print(f"Sending Delete Message Type {self.__class__.__name__}")
@@ -614,15 +620,15 @@ class Pipeline(ABC):
         """
         executors = list()
         for a in self._tasks:
-            print(a)
             executors.append(exec_vehicle_cls(target=a))
 
         for e in executors:
-            print(e)
             e.start()
 
+        print(f"{self.__class__.__name__} joining threads")
         for e in executors:
             e.join()
+        print(f"{self.__class__.__name__} Threads are done")
 
     def _execute_tasks(self, policy):
         """
@@ -652,7 +658,7 @@ class Pipeline(ABC):
         # Every action requires 1 input and one output q. But the output
         # q is used as an inut q on the next action thus we need num actions -1.
         # 2 extra queues to store to data-store and publish on kosh
-        self._queues = [_qType() for i in range(4)]
+        self._queues = [_qType() for i in range(3)]
 
         self._tasks = [self.get_load_task(self._queues[0], policy)]
 
@@ -670,9 +676,9 @@ class Pipeline(ABC):
             self._tasks.append(self.get_model_update_task(self._queues[0], policy))
 
         # After user actions we store into a file
-        self._tasks.append(FSWriteTask(self._queues[-2], self._queues[-1], self._writer, self.stage_dir))
+        self._tasks.append(FSWriteTask(self._queues[1], self._queues[2], self._writer, self.stage_dir))
         # After storing the file we make it public to the kosh store.
-        self._tasks.append(PushToStore(self._queues[-1], self.ams_config, self.dest_dir, self.store))
+        self._tasks.append(PushToStore(self._queues[2], self.ams_config, self.dest_dir, self.store))
 
     def execute(self, policy):
         """
@@ -938,7 +944,7 @@ class RMQPipeline(Pipeline):
             config.rabbitmq_user,
             config.rabbitmq_password,
             config.rabbitmq_cert,
-            config.rabbitmq_inbound_queue,
+            config.rabbitmq_outbound_queue,
             config.rabbitmq_ml_status_queue if args.update_rmq_models else None,
         )
 

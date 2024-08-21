@@ -857,3 +857,21 @@ class AMSRMQConfiguration:
         data = {key.replace("-", "_"): value for key, value in data.items()}
 
         return cls(**data)
+
+    def to_dict(self, AMSlib=False):
+        assert AMSlib, "AMSRMQConfiguration cannot convert class to non amslib dictionary"
+        if AMSlib:
+            return {
+                "service-port": self.service_port,
+                "service-host": self.service_host,
+                "rabbitmq-erlang-cookie": self.rabbitmq_erlang_cookie,
+                "rabbitmq-name": self.rabbitmq_name,
+                "rabbitmq-password": self.rabbitmq_password,
+                "rabbitmq-user": self.rabbitmq_user,
+                "rabbitmq-vhost": self.rabbitmq_vhost,
+                "rabbitmq-cert": self.rabbitmq_cert,
+                "rabbitmq-outbound-queue": self.rabbitmq_outbound_queue,
+                "rabbitmq-exchange": "not-used",
+                "rabbitmq-routing-key": "",
+            }
+        raise

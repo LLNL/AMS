@@ -1,4 +1,5 @@
 from ams.ams_jobs import AMSDomainJob, AMSNetworkStageJob, AMSMLTrainJob, AMSOrchestratorJob, AMSSubSelectJob
+import os
 import time
 from ams.ams_flux import AMSFluxExecutor
 from ams.ams_jobs import AMSJob, AMSJobResources
@@ -145,36 +146,57 @@ class AMSWorkflowManager:
                 )
                 rmq_fd.send_message(request)
 
-    def start(self, domain_uri, stage_uri, ml_uri):
-        def done_cb(future):
-            job_id = future.jobid()
-            print(f"{job_id} is done")
+    def done_cb(self, future):
+        job_id = future.jobid()
+        print(f"{job_id} is done")
 
+    def start_domain(self, store, rmq_config, domain_uri):
+        print("Start Domain")
+        with AMSFluxExecutor(False, threads=1, handle_args=(domain_uri,)) as domain_executor:
+            for domain_job in self._domain_jobs:
+                domain_job.precede_deploy(store, rmq_config)
+                print("Domain command is:", " ".join(domain_job.generate_cli_command()))
+                domain_future = domain_executor.submit(domain_job.to_flux_jobspec())
+                job_id = domain_future.jobid()
+                print(f"Executing Domain with job id {job_id}")
+                print(f"Domain with job id {job_id} result: {domain_future.result()}")
+
+    def start_stagers(self, store, rmq_config, domain_uri, stage_uri):
+        with AMSFluxExecutor(False, threads=1, handle_args=(stage_uri,)) as stager_executor:
+            print("Connected to stager executor", stage_uri)
+            for stager in self._stage_jobs:
+                print("Stager command is:", " ".join(stager.generate_cli_command()))
+                stager_future = stager_executor.submit(stager.to_flux_jobspec())
+                stager_future.add_done_callback(self.done_cb)
+                job_id = stager_future.jobid()
+                print(f"Stager JOB-ID is  {job_id}")
+                self.start_domain(store, rmq_config, domain_uri)
+
+    def start(self, domain_uri, stage_uri, ml_uri):
         ams_orchestartor_job = AMSOrchestratorJob(ml_uri, self.rmq_config)
         rmq_config = AMSRMQConfiguration.from_json(self.rmq_config)
         print(f"Starting ..... {ml_uri} ... {stage_uri} ... {domain_uri}")
-        with AMSFluxExecutor(False, threads=1, handle_args=(ml_uri,)) as ml_executor:
-            with AMSFanOutProducer(
-                rmq_config.service_host,
-                rmq_config.service_port,
-                rmq_config.rabbitmq_vhost,
-                rmq_config.rabbitmq_user,
-                rmq_config.rabbitmq_password,
-                rmq_config.rabbitmq_cert,
-            ) as orchestrator_publisher:
-                flux_handle = flux.Flux(ml_uri)
-                ml_future = ml_executor.submit(ams_orchestartor_job.to_flux_jobspec())
-                print("Submitted cmd", " ".join(ams_orchestartor_job.generate_cli_command()))
-                ml_future.add_done_callback(done_cb)
-                job_id = ml_future.jobid()
-                print("JOB ID is:", job_id)
-                self.broadcast_train_specs(rmq_config)
-                time.sleep(30)
-                orchestrator_publisher.broadcast(json.dumps({"request_type": "terminate"}))
-                print("Before", get_job(flux_handle, job_id))
-
-            # Publish all the specs of the training/subselection jobs
-            ml_executor.shutdown(wait=True)
+        with AMSDataStore(self._kosh_path, self._store_name, self._db_name) as store:
+            print("Opened the AMS Store")
+            with AMSFluxExecutor(False, threads=1, handle_args=(ml_uri,)) as ml_executor:
+                print("Connected to ml executor")
+                # The AMSFanOutProducer enables us to send control message to all stagers and
+                # ml trainers. Currently
+                with AMSFanOutProducer(
+                    rmq_config.service_host,
+                    rmq_config.service_port,
+                    rmq_config.rabbitmq_vhost,
+                    rmq_config.rabbitmq_user,
+                    rmq_config.rabbitmq_password,
+                    rmq_config.rabbitmq_cert,
+                ) as orchestrator_publisher:
+                    ml_future = ml_executor.submit(ams_orchestartor_job.to_flux_jobspec())
+                    job_id = ml_future.jobid()
+                    print("ML JOB ID is:", job_id)
+                    self.start_stagers(store, rmq_config, domain_uri, stage_uri)
+                    self.broadcast_train_specs(rmq_config)
+                    orchestrator_publisher.broadcast(json.dumps({"request_type": "terminate"}))
+                ml_executor.shutdown(wait=True)
 
     @classmethod
     def from_descr(
@@ -225,11 +247,13 @@ class AMSWorkflowManager:
 
         stage_resources = AMSJobResources(nodes=1, tasks_per_node=1, cores_per_task=6, gpus_per_task=0)
         stage_jobs = JobList()
-        stage_jobs.append(
-            AMSNetworkStageJob.from_descr(
-                data["stage-job"], store.get_candidate_path(), store.root_path, rmq_config, stage_resources
-            )
+        stage_job = AMSNetworkStageJob.from_descr(
+            data["stage-job"], store.get_candidate_path(), store.root_path, rmq_config, stage_resources
         )
+        stage_job.environ = os.environ
+        stage_job.stdout = "stager_test.out"
+        stage_job.stderr = "stager_test.err"
+        stage_jobs.append(stage_job)
 
         sub_select_jobs = JobList()
         assert "sub-select-jobs" in data, "We are expecting a subselection job"

@@ -44,7 +44,7 @@ class AMSDataStore:
         """
         Initializes the AMSDataStore class. Upon init the kosh-store is closed and not connected
         """
-
+        print("Creating store under path", store_path)
         create_store_directories(store_path)
         self._root_path = Path(store_path)
         self._delete_contents = delete_all_contents

@@ -67,6 +67,8 @@ class AMSJob:
         self._cli_args = []
         self._cli_kwargs = {}
         self._is_mpi = is_mpi
+        self._ams_log = ams_log
+        print("AMS LOG is ", ams_log)
         if cli_args is not None:
             self._cli_args = list(cli_args)
         if cli_kwargs is not None:
@@ -86,7 +88,7 @@ class AMSJob:
         data["resources"] = self._resources
         return f"{self.__class__.__name__}\nCLI:{' '.join(self.generate_cli_command())}\nJOB-Descr:{data}"
 
-    def precede_deploy(self, store):
+    def precede_deploy(self, store, rmq=None):
         pass
 
     @property
@@ -174,8 +176,10 @@ class AMSJob:
             exclusive=self.resources.exclusive,
         )
 
-        if self._is_mpi:
+        if self._is_mpi is not None:
+            print("Setting MPI and spectrum")
             jobspec.setattr_shell_option("mpi", "spectrum")
+        if self.resources.gpus_per_task is not None:
             jobspec.setattr_shell_option("gpu-affinity", "per-task")
         jobspec.stdout = self.stdout
         jobspec.stderr = self.stderr
@@ -191,12 +195,15 @@ class AMSJob:
 
 
 class AMSDomainJob(AMSJob):
-    def _generate_ams_object(self, store):
+    def _generate_ams_object(self, store, rmq=None):
         ams_object = dict()
-        if self.stage_dir is None:
-            ams_object["db"] = {"fs_path": str(store.get_candidate_path()), "dbType": "hdf5"}
+        if rmq is None:
+            if self.stage_dir is None:
+                ams_object["db"] = {"fs_path": str(store.get_candidate_path()), "dbType": "hdf5"}
+            else:
+                ams_object["db"] = {"fs_path": self.stage_dir, "dbType": "hdf5"}
         else:
-            ams_object["db"] = {"fs_path": self.stage_dir, "dbType": "hdf5"}
+            ams_object["db"] = {"rmq_config": rmq.to_dict(AMSlib=True), "dbType": "rmq", "update_surrogate": False}
 
         ams_object["ml_models"] = dict()
         ams_object["domain_models"] = dict()
@@ -251,18 +258,23 @@ class AMSDomainJob(AMSJob):
             name=descr["name"],
             stage_dir=stage_dir,
             domain_names=descr["domain_names"],
-            environ=None,
+            environ=os.environ,
             resources=domain_job_resources,
+            ams_log=descr["ams_log"] if "ams_log" in descr else False,
             **descr["cli"],
         )
 
-    def precede_deploy(self, store):
-        self._ams_object = self._generate_ams_object(store)
+    def precede_deploy(self, store, rmq=None):
+        self._ams_object = self._generate_ams_object(store, rmq)
         tmp_path = util.mkdir(store.root_path, "tmp")
         self._ams_object_fn = f"{tmp_path}/{util.get_unique_fn()}.json"
         with open(self._ams_object_fn, "w") as fd:
             json.dump(self._ams_object, fd)
+        print(f"AMS_OBJECTS is {self._ams_object_fn}")
         self.environ["AMS_OBJECTS"] = str(self._ams_object_fn)
+        if self._ams_log:
+            print("Setting log level")
+            self.environ["AMS_LOG_LEVEL"] = "debug"
 
 
 class AMSMLJob(AMSJob):
@@ -303,6 +315,7 @@ class AMSMLJob(AMSJob):
             resources=resources,
             cli_kwargs=cli_kwargs,
             cli_args=cli_args,
+            ams_log=descr["ams_log"] if "ams_log" in descr else False,
         )
 
 
