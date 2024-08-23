@@ -75,7 +75,7 @@ struct Problem {
     auto &rm = umpire::ResourceManager::getInstance();
 
     for (int i = 0; i < iterations; i++) {
-      int elements = num_elements;  // * ((DType)(rand()) / RAND_MAX) + 1;
+      int elements = num_elements * ((DType)(rand()) / RAND_MAX) + 0.5;
       std::vector<const DType *> inputs;
       std::vector<DType *> outputs;
 
@@ -130,7 +130,7 @@ void callBackSingle(void *cls, long elements, void **inputs, void **outputs)
 
 int main(int argc, char **argv)
 {
-  if (argc != 12) {
+  if (argc != 15) {
     std::cout << "Wrong cli\n";
     std::cout << argv[0]
               << " use_device(0|1) num_inputs num_outputs model_path "
@@ -154,6 +154,9 @@ int main(int argc, char **argv)
   int avg_elements = std::atoi(argv[9]);
   std::string db_type_str = std::string(argv[10]);
   std::string fs_path = std::string(argv[11]);
+  char *model_path1 = argv[12];
+  int num_inputs1 = std::atoi(argv[13]);
+  int num_outputs1 = std::atoi(argv[14]);
   AMSDBType db_type = ams::db::getDBType(db_type_str);
   AMSResourceType resource = AMSResourceType::AMS_HOST;
   srand(time(NULL));
@@ -171,8 +174,13 @@ int main(int argc, char **argv)
   AMSCAbstrModel model_descr = AMSRegisterAbstractModel(
       "test", uq_policy, threshold, model_path, nullptr, "test", -1);
 
+  AMSCAbstrModel model_descr1 = AMSRegisterAbstractModel(
+      "test1", uq_policy, threshold, model_path, nullptr, "test1", -1);
+
+
   if (data_type == AMSDType::AMS_SINGLE) {
     Problem<float> prob(num_inputs, num_outputs);
+    Problem<float> prob1(num_inputs1, num_outputs1);
 
     AMSExecutor wf = AMSCreateExecutor(model_descr,
                                        AMSDType::AMS_SINGLE,
@@ -181,16 +189,36 @@ int main(int argc, char **argv)
                                        0,
                                        1);
 
-    prob.ams_run(wf, resource, num_iterations, avg_elements);
+    AMSExecutor wf1 = AMSCreateExecutor(model_descr1,
+                                        AMSDType::AMS_SINGLE,
+                                        resource,
+                                        (AMSPhysicFn)callBackSingle,
+                                        0,
+                                        1);
+    for (int i = 0; i < num_iterations; i++) {
+      prob.ams_run(wf, resource, 1, avg_elements);
+      prob1.ams_run(wf1, resource, 1, avg_elements);
+    }
   } else {
     Problem<double> prob(num_inputs, num_outputs);
+    Problem<double> prob1(num_inputs1, num_outputs1);
     AMSExecutor wf = AMSCreateExecutor(model_descr,
                                        AMSDType::AMS_DOUBLE,
                                        resource,
                                        (AMSPhysicFn)callBackDouble,
                                        0,
                                        1);
-    prob.ams_run(wf, resource, num_iterations, avg_elements);
+    AMSExecutor wf1 = AMSCreateExecutor(model_descr1,
+                                        AMSDType::AMS_DOUBLE,
+                                        resource,
+                                        (AMSPhysicFn)callBackDouble,
+                                        0,
+                                        1);
+
+    for (int i = 0; i < num_iterations; i++) {
+      prob.ams_run(wf, resource, 1, avg_elements);
+      prob1.ams_run(wf1, resource, 1, avg_elements);
+    }
   }
 
   return 0;

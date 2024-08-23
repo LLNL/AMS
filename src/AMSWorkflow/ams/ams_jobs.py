@@ -35,7 +35,9 @@ class AMSJobResources:
 
 class AMSJob:
     """
-    Class Modeling a Job scheduled by AMS.
+    Class Modeling a Job scheduled by AMS. This is a convenience layer on top of a flux JobspecV1
+    and provides less features than the flux one. We use this abstraction to describe the job specification
+    in the json file.
     """
 
     @classmethod
@@ -44,17 +46,32 @@ class AMSJob:
 
     def __init__(
         self,
-        name,
-        executable,
-        environ={},
-        resources=None,
-        stdout=None,
-        stderr=None,
-        ams_log=False,
-        is_mpi=False,
-        cli_args=[],
-        cli_kwargs={},
+        name: str,
+        executable: str,
+        environ: Optional[Mapping[str, str]] = {},
+        resources: Optional[AMSJobResources]=None,
+        stdout: Optional[str]=None,
+        stderr: Optional[str]=None,
+        ams_log: bool=False,
+        is_mpi: bool=False,
+        cli_args: Optional[List[str]]=[],
+        cli_kwargs: Optional[Dict[str,str]]={},
     ):
+        """Attaches a callable that will be called when the future finishes.
+
+        :param name: An arbitary name for every job. This can be an arbitary string. 
+        :param executable: A string pointing to the executable to be executed
+        :param environ: The environment to be used  when scheduling the job. 
+        :param resources: The resources dedicated to this job.
+        :param stdout File to redirect the stdout.
+        :param stderr File to redirect the stderr.
+        :param ams_log: A boolean value to enable the logging of AMS printouts
+        :param is_mpi: Whether the job is an mpi job.
+        :param cli_args: positional arguments of the cli command 
+        :param cli_kwargs: key-word arguments of the cli command 
+        :return: ``self``
+        """
+
         self._name = name
         self._executable = executable
         self._resources = resources
@@ -68,7 +85,6 @@ class AMSJob:
         self._cli_kwargs = {}
         self._is_mpi = is_mpi
         self._ams_log = ams_log
-        print("AMS LOG is ", ams_log)
         if cli_args is not None:
             self._cli_args = list(cli_args)
         if cli_kwargs is not None:
@@ -89,6 +105,10 @@ class AMSJob:
         return f"{self.__class__.__name__}\nCLI:{' '.join(self.generate_cli_command())}\nJOB-Descr:{data}"
 
     def precede_deploy(self, store, rmq=None):
+        """
+        Will be called by the ams job scheduler just before submitting the job. If there is some modification 
+        required to the submission environment a child class can override this method and do the modification.
+        """
         pass
 
     @property
@@ -195,7 +215,20 @@ class AMSJob:
 
 
 class AMSDomainJob(AMSJob):
-    def _generate_ams_object(self, store, rmq=None):
+    """
+    The ``AMSDomainJob`` represents a job executing the original physics code that should be linked in with ``AMSlib``.
+    ``AMSDomainJob`` modifies the environment of the executing job just before submission using the ``precede_deploy`` hook. 
+    """
+    def _generate_ams_objects_store(self, store, rmq):
+        '''
+        Generates the dictionary requirements of the ``AMSlib`` database description. 
+
+        :param store: The AMSDataStore that contains all the files and directories of the AMS database. 
+        :param rmq: The AMSRMQConfiguration containing all required information to connect to the RMQ server
+
+        :return: A dictionary with the correct structure
+        '''
+
         ams_object = dict()
         if rmq is None:
             if self.stage_dir is None:
@@ -204,6 +237,18 @@ class AMSDomainJob(AMSJob):
                 ams_object["db"] = {"fs_path": self.stage_dir, "dbType": "hdf5"}
         else:
             ams_object["db"] = {"rmq_config": rmq.to_dict(AMSlib=True), "dbType": "rmq", "update_surrogate": False}
+        return ams_object
+
+    def _generate_ams_object(self, store: AMSDataStore, rmq: Optional[AMSRMQConfiguration]=None):
+        '''
+        Generates a ``AMS_OBJECTS`` dictionary and adding the appropriate 'database', ml_models and domain_models fields required by the application. 
+
+        :param store: The AMSDataStore that contains all the files and directories of the AMS database. 
+        :param rmq: The AMSRMQConfiguration containing all required information to connect to the RMQ server
+
+        :return: A dictionary with the correct structure
+        '''
+        ams_object = self._generate_ams_objects_store(store, rmq) 
 
         ams_object["ml_models"] = dict()
         ams_object["domain_models"] = dict()
@@ -265,12 +310,24 @@ class AMSDomainJob(AMSJob):
         )
 
     def precede_deploy(self, store, rmq=None):
+        '''
+        Generates a ``AMS_OBJECTS`` json file and adding the appropriate 'database', ml_models and domain_models fields required by the application
+        and if requested also adds the AMS verbosity level to the environment
+
+        :param store: The AMSDataStore that contains all the files and directories of the AMS database. 
+        :param rmq: The AMSRMQConfiguration containing all required information to connect to the RMQ server
+
+        :return: A dictionary with the correct structure
+        '''
+
         self._ams_object = self._generate_ams_object(store, rmq)
         tmp_path = util.mkdir(store.root_path, "tmp")
+        # NOTE: THere is a big assumption here that the job-to be submitted has access to this tmp path
+        # currently we place it under tmp_path which is under the AMSDataStore directory.
         self._ams_object_fn = f"{tmp_path}/{util.get_unique_fn()}.json"
         with open(self._ams_object_fn, "w") as fd:
             json.dump(self._ams_object, fd)
-        print(f"AMS_OBJECTS is {self._ams_object_fn}")
+
         self.environ["AMS_OBJECTS"] = str(self._ams_object_fn)
         if self._ams_log:
             print("Setting log level")
@@ -279,6 +336,11 @@ class AMSDomainJob(AMSJob):
 
 class AMSMLJob(AMSJob):
     def __init__(self, domain, *args, **kwargs):
+        '''
+        A AMSJob training or performing sub-selection. This is a class mainly representing a team 
+        of ML experts which will provide to the infrastructure the appropriate models. ML jobs are
+        associcated with a ``domain`` pointing which domain those will train.
+        '''
         self._domain = domain
         super().__init__(*args, **kwargs)
 
@@ -330,6 +392,10 @@ class AMSSubSelectJob(AMSMLJob):
 
 
 class AMSStageJob(AMSJob):
+    """
+    A Job description for stating data from the application to the database. This class is internal
+    and should be either inheritted by ``AMSFSTempStageJob`` or ``AMSNetworkStageJob``
+    """
     def __init__(
         self,
         resources: Union[Dict[str, Union[str, int]], AMSJobResources],
@@ -377,6 +443,10 @@ class AMSStageJob(AMSJob):
 
 
 class AMSFSStageJob(AMSStageJob):
+    """
+    A job description for moving data from the application to the database reading the data from the filessytem.
+    """
+
     def __init__(
         self,
         resources: Union[Dict[str, Union[str, int]], AMSJobResources],
@@ -420,6 +490,10 @@ class AMSFSStageJob(AMSStageJob):
 
 
 class AMSNetworkStageJob(AMSStageJob):
+    """
+    A job description for transfering data from the application to the database reading using rmq server-client protocol.
+    This class represents the consumer part of the transactions.
+    """
     def __init__(
         self,
         resources: Union[Dict[str, Union[str, int]], AMSJobResources],
@@ -519,6 +593,10 @@ class AMSFSTempStageJob(AMSJob):
 
 
 class AMSOrchestratorJob(AMSJob):
+    """
+    A JOB to be scheduled "somewhere" that can schedule jobs "somewhere" else. Currently this is tested only when 
+    the orchestrator schedules jobs within the same job-allocation
+    """
     def __init__(self, flux_uri, rmq_config):
         super().__init__(
             name="AMSOrchestrator",
@@ -533,6 +611,10 @@ class AMSOrchestratorJob(AMSJob):
 
 
 def nested_instance_job_descr(num_nodes, cores_per_node, gpus_per_node, time="inf", stdout=None, stderr=None):
+    """
+    Create a nested job partion. This is useful to split resources among dedicated parts of an initial root allocation.
+    Effectively the command creates a partition that sleeps indefinetely.
+    """
     jobspec = JobspecV1.from_nest_command(
         command=["sleep", time],
         num_slots=num_nodes,

@@ -349,6 +349,12 @@ class AMSFluxExecutorFuture(Future):
 
 
 class AMSFluxExecutor(FluxExecutor):
+    """
+    A Flux executor that submits jobs to the provided uri. The executor extends
+    the original FluxExecutor as it generates "AMSFluxExecutorFuture" 's that can 
+    track the uri of nested jobs. This is required when 'partitioning' an allocation
+    to sub allocations and issuing 'nested' commands
+    """
     def __init__(self, track_uri, *args, **kwargs):
         self._track_uri = track_uri
         super().__init__(*args, **kwargs)
@@ -478,8 +484,10 @@ class AMSFluxOrchestratorExecutor(AMSFluxExecutor):
         """Submit a jobspec to Flux and return a ``FluxExecutorFuture``.
 
         Accepts the same positional and keyword arguments as ``flux.job.submit``,
-        except for the ``flux.job.submit`` function's first argument, ``flux_handle``.
-
+        except for the ``flux.job.submit`` function's first argument, ``flux_handle`` and
+        instead accepts the ``domain`` argument pointing to the domain currently being scheduled
+        by AMS.
+        :param domain: AMSDomain training job description
         :param jobspec: jobspec defining the job request
         :type jobspec: Jobspec or its string encoding
         :param urgency: job urgency 0 (lowest) through 31 (highest)

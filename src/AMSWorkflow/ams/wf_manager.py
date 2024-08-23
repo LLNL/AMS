@@ -250,6 +250,7 @@ class AMSWorkflowManager:
         stage_job = AMSNetworkStageJob.from_descr(
             data["stage-job"], store.get_candidate_path(), store.root_path, rmq_config, stage_resources
         )
+        # NOTE: We need to always copy in our environment. To make sure we find the respective packages
         stage_job.environ = os.environ
         stage_job.stdout = "stager_test.out"
         stage_job.stderr = "stager_test.err"

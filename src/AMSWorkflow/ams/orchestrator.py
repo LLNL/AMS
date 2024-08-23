@@ -518,6 +518,10 @@ class TrainJobScheduler:
 
 
 class RMQStatusUpdate:
+    """
+    @brief a dataflow step to inform (eventually) stagers about the existence of new models. To do so it listens to  
+        the ``i_queue`` of the TrainJobScheduler and publishes messages to a RabbitMQ queue.
+    """
     def __init__(
         self,
         i_queue: Queue,
@@ -530,7 +534,9 @@ class RMQStatusUpdate:
         publish_queue: str,
         signals=[signal.SIGTERM, signal.SIGINT, signal.SIGUSR1],
     ):
-
+        
+        # NOTE: The producer now sends messages to a single instance of the RMQ. It would be 'better'
+        # if we send the messages to a fanout rmq exchange to guarantee all stagers receiving the message
         self.producer = AMSSyncProducer(host, port, vhost, user, password, cert, publish_queue)
         self.publish_queue = publish_queue
         self.i_queue = i_queue
@@ -547,6 +553,10 @@ class RMQStatusUpdate:
 
 
 class StatusPrinter:
+    """
+    @brief a dataflow step to print out requests at the stdout.
+    """
+
     def __init__(self, i_queue):
         self.i_queue = i_queue
 
@@ -561,6 +571,10 @@ class StatusPrinter:
 
 
 class AMSFakeRMQUpdate:
+    """
+    @brief A debugging pipeline step that reads in a file of requests and publishes them into a listening queue.
+    """
+
     def __init__(
         self,
         json_file: str,
@@ -644,6 +658,10 @@ class AMSRMQMessagePrinter(RMQDomainDataLoaderTask):
 
 
 class AMSShutdown(AsyncFanOutConsumer):
+    """
+    A RMQ consumer client that listens to control messages from the AMS Deployment tool. When it receives a 'terminate' message
+    it shutdown the rest of the connections/threads to the RMQ server and gracefully terminates.
+    """
     def __init__(
         self,
         consumers: List[RMQDomainDataLoaderTask],
@@ -685,6 +703,9 @@ class AMSShutdown(AsyncFanOutConsumer):
 
 
 def run(flux_uri, rmq_config, file=None, fake_flux=False, fake_rmq_update=False, fake_rmq_publish=False):
+    """
+    The driver to start the orchestrator. It effectively connects all the pipeline steps
+    """
     tasks = []
     rmq_config = AMSRMQConfiguration.from_json(rmq_config)
     rmq_o_queue = Queue()
@@ -760,7 +781,8 @@ def run(flux_uri, rmq_config, file=None, fake_flux=False, fake_rmq_update=False,
 
     for t in threads:
         t.start()
-
+    
+    # We assign the main thread to wait for a terminate message.
     gracefull_shutdown()
 
     for e in threads:

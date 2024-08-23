@@ -106,14 +106,6 @@ def main():
         wf_manager.start(ml_uri, stage_uri, domain_uri)
         print("Done")
 
-    #        with FluxExecutor(threads=1, handle_args=(nested_uri,)) as nested_executor:
-    #            echo_job = get_echo_job("Test")
-    #            fut = nested_executor.submit(echo_job)
-    #            print("Nested Allocation has NNodes:{0} NCores:{1} NGPUs:{2}".format(*get_allocation_resources(nested_uri)))
-    #            print(nested_executor)
-    #            print(fut.jobid())
-    #            print(fut.result())
-
     return
 
 
