@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 
 from ams import stage, store
+from ams.action import UserAction
 from ams.config import AMSInstance
 from ams.faccessors import get_reader, get_writer
 
@@ -91,14 +92,28 @@ class TestStage(unittest.TestCase):
         self.assertFalse(msg.is_new_model())
 
     def test_forward_task(self):
-        from queue import Queue
+        class FallThroughAction(UserAction):
+            def data_cb(self, inputs, outputs):
+                return inputs, outputs
 
-        def fw_callback(ins, outs):
-            return ins, outs
+            def update_model_cb(self, domain, model):
+                return
+
+            @staticmethod
+            def add_cli_args(parser):
+                return ""
+
+            @classmethod
+            def from_cli(cls, args):
+                return cls()
+
+        from queue import Queue
 
         i_q = Queue()
         o_q = Queue()
-        fw_task = stage.ForwardTask(i_q, o_q, fw_callback)
+        ams_config = AMSInstance()
+        action = FallThroughAction()
+        fw_task = stage.ForwardTask(ams_config.db_path, ams_config.db_store, ams_config.name, i_q, o_q, action)
 
         msgs = list()
         for i in range(0, 10):
@@ -153,7 +168,25 @@ class TestStage(unittest.TestCase):
         return
 
     def test_fs_pipeline(self):
+        class FallThroughAction(UserAction):
+            def data_cb(self, inputs, outputs):
+                return inputs, outputs
+
+            def update_model_cb(self, domain, model):
+                return
+
+            @staticmethod
+            def add_cli_args(parser):
+                return ""
+
+            @classmethod
+            def from_cli(cls, args):
+                return cls()
+
+        from queue import Queue
         data = list()
+        i_q = Queue()
+        o_q = Queue()
         for i in range(0, 10):
             in_data, out_data = np.random.rand(3, 2), np.random.rand(3, 3)
             data.append((in_data, out_data))
@@ -185,6 +218,7 @@ class TestStage(unittest.TestCase):
                         src_fmt,
                         "*.{0}".format(src_wr.get_file_format_suffix()),
                     )
+                    pipe.add_user_action(FallThroughAction())
                     with timeout(
                         10,
                         error_message="Copying files from {0} to {1} using writer {2} and policy {3}".format(

@@ -36,7 +36,7 @@ class TestAvailableDomains(unittest.TestCase):
 
 
 class TestAMSJobReceiverStage(unittest.TestCase):
-    @patch("ams.orchestrator.RMQLoaderTask")
+    @patch("ams.orchestrator.RMQDomainDataLoaderTask")
     def test_jobreceiver(self, MockRMQLoaderTask):
         # This is the 'fake' class instance of RMQLoaderTask
         def mock_init(self, queue, *args, **kwargs):
@@ -135,9 +135,15 @@ class TestRequestProcessor(unittest.TestCase):
         sub_select_spec = domain_spec.sub_select_job_spec.to_dict()
         self.assertDictEqual(train_spec, TestRequestProcessor.req_train_spec[0]["spec"])
         self.assertDictEqual(sub_select_spec, TestRequestProcessor.req_sub_select_spec[0]["spec"])
+        # We send to message of job spec. The test now will schedule a job on the second message.
+        scheduled = o_q.get_nowait()
+        self.assertTrue(
+            scheduled.is_process() and scheduled.data()["request_type"] == "schedule",
+            f"Last message should had been a terminate one {scheduled.data()}",
+        )
+        # The last message needs to be a schedule one.
         front = o_q.get_nowait()
-
-        self.assertTrue(front.is_terminate(), "Last message should had been a terminate one")
+        self.assertTrue(front.is_terminate(), f"Last message should had been a terminate one {front.data()}")
         for i in range(10):
             i_q.put(QueueMessage(MessageType.Process, TestRequestProcessor.req_candidate_increase))
         i_q.put(QueueMessage(MessageType.Terminate, None))
