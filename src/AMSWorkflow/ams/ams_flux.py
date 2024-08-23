@@ -19,8 +19,6 @@ from flux.job import FluxExecutor
 import flux
 from queue import Queue
 
-from ams.orchestrator import AvailableDomains, DomainSpec
-
 
 # pylint: disable=too-many-instance-attributes
 class AMSFluxExecutorFuture(Future):
@@ -55,9 +53,9 @@ class AMSFluxExecutorFuture(Future):
     def __init__(
         self,
         owning_thread_id: int,
-        flux_executor: Union[AMSFluxOrchestratorExecutor, AMSFluxExecutor],
+        flux_executor,
         track_uri: bool,
-        domain_descr: DomainSpec,
+        domain_descr,
         *args,
         **kwargs,
     ):
@@ -436,12 +434,12 @@ class AMSFakeFluxOrchestatorExecutor(ThreadPoolExecutor):
     job.
     """
 
-    def __init__(self, o_queue: Queue, domains: AvailableDomains, *args, **kwargs):
+    def __init__(self, o_queue: Queue, domains, *args, **kwargs):
         self._o_queue = o_queue
         self._domains = domains
         super().__init__(*args, **kwargs)
 
-    def submit(self, domain: DomainSpec, job_spec):
+    def submit(self, domain, job_spec):
         """Submit a jobspec to Flux and return a ``FluxExecutorFuture``.
 
         Accepts the same positional and keyword arguments as ``flux.job.submit``,
