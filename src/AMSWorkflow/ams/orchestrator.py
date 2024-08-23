@@ -519,9 +519,10 @@ class TrainJobScheduler:
 
 class RMQStatusUpdate:
     """
-    @brief a dataflow step to inform (eventually) stagers about the existence of new models. To do so it listens to  
+    @brief a dataflow step to inform (eventually) stagers about the existence of new models. To do so it listens to
         the ``i_queue`` of the TrainJobScheduler and publishes messages to a RabbitMQ queue.
     """
+
     def __init__(
         self,
         i_queue: Queue,
@@ -534,7 +535,7 @@ class RMQStatusUpdate:
         publish_queue: str,
         signals=[signal.SIGTERM, signal.SIGINT, signal.SIGUSR1],
     ):
-        
+
         # NOTE: The producer now sends messages to a single instance of the RMQ. It would be 'better'
         # if we send the messages to a fanout rmq exchange to guarantee all stagers receiving the message
         self.producer = AMSSyncProducer(host, port, vhost, user, password, cert, publish_queue)
@@ -662,6 +663,7 @@ class AMSShutdown(AsyncFanOutConsumer):
     A RMQ consumer client that listens to control messages from the AMS Deployment tool. When it receives a 'terminate' message
     it shutdown the rest of the connections/threads to the RMQ server and gracefully terminates.
     """
+
     def __init__(
         self,
         consumers: List[RMQDomainDataLoaderTask],
@@ -781,7 +783,7 @@ def run(flux_uri, rmq_config, file=None, fake_flux=False, fake_rmq_update=False,
 
     for t in threads:
         t.start()
-    
+
     # We assign the main thread to wait for a terminate message.
     gracefull_shutdown()
 

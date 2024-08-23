@@ -116,7 +116,7 @@ class ForwardTask(Task):
     Attributes:
         i_queue: The input queue to read input message
         o_queue: The output queue to write the transformed messages
-        callback: A callback to be applied on every message before pushing it to the next stage.
+        user_obj: An object providing the update_model_cb and data_cb callbacks to be applied on the respective control messages before pushing it to the next stage.
     """
 
     def __init__(self, db_path, db_store, name, i_queue, o_queue, user_obj):
