@@ -243,13 +243,14 @@ if(WITH_FAISS)
   BUILD_TEST(ams_hdcache_test test_hdcache.cpp)
   ADDTEST(ams_hdcache_test AMSHDCacheMeanPolicyDouble ${CMAKE_CURRENT_SOURCE_DIR}/faiss_debug.pt "double" 1 10 4.0 4 5)
 
-  # The max case fails on DEVICE. We should be aware about this when adding support for CI for GPUs
-  ADDTEST(ams_hdcache_test AMSHDCacheMaxPolicyDouble ${CMAKE_CURRENT_SOURCE_DIR}/faiss_debug.pt "double" 2 10 4.0 4 5)
-
   ADDTEST(ams_hdcache_test AMSHDCacheMeanPolicySingle ${CMAKE_CURRENT_SOURCE_DIR}/faiss_debug.pt "single" 1 10 4.0 4 5)
 
-  # The max case fails on DEVICE. We should be aware about this when adding support for CI for GPUs
+  ADDTEST(ams_hdcache_test AMSHDCacheMaxPolicyDouble ${CMAKE_CURRENT_SOURCE_DIR}/faiss_debug.pt "double" 2 10 4.0 4 5)
   ADDTEST(ams_hdcache_test AMSHDCacheMaxPolicySingle ${CMAKE_CURRENT_SOURCE_DIR}/faiss_debug.pt "single" 2 10 4.0 4 5)
+  # The max case fails on DEVICE. We should be aware about this when adding support for CI for GPUs
+  if (WITH_CUDA)
+    set_tests_properties(AMSHDCacheMaxPolicySingle::DEVICE AMSHDCacheMaxPolicyDouble::DEVICE PROPERTIES DISABLED TRUE)
+  endif()
 
   if(WITH_TORCH)
     if (WITH_EXAMPLES)
