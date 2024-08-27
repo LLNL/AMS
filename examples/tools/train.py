@@ -215,10 +215,13 @@ def main():
             but it should be "clean" and not dependent on paths.
             """
             length = X.shape[0]
+            train_size =  int(length * args.split)
+            test_size = int(length - train_size)
+            print("Length", length, train_size, test_size)
             all_data = ExampleDataset(X, targets)
             generator = torch.Generator().manual_seed(42)
             train_dset, test_dset = torch.utils.data.random_split(
-                all_data, [args.split, 1 - args.split], generator=generator
+                all_data, [train_size, test_size], generator=generator
             )
             print(len(train_dset), len(test_dset))
 
@@ -265,9 +268,11 @@ def main():
 
             # We convert and jit the model. For D-UQ we need to think on how to get this done
             # in a generic way.
+            # NOTE: Talk with ROB about this
             filename = jit_and_save_model(model, db.suggest_model_file_name(), device, to_double=True)
 
             # Register model to kosh store. This exposes the model to the rest of the workflow
+            # NOTE: Talk with ROB, VIVEK and JAYRAM
             model_descr = AMSModelDescr(path=filename, threshold=0.5, uq_type=UQType.Random)
             md = {"train_parameters": train_args, "batch_size": args.batch_size, "view_files": dset.get_files()}
             db.add_model(args.domain_name, model_descr, test_loss, train_loss, metadata=md)
