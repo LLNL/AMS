@@ -397,8 +397,8 @@ public:
     auto& valstep = valsteps.back();
 
     set_exec_policy(AMSExecPolicy::AMS_BALANCED);
+    VPCollector<FPTypeValue> vpcol(val_seed, comm);
     if (should_load_balance()) {
-      VPCollector<FPTypeValue> vpcol(val_seed, comm);
       vpcol.set_validation(predicate, totalElements, appDataLoc, min_val_pts);
 
       // Backup the surrogate outputs for those selected to compute physics
@@ -487,7 +487,7 @@ public:
     // Compute the error statistics between surrogate and physics model outpus
     //------------------------------------------------------------------
     if (should_load_balance()) {
-      auto stats = get_error_stats(origOutputs, valstep, comm);
+      auto stats = vpcol.get_error_stats(origOutputs, valstep);
       for (int i = 0; i < outputDim; i++) {
           CINFO(ErrorStats,
                 rId == 0,
