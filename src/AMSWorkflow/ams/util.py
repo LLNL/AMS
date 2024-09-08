@@ -5,8 +5,10 @@
 
 import datetime
 import socket
+import subprocess
 import uuid
 
+from typing import Tuple
 
 def get_unique_fn():
     # Randomly generate the output file name. We use the uuid4 function with the socket name and the current
@@ -18,3 +20,20 @@ def get_unique_fn():
         str(datetime.datetime.now()).replace("-", "D").replace(" ", "T").replace(":", "C").replace(".", "p"),
     ]
     return "_".join(fn)
+
+def generate_tls_certificate(host: str, port: int) -> Tuple[bool,str]:
+    """Generate TLS certificate for RabbitMQ
+
+        :param str host: The RabbitMQ hostname
+        :param int port: The RabbitMQ port
+
+        :rtype: Tuple[bool,str]
+        :return: return a tuple with a boolean set to True if certificate got generated and the TLS certificate (other contains stderr)
+    """
+    openssl = subprocess.run(["openssl", "s_client", "-connect", f"{host}:{port}", "-showcerts"], check=True, capture_output=True)
+    if openssl.returncode != 0:
+        return False, openssl.stderr.decode().strip()
+    sed = subprocess.run(["sed", "-ne", r"/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p"],  input=openssl.stdout, capture_output=True)
+    if sed.returncode != 0:
+        return False, sed.stderr.decode().strip()
+    return True, sed.stdout.decode().strip()

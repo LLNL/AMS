@@ -92,7 +92,7 @@ def parse_data(body: str, header_info: dict) -> Tuple[str, np.array, np.array]:
 
     try:
         if data_size == 4: #if datatype takes 4 bytes
-            data = np.frombuffer(body[header_siz+domain_name_size:header_size+domain_name_size+data_size], dtype=np.float32)
+            data = np.frombuffer(body[header_size+domain_name_size:header_size+domain_name_size+data_size], dtype=np.float32)
         else:
             data = np.frombuffer(body[header_size+domain_name_size:header_size+domain_name_size+data_size], dtype=np.float64)
     except ValueError as e:
