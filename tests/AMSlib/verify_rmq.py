@@ -22,7 +22,9 @@ def verify(
     user = rmq_json["rabbitmq-user"]
     password = rmq_json["rabbitmq-password"]
     queue = rmq_json["rabbitmq-outbound-queue"]
-    cert = rmq_json["rabbitmq-cert"]
+    cert = None
+    if "rabbitmq-cert" in rmq_json:
+        cert = rmq_json["rabbitmq-cert"]
 
     dtype = 4
     if data_type == "double":

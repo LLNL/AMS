@@ -10,248 +10,333 @@ on:
   workflow_dispatch:
 
 jobs:
-  # build-run-tests:
-  #   # The type of runner that the job will run on
-  #   runs-on: ubuntu-latest
-  #   container: ghcr.io/ggeorgakoudis/ams-ci-test-ruby-centos7
+  build-run-tests:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+    container: ghcr.io/ggeorgakoudis/ams-ci-test-ruby-centos7
 
-  #   # Temporary fix for https://github.blog/changelog/2024-03-07-github-actions-all-actions-will-run-on-node20-instead-of-node16-by-default/
-  #   env:
-  #     ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true # Allow using Node16 actions
+    services:
+      rabbitmq:
+        image: rabbitmq:3.8
+        env:
+          RABBITMQ_DEFAULT_USER: guest
+          RABBITMQ_DEFAULT_PASS: guest
+        ports:
+          - 5672
 
-  #   # Steps represent a sequence of tasks that will be executed as part of the job
-  #   steps:
-  #     - uses: actions/checkout@v3
-  #     - name: Build Torch=On FAISS=On HDF5=On AMS
-  #       shell: bash -l {0}
-  #       run: |
-  #         module load gcc/11.2.1
-  #         source /spack/share/spack/setup-env.sh
-  #         spack env activate -p /ams-spack-env
-  #         rm -rf build/
-  #         mkdir build
-  #         cd build
-  #         export AMS_MFEM_PATH=$(spack location -i mfem)
-  #         export AMS_TORCH_PATH=$(spack location -i py-torch)/lib/python3.10/site-packages/torch/share/cmake/Torch
-  #         export AMS_FAISS_PATH=$(spack location -i faiss)
-  #         export AMS_UMPIRE_PATH=$(spack location -i umpire)
-  #         export AMS_HDF5_PATH=$(spack location -i hdf5)
-  #         cmake \
-  #           -DBUILD_SHARED_LIBS=On \
-  #           -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
-  #           -DWITH_CALIPER=On \
-  #           -DWITH_HDF5=On \
-  #           -DWITH_EXAMPLES=On \
-  #           -DAMS_HDF5_DIR=$AMS_HDF5_PATH \
-  #           -DCMAKE_INSTALL_PREFIX=./install \
-  #           -DCMAKE_BUILD_TYPE=Release \
-  #           -DWITH_CUDA=Off \
-  #           -DUMPIRE_DIR=$AMS_UMPIRE_PATH \
-  #           -DMFEM_DIR=$AMS_MFEM_PATH \
-  #           -DWITH_FAISS=On \
-  #           -DWITH_MPI=On \
-  #           -DWITH_TORCH=On \
-  #           -DWITH_TESTS=On \
-  #           -DTorch_DIR=$AMS_TORCH_PATH \
-  #           -DFAISS_DIR=$AMS_FAISS_PATH \
-  #           -DWITH_AMS_DEBUG=On \
-  #           -DWITH_WORKFLOW=On \
-  #           -DWITH_ADIAK=On \
-  #           $GITHUB_WORKSPACE
-  #           make
-  #     - name: Run tests Torch=On FAISS=On HDF5=On AMS
-  #       run: |
-  #         cd build
-  #         source /spack/share/spack/setup-env.sh
-  #         spack env activate -p /ams-spack-env
-  #         env CTEST_OUTPUT_ON_FAILURE=1 make test
-  #     - name: Build Torch=On FAISS=On HDF5=On MPI=Off AMS
-  #       shell: bash -l {0}
-  #       run: |
-  #         module load gcc/11.2.1
-  #         source /spack/share/spack/setup-env.sh
-  #         spack env activate -p /ams-spack-env
-  #         rm -rf build/
-  #         mkdir build
-  #         cd build
-  #         export AMS_MFEM_PATH=$(spack location -i mfem)
-  #         export AMS_TORCH_PATH=$(spack location -i py-torch)/lib/python3.10/site-packages/torch/share/cmake/Torch
-  #         export AMS_FAISS_PATH=$(spack location -i faiss)
-  #         export AMS_UMPIRE_PATH=$(spack location -i umpire)
-  #         export AMS_HDF5_PATH=$(spack location -i hdf5)
-  #         cmake \
-  #           -DBUILD_SHARED_LIBS=On \
-  #           -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
-  #           -DWITH_CALIPER=On \
-  #           -DWITH_HDF5=On \
-  #           -DWITH_EXAMPLES=On \
-  #           -DAMS_HDF5_DIR=$AMS_HDF5_PATH \
-  #           -DCMAKE_INSTALL_PREFIX=./install \
-  #           -DCMAKE_BUILD_TYPE=Release \
-  #           -DWITH_CUDA=Off \
-  #           -DUMPIRE_DIR=$AMS_UMPIRE_PATH \
-  #           -DMFEM_DIR=$AMS_MFEM_PATH \
-  #           -DWITH_FAISS=On \
-  #           -DWITH_MPI=Off \
-  #           -DWITH_TORCH=On \
-  #           -DWITH_TESTS=On \
-  #           -DTorch_DIR=$AMS_TORCH_PATH \
-  #           -DFAISS_DIR=$AMS_FAISS_PATH \
-  #           -DWITH_AMS_DEBUG=On \
-  #           -DWITH_WORKFLOW=On \
-  #           -DWITH_ADIAK=On \
-  #           $GITHUB_WORKSPACE
-  #           make
-  #     - name: Build CALIPER=Off Torch=Off FAISS=On HDF5=On AMS
-  #       shell: bash -l {0}
-  #       run: |
-  #         module load gcc/11.2.1
-  #         source /spack/share/spack/setup-env.sh
-  #         spack env activate -p /ams-spack-env
-  #         rm -rf build/
-  #         mkdir build
-  #         cd build
-  #         export AMS_MFEM_PATH=$(spack location -i mfem)
-  #         export AMS_FAISS_PATH=$(spack location -i faiss)
-  #         export AMS_UMPIRE_PATH=$(spack location -i umpire)
-  #         export AMS_HDF5_PATH=$(spack location -i hdf5)
-  #         cmake \
-  #           -DBUILD_SHARED_LIBS=On \
-  #           -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
-  #           -DWITH_CALIPER=Off \
-  #           -DWITH_HDF5=On \
-  #           -DWITH_EXAMPLES=On \
-  #           -DAMS_HDF5_DIR=$AMS_HDF5_PATH \
-  #           -DCMAKE_INSTALL_PREFIX=./install \
-  #           -DCMAKE_BUILD_TYPE=Release \
-  #           -DWITH_CUDA=Off \
-  #           -DUMPIRE_DIR=$AMS_UMPIRE_PATH \
-  #           -DMFEM_DIR=$AMS_MFEM_PATH \
-  #           -DWITH_FAISS=On \
-  #           -DWITH_MPI=On \
-  #           -DWITH_TORCH=Off \
-  #           -DWITH_TESTS=On \
-  #           -DFAISS_DIR=$AMS_FAISS_PATH \
-  #           -DWITH_AMS_DEBUG=On \
-  #           -DWITH_WORKFLOW=On \
-  #           $GITHUB_WORKSPACE
-  #           make
-  #     - name: Build Torch=Off FAISS=On HDF5=On AMS
-  #       shell: bash -l {0}
-  #       run: |
-  #         module load gcc/11.2.1
-  #         source /spack/share/spack/setup-env.sh
-  #         spack env activate -p /ams-spack-env
-  #         rm -rf build/
-  #         mkdir build
-  #         cd build
-  #         export AMS_MFEM_PATH=$(spack location -i mfem)
-  #         export AMS_FAISS_PATH=$(spack location -i faiss)
-  #         export AMS_UMPIRE_PATH=$(spack location -i umpire)
-  #         export AMS_HDF5_PATH=$(spack location -i hdf5)
-  #         cmake \
-  #           -DBUILD_SHARED_LIBS=On \
-  #           -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
-  #           -DWITH_CALIPER=On \
-  #           -DWITH_HDF5=On \
-  #           -DWITH_EXAMPLES=On \
-  #           -DAMS_HDF5_DIR=$AMS_HDF5_PATH \
-  #           -DCMAKE_INSTALL_PREFIX=./install \
-  #           -DCMAKE_BUILD_TYPE=Release \
-  #           -DWITH_CUDA=Off \
-  #           -DUMPIRE_DIR=$AMS_UMPIRE_PATH \
-  #           -DMFEM_DIR=$AMS_MFEM_PATH \
-  #           -DWITH_FAISS=On \
-  #           -DWITH_MPI=On \
-  #           -DWITH_TORCH=Off \
-  #           -DWITH_TESTS=On \
-  #           -DFAISS_DIR=$AMS_FAISS_PATH \
-  #           -DWITH_AMS_DEBUG=On \
-  #           -DWITH_WORKFLOW=On \
-  #           -DWITH_ADIAK=On \
-  #           $GITHUB_WORKSPACE
-  #           make
-  #     - name: Run tests Torch=Off FAISS=On HDF5=On AMS
-  #       run: |
-  #         cd build
-  #         source /spack/share/spack/setup-env.sh
-  #         spack env activate -p /ams-spack-env
-  #         env CTEST_OUTPUT_ON_FAILURE=1 make test
-  #     - name: Build Torch=Off FAISS=Off HDF5=On AMS
-  #       shell: bash -l {0}
-  #       run: |
-  #         module load gcc/11.2.1
-  #         source /spack/share/spack/setup-env.sh
-  #         spack env activate -p /ams-spack-env
-  #         rm -rf build/
-  #         mkdir build
-  #         cd build
-  #         export AMS_MFEM_PATH=$(spack location -i mfem)
-  #         export AMS_UMPIRE_PATH=$(spack location -i umpire)
-  #         export AMS_HDF5_PATH=$(spack location -i hdf5)
-  #         cmake \
-  #           -DBUILD_SHARED_LIBS=On \
-  #           -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
-  #           -DWITH_CALIPER=On \
-  #           -DWITH_EXAMPLES=On \
-  #           -DAMS_HDF5_DIR=$AMS_HDF5_PATH \
-  #           -DWITH_HDF5=On \
-  #           -DCMAKE_INSTALL_PREFIX=./install \
-  #           -DCMAKE_BUILD_TYPE=Release \
-  #           -DWITH_CUDA=Off \
-  #           -DUMPIRE_DIR=$AMS_UMPIRE_PATH \
-  #           -DMFEM_DIR=$AMS_MFEM_PATH \
-  #           -DWITH_FAISS=Off \
-  #           -DWITH_MPI=On \
-  #           -DWITH_TORCH=Off \
-  #           -DWITH_TESTS=On \
-  #           -DWITH_AMS_DEBUG=On \
-  #           -DWITH_WORKFLOW=On \
-  #           -DWITH_ADIAK=On \
-  #           $GITHUB_WORKSPACE
-  #           make
-  #     - name: Run tests Torch=Off FAISS=Off HDF5=On AMS
-  #       run: |
-  #         cd build
-  #         source /spack/share/spack/setup-env.sh
-  #         spack env activate -p /ams-spack-env
-  #         make test
-  #     - name: Build Torch=Off FAISS=Off HDF5=Off AMS
-  #       shell: bash -l {0}
-  #       run: |
-  #         module load gcc/11.2.1
-  #         source /spack/share/spack/setup-env.sh
-  #         spack env activate -p /ams-spack-env
-  #         rm -rf build/
-  #         mkdir build
-  #         cd build
-  #         export AMS_MFEM_PATH=$(spack location -i mfem)
-  #         export AMS_UMPIRE_PATH=$(spack location -i umpire)
-  #         cmake \
-  #           -DBUILD_SHARED_LIBS=On \
-  #           -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
-  #           -DWITH_CALIPER=On \
-  #           -DWITH_EXAMPLES=On \
-  #           -DCMAKE_INSTALL_PREFIX=./install \
-  #           -DCMAKE_BUILD_TYPE=Release \
-  #           -DWITH_CUDA=Off \
-  #           -DUMPIRE_DIR=$AMS_UMPIRE_PATH \
-  #           -DMFEM_DIR=$AMS_MFEM_PATH \
-  #           -DWITH_FAISS=Off \
-  #           -DWITH_MPI=On \
-  #           -DWITH_TORCH=Off \
-  #           -DWITH_TESTS=On \
-  #           -DWITH_AMS_DEBUG=On \
-  #           -DWITH_WORKFLOW=On \
-  #           -DWITH_ADIAK=Off \
-  #           $GITHUB_WORKSPACE
-  #           make
-  #     - name: Run tests Torch=Off FAISS=Off HDF5=Off AMS
-  #       run: |
-  #         cd build
-  #         source /spack/share/spack/setup-env.sh
-  #         spack env activate -p /ams-spack-env
-  #         make test
+    # Temporary fix for https://github.blog/changelog/2024-03-07-github-actions-all-actions-will-run-on-node20-instead-of-node16-by-default/
+    env:
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true # Allow using Node16 actions
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      - uses: actions/checkout@v3
+      # - name: Build Torch=On FAISS=On HDF5=On AMS
+      #   shell: bash -l {0}
+      #   run: |
+      #     module load gcc/11.2.1
+      #     source /spack/share/spack/setup-env.sh
+      #     spack env activate -p /ams-spack-env
+      #     rm -rf build/
+      #     mkdir build
+      #     cd build
+      #     export AMS_MFEM_PATH=$(spack location -i mfem)
+      #     export AMS_TORCH_PATH=$(spack location -i py-torch)/lib/python3.10/site-packages/torch/share/cmake/Torch
+      #     export AMS_FAISS_PATH=$(spack location -i faiss)
+      #     export AMS_UMPIRE_PATH=$(spack location -i umpire)
+      #     export AMS_HDF5_PATH=$(spack location -i hdf5)
+      #     cmake \
+      #       -DBUILD_SHARED_LIBS=On \
+      #       -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
+      #       -DWITH_CALIPER=On \
+      #       -DWITH_HDF5=On \
+      #       -DWITH_EXAMPLES=On \
+      #       -DAMS_HDF5_DIR=$AMS_HDF5_PATH \
+      #       -DCMAKE_INSTALL_PREFIX=./install \
+      #       -DCMAKE_BUILD_TYPE=Release \
+      #       -DWITH_CUDA=Off \
+      #       -DUMPIRE_DIR=$AMS_UMPIRE_PATH \
+      #       -DMFEM_DIR=$AMS_MFEM_PATH \
+      #       -DWITH_FAISS=On \
+      #       -DWITH_MPI=On \
+      #       -DWITH_TORCH=On \
+      #       -DWITH_TESTS=On \
+      #       -DTorch_DIR=$AMS_TORCH_PATH \
+      #       -DFAISS_DIR=$AMS_FAISS_PATH \
+      #       -DWITH_AMS_DEBUG=On \
+      #       -DWITH_WORKFLOW=On \
+      #       -DWITH_ADIAK=On \
+      #       $GITHUB_WORKSPACE
+      #       make
+      # - name: Run tests Torch=On FAISS=On HDF5=On AMS
+      #   run: |
+      #     cd build
+      #     source /spack/share/spack/setup-env.sh
+      #     spack env activate -p /ams-spack-env
+      #     env CTEST_OUTPUT_ON_FAILURE=1 make test
+      # - name: Build Torch=On FAISS=On HDF5=On MPI=Off AMS
+      #   shell: bash -l {0}
+      #   run: |
+      #     module load gcc/11.2.1
+      #     source /spack/share/spack/setup-env.sh
+      #     spack env activate -p /ams-spack-env
+      #     rm -rf build/
+      #     mkdir build
+      #     cd build
+      #     export AMS_MFEM_PATH=$(spack location -i mfem)
+      #     export AMS_TORCH_PATH=$(spack location -i py-torch)/lib/python3.10/site-packages/torch/share/cmake/Torch
+      #     export AMS_FAISS_PATH=$(spack location -i faiss)
+      #     export AMS_UMPIRE_PATH=$(spack location -i umpire)
+      #     export AMS_HDF5_PATH=$(spack location -i hdf5)
+      #     cmake \
+      #       -DBUILD_SHARED_LIBS=On \
+      #       -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
+      #       -DWITH_CALIPER=On \
+      #       -DWITH_HDF5=On \
+      #       -DWITH_EXAMPLES=On \
+      #       -DAMS_HDF5_DIR=$AMS_HDF5_PATH \
+      #       -DCMAKE_INSTALL_PREFIX=./install \
+      #       -DCMAKE_BUILD_TYPE=Release \
+      #       -DWITH_CUDA=Off \
+      #       -DUMPIRE_DIR=$AMS_UMPIRE_PATH \
+      #       -DMFEM_DIR=$AMS_MFEM_PATH \
+      #       -DWITH_FAISS=On \
+      #       -DWITH_MPI=Off \
+      #       -DWITH_TORCH=On \
+      #       -DWITH_TESTS=On \
+      #       -DTorch_DIR=$AMS_TORCH_PATH \
+      #       -DFAISS_DIR=$AMS_FAISS_PATH \
+      #       -DWITH_AMS_DEBUG=On \
+      #       -DWITH_WORKFLOW=On \
+      #       -DWITH_ADIAK=On \
+      #       $GITHUB_WORKSPACE
+      #       make
+      # - name: Build CALIPER=Off Torch=Off FAISS=On HDF5=On AMS
+      #   shell: bash -l {0}
+      #   run: |
+      #     module load gcc/11.2.1
+      #     source /spack/share/spack/setup-env.sh
+      #     spack env activate -p /ams-spack-env
+      #     rm -rf build/
+      #     mkdir build
+      #     cd build
+      #     export AMS_MFEM_PATH=$(spack location -i mfem)
+      #     export AMS_FAISS_PATH=$(spack location -i faiss)
+      #     export AMS_UMPIRE_PATH=$(spack location -i umpire)
+      #     export AMS_HDF5_PATH=$(spack location -i hdf5)
+      #     cmake \
+      #       -DBUILD_SHARED_LIBS=On \
+      #       -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
+      #       -DWITH_CALIPER=Off \
+      #       -DWITH_HDF5=On \
+      #       -DWITH_EXAMPLES=On \
+      #       -DAMS_HDF5_DIR=$AMS_HDF5_PATH \
+      #       -DCMAKE_INSTALL_PREFIX=./install \
+      #       -DCMAKE_BUILD_TYPE=Release \
+      #       -DWITH_CUDA=Off \
+      #       -DUMPIRE_DIR=$AMS_UMPIRE_PATH \
+      #       -DMFEM_DIR=$AMS_MFEM_PATH \
+      #       -DWITH_FAISS=On \
+      #       -DWITH_MPI=On \
+      #       -DWITH_TORCH=Off \
+      #       -DWITH_TESTS=On \
+      #       -DFAISS_DIR=$AMS_FAISS_PATH \
+      #       -DWITH_AMS_DEBUG=On \
+      #       -DWITH_WORKFLOW=On \
+      #       $GITHUB_WORKSPACE
+      #       make
+      # - name: Build Torch=Off FAISS=On HDF5=On AMS
+      #   shell: bash -l {0}
+      #   run: |
+      #     module load gcc/11.2.1
+      #     source /spack/share/spack/setup-env.sh
+      #     spack env activate -p /ams-spack-env
+      #     rm -rf build/
+      #     mkdir build
+      #     cd build
+      #     export AMS_MFEM_PATH=$(spack location -i mfem)
+      #     export AMS_FAISS_PATH=$(spack location -i faiss)
+      #     export AMS_UMPIRE_PATH=$(spack location -i umpire)
+      #     export AMS_HDF5_PATH=$(spack location -i hdf5)
+      #     cmake \
+      #       -DBUILD_SHARED_LIBS=On \
+      #       -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
+      #       -DWITH_CALIPER=On \
+      #       -DWITH_HDF5=On \
+      #       -DWITH_EXAMPLES=On \
+      #       -DAMS_HDF5_DIR=$AMS_HDF5_PATH \
+      #       -DCMAKE_INSTALL_PREFIX=./install \
+      #       -DCMAKE_BUILD_TYPE=Release \
+      #       -DWITH_CUDA=Off \
+      #       -DUMPIRE_DIR=$AMS_UMPIRE_PATH \
+      #       -DMFEM_DIR=$AMS_MFEM_PATH \
+      #       -DWITH_FAISS=On \
+      #       -DWITH_MPI=On \
+      #       -DWITH_TORCH=Off \
+      #       -DWITH_TESTS=On \
+      #       -DFAISS_DIR=$AMS_FAISS_PATH \
+      #       -DWITH_AMS_DEBUG=On \
+      #       -DWITH_WORKFLOW=On \
+      #       -DWITH_ADIAK=On \
+      #       $GITHUB_WORKSPACE
+      #       make
+      # - name: Run tests Torch=Off FAISS=On HDF5=On AMS
+      #   run: |
+      #     cd build
+      #     source /spack/share/spack/setup-env.sh
+      #     spack env activate -p /ams-spack-env
+      #     env CTEST_OUTPUT_ON_FAILURE=1 make test
+      # - name: Build Torch=Off FAISS=Off HDF5=On AMS
+      #   shell: bash -l {0}
+      #   run: |
+      #     module load gcc/11.2.1
+      #     source /spack/share/spack/setup-env.sh
+      #     spack env activate -p /ams-spack-env
+      #     rm -rf build/
+      #     mkdir build
+      #     cd build
+      #     export AMS_MFEM_PATH=$(spack location -i mfem)
+      #     export AMS_UMPIRE_PATH=$(spack location -i umpire)
+      #     export AMS_HDF5_PATH=$(spack location -i hdf5)
+      #     cmake \
+      #       -DBUILD_SHARED_LIBS=On \
+      #       -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
+      #       -DWITH_CALIPER=On \
+      #       -DWITH_EXAMPLES=On \
+      #       -DAMS_HDF5_DIR=$AMS_HDF5_PATH \
+      #       -DWITH_HDF5=On \
+      #       -DCMAKE_INSTALL_PREFIX=./install \
+      #       -DCMAKE_BUILD_TYPE=Release \
+      #       -DWITH_CUDA=Off \
+      #       -DUMPIRE_DIR=$AMS_UMPIRE_PATH \
+      #       -DMFEM_DIR=$AMS_MFEM_PATH \
+      #       -DWITH_FAISS=Off \
+      #       -DWITH_MPI=On \
+      #       -DWITH_TORCH=Off \
+      #       -DWITH_TESTS=On \
+      #       -DWITH_AMS_DEBUG=On \
+      #       -DWITH_WORKFLOW=On \
+      #       -DWITH_ADIAK=On \
+      #       $GITHUB_WORKSPACE
+      #       make
+      # - name: Run tests Torch=Off FAISS=Off HDF5=On AMS
+      #   run: |
+      #     cd build
+      #     source /spack/share/spack/setup-env.sh
+      #     spack env activate -p /ams-spack-env
+      #     make test
+      # - name: Build Torch=Off FAISS=Off HDF5=Off AMS
+      #   shell: bash -l {0}
+      #   run: |
+      #     module load gcc/11.2.1
+      #     source /spack/share/spack/setup-env.sh
+      #     spack env activate -p /ams-spack-env
+      #     rm -rf build/
+      #     mkdir build
+      #     cd build
+      #     export AMS_MFEM_PATH=$(spack location -i mfem)
+      #     export AMS_UMPIRE_PATH=$(spack location -i umpire)
+      #     cmake \
+      #       -DBUILD_SHARED_LIBS=On \
+      #       -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
+      #       -DWITH_CALIPER=On \
+      #       -DWITH_EXAMPLES=On \
+      #       -DCMAKE_INSTALL_PREFIX=./install \
+      #       -DCMAKE_BUILD_TYPE=Release \
+      #       -DWITH_CUDA=Off \
+      #       -DUMPIRE_DIR=$AMS_UMPIRE_PATH \
+      #       -DMFEM_DIR=$AMS_MFEM_PATH \
+      #       -DWITH_FAISS=Off \
+      #       -DWITH_MPI=On \
+      #       -DWITH_TORCH=Off \
+      #       -DWITH_TESTS=On \
+      #       -DWITH_AMS_DEBUG=On \
+      #       -DWITH_WORKFLOW=On \
+      #       -DWITH_ADIAK=Off \
+      #       $GITHUB_WORKSPACE
+      #       make
+      # - name: Run tests Torch=Off FAISS=Off HDF5=Off AMS
+      #   run: |
+      #     cd build
+      #     source /spack/share/spack/setup-env.sh
+      #     spack env activate -p /ams-spack-env
+      #     make test
+
+      - name: Build Torch=On FAISS=On RMQ=On AMS
+        shell: bash -l {0}
+        run: |
+          module load gcc/11.2.1
+          source /spack/share/spack/setup-env.sh
+          spack env activate -p /ams-spack-env
+          spack find 
+          rm -rf build/
+          mkdir build
+          cd build
+          export AMS_MFEM_PATH=$(spack location -i mfem)
+          export AMS_TORCH_PATH=$(spack location -i py-torch)/lib/python3.10/site-packages/torch/share/cmake/Torch
+          export AMS_FAISS_PATH=$(spack location -i faiss)
+          export AMS_UMPIRE_PATH=$(spack location -i umpire)
+          export AMS_AMQPCPP_PATH=$(spack location -i amqp-cpp)
+          cmake \
+            -DBUILD_SHARED_LIBS=On \
+            -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
+            -DWITH_CALIPER=On \
+            -DWITH_HDF5=Off \
+            -DWITH_EXAMPLES=On \
+            -DAMS_HDF5_DIR=$AMS_HDF5_PATH \
+            -DCMAKE_INSTALL_PREFIX=./install \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DWITH_CUDA=Off \
+            -DUMPIRE_DIR=$AMS_UMPIRE_PATH \
+            -DMFEM_DIR=$AMS_MFEM_PATH \
+            -DWITH_FAISS=On \
+            -DWITH_MPI=On \
+            -DWITH_TORCH=On \
+            -DWITH_TESTS=On \
+            -DTorch_DIR=$AMS_TORCH_PATH \
+            -DFAISS_DIR=$AMS_FAISS_PATH \
+            -DWITH_AMS_DEBUG=On \
+            -DWITH_WORKFLOW=On \
+            -DWITH_ADIAK=On \
+            -DWITH_RMQ=On \
+            -Damqpcpp_DIR=$AMS_AMQPCPP_PATH \
+            $GITHUB_WORKSPACE
+            make
+      - name: Run tests Torch=On FAISS=On RMQ=On AMS
+        run: |
+          cd build
+          source /spack/share/spack/setup-env.sh
+          spack env activate -p /ams-spack-env
+
+          # We overwrite the rmq.json created by CMake
+          echo """{
+            "db": {
+              "dbType": "rmq",
+              "rmq_config": {
+                "rabbitmq-name": "rabbit",
+                "rabbitmq-user": "${RABBITMQ_USER}",
+                "rabbitmq-password": "${RABBITMQ_PASS}",
+                "service-port": ${RABBITMQ_PORT},
+                "service-host": "${RABBITMQ_HOST}",
+                "rabbitmq-vhost": "/",
+                "rabbitmq-outbound-queue": "test-ci",
+                "rabbitmq-exchange": "ams-fanout",
+                "rabbitmq-routing-key": "training"
+              },
+              "update_surrogate": false
+            },
+            "ml_models": {},
+            "domain_models": {}
+          }""" > $GITHUB_WORKSPACE/tests/AMSlib/rmq.json
+          ls -alh
+          cat $GITHUB_WORKSPACE/tests/AMSlib/rmq.json
+          ctest --output-on-failure -R AMSEndToEndFromJSON::NoModel::Double::DB::rmq::HOST
+        env:
+          RABBITMQ_USER: guest
+          RABBITMQ_PASS: guest
+          RABBITMQ_HOST: 127.0.0.1
+          RABBITMQ_PORT: ${{ job.services.rabbitmq.ports['5672'] }}
+
 
   # build-cuda-tests:
   #   # The type of runner that the job will run on
@@ -397,48 +482,52 @@ jobs:
   #           $GITHUB_WORKSPACE
   #           make
 
-  build-rmq-tests:
-    # The type of runner that the job will run on
-    runs-on: ubuntu-latest
+  # build-rmq-tests:
+  #   # The type of runner that the job will run on
+  #   runs-on: ubuntu-latest
 
-    # # Temporary fix for https://github.blog/changelog/2024-03-07-github-actions-all-actions-will-run-on-node20-instead-of-node16-by-default/
-    # env:
-    #   ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true # Allow using Node16 actions
+  #   # # Temporary fix for https://github.blog/changelog/2024-03-07-github-actions-all-actions-will-run-on-node20-instead-of-node16-by-default/
+  #   # env:
+  #   #   ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true # Allow using Node16 actions
 
-    services:
-      rabbitmq:
-        image: rabbitmq:3.8
-        env:
-          RABBITMQ_DEFAULT_USER: guest
-          RABBITMQ_DEFAULT_PASS: guest
-        ports:
-          - 5672
+  #   services:
+  #     rabbitmq:
+  #       image: rabbitmq:3.8
+  #       env:
+  #         RABBITMQ_DEFAULT_USER: guest
+  #         RABBITMQ_DEFAULT_PASS: guest
+  #       ports:
+  #         - 5672
 
-    # Steps represent a sequence of tasks that will be executed as part of the job
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip' # caching pip dependencies
+  #   # Steps represent a sequence of tasks that will be executed as part of the job
+  #   steps:
+  #     - uses: actions/checkout@v3
+  #     - uses: actions/setup-python@v5
+  #       with:
+  #         python-version: '3.11'
+  #         cache: 'pip' # caching pip dependencies
 
-      - name: Test RMQ
-        shell: bash -l {0}
-        run: |
-          # source /spack/share/spack/setup-env.sh
-          # spack env activate -p /ams-spack-env
-          pip install pika
-          echo "GITHUB_WORKSPACE = $GITHUB_WORKSPACE"
-          ls -alh $GITHUB_WORKSPACE
-          echo "{ \"rabbitmq-name\": \"rabbit\", \"rabbitmq-user\": \"guest\", \"rabbitmq-password\": \"guest\", \"service-port\": 5672, \"service-host\": \"127.0.0.1\", \"rabbitmq-vhost\": \"/\"  }" > short-rmq.json
-          echo "{ \"db\" : { \"dbType\" : \"rmq\", \"rmq_config\" : { \"rabbitmq-name\": \"rabbit\", \"rabbitmq-user\": \"guest\", \"rabbitmq-password\": \"guest\", \"service-port\": 5672, \"service-host\": \"127.0.0.1\", \"rabbitmq-vhost\": \"/\"  }, \"update_surrogate\": false },  \"ml_models\" : {}, \"domain_models\" : {}}" > rmq.json
-          cat short-rmq.json
-          # python3 $GITHUB_WORKSPACE/tools/rmq/recv_binary.py -c short-rmq.json -q test3
-        env:
-          RABBITMQ_HOST: 127.0.0.1
-          RABBITMQ_PORT: ${{ job.services.rabbitmq.ports['5672'] }}
+  #     - name: Test RMQ
+  #       shell: bash -l {0}
+  #       run: |
+  #         # source /spack/share/spack/setup-env.sh
+  #         # spack env activate -p /ams-spack-env
+  #         pip install pika numpy
+  #         echo "GITHUB_WORKSPACE = $GITHUB_WORKSPACE"
+  #         ls -alh $GITHUB_WORKSPACE
+  #         echo "{ \"rabbitmq-name\": \"rabbit\", \"rabbitmq-user\": \"guest\", \"rabbitmq-password\": \"guest\", \"service-port\": ${RABBITMQ_PORT}, \"service-host\": \"${RABBITMQ_HOST}\", \"rabbitmq-vhost\": \"/\"  }" > short-rmq.json
+  #         echo "{ \"db\" : { \"dbType\" : \"rmq\", \"rmq_config\" : { \"rabbitmq-name\": \"rabbit\", \"rabbitmq-user\": \"guest\", \"rabbitmq-password\": \"guest\", \"service-port\": 5672, \"service-host\": \"127.0.0.1\", \"rabbitmq-vhost\": \"/\"  }, \"update_surrogate\": false },  \"ml_models\" : {}, \"domain_models\" : {}}" > rmq.json
+  #         cat short-rmq.json
+  #         env | grep RABB
+  #         # python3 $GITHUB_WORKSPACE/tools/rmq/recv_binary.py -c short-rmq.json -q test3
+  #       env:
+  #         RABBITMQ_HOST: 127.0.0.1
+  #         RABBITMQ_PORT: ${{ job.services.rabbitmq.ports['5672'] }}
 
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
-        # with:
-        #   sudo: false
+  #     - name: Setup tmate session
+  #       uses: mxschmitt/action-tmate@v3
+  #       # with:
+  #       #   sudo: false
+  #       env:
+  #         RABBITMQ_HOST: 127.0.0.1
+  #         RABBITMQ_PORT: ${{ job.services.rabbitmq.ports['5672'] }}

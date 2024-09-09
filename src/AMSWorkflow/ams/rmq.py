@@ -291,15 +291,31 @@ class BlockingClient:
     BlockingClient is a class that manages a simple blocking RMQ client lifecycle.
     """
 
-    def __init__(self, host, port, vhost, user, password, cert, callback: Optional[Callable] = None, logger: Optional[logging.Logger] = None):
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        vhost: str,
+        user: str,
+        password: str,
+        cert: Optional[str] = None,
+        callback: Optional[Callable] = None,
+        logger: Optional[logging.Logger] = None
+    ):
         # CA Cert, can be generated with (where $REMOTE_HOST and $REMOTE_PORT can be found in the JSON file):
         # openssl s_client -connect $REMOTE_HOST:$REMOTE_PORT -showcerts < /dev/null 2>/dev/null | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' rmq-pds.crt
         self.logger = logger if logger else logging.getLogger(__name__)
         self.cert = cert
-        self.context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        self.context.verify_mode = ssl.CERT_REQUIRED
-        self.context.check_hostname = False
-        self.context.load_verify_locations(self.cert)
+
+        if self.cert is None or self.cert == "":
+            ssl_options = None
+        else:
+            self.context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            self.context.verify_mode = ssl.CERT_REQUIRED
+            self.context.check_hostname = False
+            self.context.load_verify_locations(self.cert)
+            ssl_options = pika.SSLOptions(self.context)
+
         self.host = host
         self.vhost = vhost
         self.port = port
@@ -314,7 +330,7 @@ class BlockingClient:
             port=self.port,
             virtual_host=self.vhost,
             credentials=self.credentials,
-            ssl_options=pika.SSLOptions(self.context),
+            ssl_options=ssl_options,
         )
 
     def __enter__(self):
@@ -345,7 +361,6 @@ class AsyncConsumer(object):
         password: str,
         cert: str,
         queue: str,
-        timeout: int = None,
         prefetch_count: int = 1,
         on_message_cb: Callable = None,
         on_close_cb: Callable = None,
@@ -369,7 +384,6 @@ class AsyncConsumer(object):
         self._vhost = vhost
         self._cacert = cert
         self._queue = queue
-        self._timeout = timeout
 
         self.should_reconnect = False
         # Holds the latest error/reason to reconnect
@@ -684,17 +698,11 @@ class AsyncConsumer(object):
         self.logger.debug("Closing the channel")
         self._channel.close()
 
-    def on_channel_timeout(self):
-        self.logger.info(f"Reached timeout {self._timeout} seconds")
-
     def run(self):
         """Run the example consumer by connecting to RabbitMQ and then
         starting the IOLoop to block and allow the SelectConnection to operate.
         """
         self._connection = self.connect()
-        if self._timeout:
-            # timeout in seconds
-            self._connection.add_timeout(self._timeout, self.on_channel_timeout)
         self._connection.ioloop.start()
 
     def stop(self):
