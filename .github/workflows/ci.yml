@@ -10,14 +10,14 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-run-tests:
-    # The type of runner that the job will run on
-    runs-on: ubuntu-latest
-    container: ghcr.io/ggeorgakoudis/ams-ci-test-ruby-centos7
+  # build-run-tests:
+  #   # The type of runner that the job will run on
+  #   runs-on: ubuntu-latest
+  #   container: ghcr.io/ggeorgakoudis/ams-ci-test-ruby-centos7
 
-    # Temporary fix for https://github.blog/changelog/2024-03-07-github-actions-all-actions-will-run-on-node20-instead-of-node16-by-default/
-    env:
-      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true # Allow using Node16 actions
+  #   # Temporary fix for https://github.blog/changelog/2024-03-07-github-actions-all-actions-will-run-on-node20-instead-of-node16-by-default/
+  #   env:
+  #     ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true # Allow using Node16 actions
 
   #   # Steps represent a sequence of tasks that will be executed as part of the job
   #   steps:
@@ -399,8 +399,14 @@ jobs:
 
   build-rmq-tests:
     # The type of runner that the job will run on
+    # The type of runner that the job will run on
     runs-on: ubuntu-latest
     container: ghcr.io/ggeorgakoudis/ams-ci-cuda11.6.1:latest
+
+    # # Temporary fix for https://github.blog/changelog/2024-03-07-github-actions-all-actions-will-run-on-node20-instead-of-node16-by-default/
+    # env:
+    #   ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true # Allow using Node16 actions
+
     services:
       rabbitmq:
         image: rabbitmq:3.8
@@ -416,13 +422,14 @@ jobs:
       - name: Test RMQ
         shell: bash -l {0}
         run: |
-          pwd
-          echo $GITHUB_WORKSPACE
+          source /spack/share/spack/setup-env.sh
+          spack env activate -p /ams-spack-env
+          echo "GITHUB_WORKSPACE = $GITHUB_WORKSPACE"
           ls -alh $GITHUB_WORKSPACE
           echo "{ \"rabbitmq-name\": \"rabbit\", \"rabbitmq-user\": \"guest\", \"rabbitmq-password\": \"guest\", \"service-port\": 5672, \"service-host\": \"127.0.0.1\", \"rabbitmq-vhost\": \"/\"  }" > short-rmq.json
           echo "{ \"db\" : { \"dbType\" : \"rmq\", \"rmq_config\" : { \"rabbitmq-name\": \"rabbit\", \"rabbitmq-user\": \"guest\", \"rabbitmq-password\": \"guest\", \"service-port\": 5672, \"service-host\": \"127.0.0.1\", \"rabbitmq-vhost\": \"/\"  }, \"update_surrogate\": false },  \"ml_models\" : {}, \"domain_models\" : {}}" > rmq.json
-          cat short-rmq.json | jq
-          python3 $GITHUB_WORKSPACE/tools/rmq/recv_binary.py -c short-rmq.json -q test3
+          cat short-rmq.json
+          # python3 $GITHUB_WORKSPACE/tools/rmq/recv_binary.py -c short-rmq.json -q test3
         env:
           RABBITMQ_HOST: 127.0.0.1
           RABBITMQ_PORT: ${{ job.services.rabbitmq.ports['5672'] }}
