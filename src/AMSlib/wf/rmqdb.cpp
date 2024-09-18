@@ -921,15 +921,15 @@ bool RMQPublisher::close(unsigned ms, int repeat)
  */
 
 std::pair<bool, bool> RMQInterface::connect(std::string rmq_name,
-                           std::string rmq_password,
-                           std::string rmq_user,
-                           std::string rmq_vhost,
-                           int service_port,
-                           std::string service_host,
-                           std::string rmq_cert,
-                           std::string outbound_queue,
-                           std::string exchange,
-                           std::string routing_key)
+                                            std::string rmq_password,
+                                            std::string rmq_user,
+                                            std::string rmq_vhost,
+                                            int service_port,
+                                            std::string service_host,
+                                            std::string rmq_cert,
+                                            std::string outbound_queue,
+                                            std::string exchange,
+                                            std::string routing_key)
 {
   _queue_sender = outbound_queue;
   _exchange = exchange;
@@ -974,7 +974,8 @@ std::pair<bool, bool> RMQInterface::connect(std::string rmq_name,
     }
     consumer_connected = true;
   } else {
-    WARNING(RMQInterface, "Could not establish consumer connection: exchange is empty");
+    WARNING(RMQInterface,
+            "Could not establish consumer connection: exchange is empty");
     consumer_connected = false;
   }
 
@@ -1018,27 +1019,25 @@ void RMQInterface::close()
   if (publisher_connected) {
     bool status = _publisher->close(100, 10);
     CWARNING(RMQInterface,
-            !status,
-            "Could not gracefully close publisher TCP connection")
+             !status,
+             "Could not gracefully close publisher TCP connection")
 
     DBG(RMQInterface, "Number of messages sent: %d", _msg_tag)
     DBG(RMQInterface,
         "Number of unacknowledged messages are %d",
         _publisher->unacknowledged())
     _publisher->stop();
-    if (_publisher_thread.joinable())
-      _publisher_thread.join();
+    if (_publisher_thread.joinable()) _publisher_thread.join();
     publisher_connected = false;
   }
 
   if (consumer_connected) {
     bool status = _consumer->close(100, 10);
     CWARNING(RMQInterface,
-            !status,
-            "Could not gracefully close consumer TCP connection")
+             !status,
+             "Could not gracefully close consumer TCP connection")
     _consumer->stop();
-    if (_consumer_thread.joinable())
-      _consumer_thread.join();
+    if (_consumer_thread.joinable()) _consumer_thread.join();
     consumer_connected = false;
   }
 }

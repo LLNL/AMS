@@ -81,11 +81,12 @@ If you want to use RabbitMQ as database back-end you will have to perform additi
     "service-port": 1234,
     "service-host": "",
     "rabbitmq-cert": "creds.pem",
-    "rabbitmq-inbound-queue": "test4",
-    "rabbitmq-outbound-queue": "test3"
+    "rabbitmq-queue-physics": "ams-data",
+    "rabbitmq-exchange-training": "ams-training",
+    "rabbitmq-key-training": "training"
 }
 ```
-`rabbitmq-cert` is where the TLS certificate is (absolute path ideally), `rabbitmq-queue-data` is the name of the queue used by AMS.
+`rabbitmq-cert` is where the TLS certificate is (absolute path ideally), `rabbitmq-queue-physics` is the name of the queue used by AMS.
 You can use for testing the credentials I have pre-generated  to access a RabbitMQ server located in PDS here : `/usr/workspace/AMS/pds/rabbitmq/`.
 
 Known issues (that I am working on):

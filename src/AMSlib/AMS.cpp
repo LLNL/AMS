@@ -375,17 +375,18 @@ private:
     std::string rmq_vhost = getEntry<std::string>(rmq_entry, "rabbitmq-vhost");
     std::string rmq_cert = getEntry<std::string>(rmq_entry, "rabbitmq-cert");
     std::string rmq_out_queue =
-        getEntry<std::string>(rmq_entry, "rabbitmq-outbound-queue");
+        getEntry<std::string>(rmq_entry, "rabbitmq-queue-physics");
     std::string exchange =
-        getEntry<std::string>(rmq_entry, "rabbitmq-exchange");
+        getEntry<std::string>(rmq_entry, "rabbitmq-exchange-training");
     std::string routing_key =
-        getEntry<std::string>(rmq_entry, "rabbitmq-routing-key");
+        getEntry<std::string>(rmq_entry, "rabbitmq-key-training");
     bool update_surrogate = getEntry<bool>(entry, "update_surrogate");
 
-    if(exchange == "") {
-      DBG(AMS, "Found empty RMQ exchange, deactivating model update")
-      update_surrogate = false;
-    }
+    CFATAL(AMS,
+           exchange == "" && update_surrogate,
+           "Found empty RMQ exchange, model update is not possible. "
+           "Please provide a RMQ exchange or deactivate surrogate model "
+           "update.")
 
     auto &DB = ams::db::DBManager::getInstance();
     DB.instantiate_rmq_db(port,

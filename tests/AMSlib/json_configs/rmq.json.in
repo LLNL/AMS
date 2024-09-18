@@ -10,9 +10,9 @@
       "rabbitmq-user": "",
       "rabbitmq-vhost": "",
       "rabbitmq-cert": "",
-      "rabbitmq-outbound-queue": "",
-      "rabbitmq-exchange": "",
-      "rabbitmq-routing-key": ""
+      "rabbitmq-queue-physics": "",
+      "rabbitmq-exchange-training": "",
+      "rabbitmq-key-training": ""
     },
     "update_surrogate": false
   },
