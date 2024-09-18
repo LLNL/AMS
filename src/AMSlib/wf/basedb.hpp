@@ -8,8 +8,9 @@
 #ifndef __AMS_BASE_DB__
 #define __AMS_BASE_DB__
 
-
-#include <H5Ipublic.h>
+#ifdef __AMS_ENABLE_CALIPER__
+#include <caliper/cali_macros.h>
+#endif
 
 #include <cstdint>
 #include <experimental/filesystem>
@@ -39,6 +40,7 @@ namespace fs = std::experimental::filesystem;
 
 #ifdef __ENABLE_HDF5__
 #include <hdf5.h>
+#include <H5Ipublic.h>
 #define HDF5_ERROR(Eid)                                             \
   if (Eid < 0) {                                                    \
     std::cerr << "[Error] Happened in " << __FILE__ << ":"          \
@@ -221,6 +223,7 @@ private:
               std::vector<TypeValue*>& inputs,
               std::vector<TypeValue*>& outputs)
   {
+    CALIPER(CALI_MARK_BEGIN("CSV_STORE");)
     DBG(DB,
         "DB of type %s stores %ld elements of input/output dimensions (%lu, "
         "%lu)",
@@ -251,6 +254,7 @@ private:
       }
       fd << outputs[num_out - 1][i] << "\n";
     }
+    CALIPER(CALI_MARK_END("CSV_STORE");)
   }
 
 
@@ -1589,11 +1593,13 @@ private:
   std::shared_ptr<RMQConsumer> _consumer;
   /** @brief Thread in charge of the consumer */
   std::thread _consumer_thread;
-  /** @brief True if connected to RabbitMQ */
-  bool connected;
+  /** @brief True if publisher is connected to RabbitMQ */
+  bool publisher_connected;
+  /** @brief True if consumer connected to RabbitMQ */
+  bool consumer_connected;
 
 public:
-  RMQInterface() : connected(false), _rId(0) {}
+  RMQInterface() : publisher_connected(false), consumer_connected(false), _rId(0) {}
 
   /**
    * @brief Connect to a RabbitMQ server
@@ -1608,9 +1614,9 @@ public:
    * @param[in] outbound_queue Name of the queue on which AMSlib publishes (send) messages
    * @param[in] exchange Exchange for incoming messages
    * @param[in] routing_key Routing key for incoming messages (must match what the AMS Python side is using)
-   * @return True if connection succeeded
+   * @return A tuple with two boolean (first for publisher connection, second for consumer), True if connection is valid
    */
-  bool connect(std::string rmq_name,
+  std::pair<bool, bool> connect(std::string rmq_name,
                std::string rmq_password,
                std::string rmq_user,
                std::string rmq_vhost,
@@ -1625,7 +1631,7 @@ public:
    * @brief Check if the RabbitMQ connection is connected.
    * @return True if connected
    */
-  bool isConnected() const { return connected; }
+  bool isConnected() const { return publisher_connected || consumer_connected; }
 
   /**
    * @brief Set the internal ID of the interface (usually MPI rank).
@@ -1651,6 +1657,7 @@ public:
                std::vector<TypeValue*>& inputs,
                std::vector<TypeValue*>& outputs)
   {
+    CALIPER(CALI_MARK_BEGIN("RMQ_STORE");)
     DBG(RMQInterface,
         "[tag=%d] stores %ld elements of input/output "
         "dimensions (%ld, %ld)",
@@ -1662,7 +1669,7 @@ public:
     AMSMessage msg(_msg_tag, _rId, domain_name, num_elements, inputs, outputs);
 
     if (!_publisher->connectionValid()) {
-      connected = false;
+      publisher_connected = false;
       restartPublisher();
       bool status = _publisher->waitToEstablish(100, 10);
       if (!status) {
@@ -1671,10 +1678,11 @@ public:
         FATAL(RMQInterface,
               "Could not establish publisher RabbitMQ connection");
       }
-      connected = true;
+      publisher_connected = true;
     }
     _publisher->publish(std::move(msg));
     _msg_tag++;
+    CALIPER(CALI_MARK_END("RMQ_STORE");)
   }
 
   /**
@@ -1691,6 +1699,7 @@ public:
     // NOTE: The architecture here is not great for now, we have redundant call to getLatestModel
     // Solution: when switching to C++ use std::variant to return an std::optional
     // the std::optional would be a string if a model is available otherwise it's a bool false
+    if (!_consumer) return false;
     auto data = _consumer->getLatestModel();
     return !std::get<1>(data).empty();
   }
@@ -1702,6 +1711,7 @@ public:
    */
   std::string getLatestModel(bool remove_msg = true)
   {
+    if (!_consumer) return "";
     auto res = _consumer->getLatestModel();
     bool empty = std::get<1>(res).empty();
     if (remove_msg && !empty) {
@@ -1713,7 +1723,7 @@ public:
 
   ~RMQInterface()
   {
-    if (connected) close();
+    if (publisher_connected || consumer_connected) close();
   }
 };
 

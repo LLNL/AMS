@@ -662,6 +662,7 @@ unsigned RMQPublisherHandler::unacknowledged() const
 
 void RMQPublisherHandler::publish(AMSMessage&& msg)
 {
+  CALIPER(CALI_MARK_BEGIN("RMQ_PUBLISH");)
   {
     const std::lock_guard<std::mutex> lock(_mutex);
     _messages.push_back(msg);
@@ -718,6 +719,7 @@ void RMQPublisherHandler::publish(AMSMessage&& msg)
             msg.id())
   }
   _nb_msg++;
+  CALIPER(CALI_MARK_END("RMQ_PUBLISH");)
 }
 
 void RMQPublisherHandler::onReady(AMQP::TcpConnection* connection)
@@ -918,7 +920,7 @@ bool RMQPublisher::close(unsigned ms, int repeat)
  * RMQInterface
  */
 
-bool RMQInterface::connect(std::string rmq_name,
+std::pair<bool, bool> RMQInterface::connect(std::string rmq_name,
                            std::string rmq_password,
                            std::string rmq_user,
                            std::string rmq_vhost,
@@ -956,25 +958,32 @@ bool RMQInterface::connect(std::string rmq_name,
   if (!_publisher->waitToEstablish(100, 10)) {
     _publisher->stop();
     _publisher_thread.join();
-    FATAL(RabbitMQInterface, "Could not establish connection");
+    FATAL(RMQInterface, "Could not establish connection");
+  }
+  publisher_connected = true;
+
+  if (_exchange != "") {
+    _consumer = std::make_shared<RMQConsumer>(
+        _rId, *_address, _cacert, _exchange, _routing_key);
+    _consumer_thread = std::thread([&]() { _consumer->start(); });
+
+    if (!_consumer->waitToEstablish(100, 10)) {
+      _consumer->stop();
+      _consumer_thread.join();
+      FATAL(RMQInterface, "Could not establish consumer connection");
+    }
+    consumer_connected = true;
+  } else {
+    WARNING(RMQInterface, "Could not establish consumer connection: exchange is empty");
+    consumer_connected = false;
   }
 
-  _consumer = std::make_shared<RMQConsumer>(
-      _rId, *_address, _cacert, _exchange, _routing_key);
-  _consumer_thread = std::thread([&]() { _consumer->start(); });
-
-  if (!_consumer->waitToEstablish(100, 10)) {
-    _consumer->stop();
-    _consumer_thread.join();
-    FATAL(RabbitMQDB, "Could not establish consumer connection");
-  }
-
-  connected = true;
-  return connected;
+  return std::make_pair(publisher_connected, consumer_connected);
 }
 
 void RMQInterface::restartPublisher()
 {
+  CALIPER(CALI_MARK_BEGIN("RMQ_RESTART_PUBLISHER");)
   std::vector<AMSMessage> messages = _publisher->getMsgBuffer();
 
   AMSMessage& msg_min =
@@ -984,7 +993,7 @@ void RMQInterface::restartPublisher()
                            return a.id() < b.id();
                          }));
 
-  DBG(RMQPublisher,
+  DBG(RMQInterface,
       "[r%d] we have %lu buffered messages that will get re-send "
       "(starting from msg #%d).",
       _rId,
@@ -995,38 +1004,41 @@ void RMQInterface::restartPublisher()
   _publisher->stop();
   _publisher_thread.join();
   _publisher.reset();
-  connected = false;
+  publisher_connected = false;
 
   _publisher = std::make_shared<RMQPublisher>(
       _rId, *_address, _cacert, _queue_sender, std::move(messages));
   _publisher_thread = std::thread([&]() { _publisher->start(); });
-  connected = true;
+  publisher_connected = true;
+  CALIPER(CALI_MARK_END("RMQ_RESTART_PUBLISHER");)
 }
 
 void RMQInterface::close()
 {
-  if (!_publisher_thread.joinable() || !_consumer_thread.joinable()) {
-    DBG(RMQInterface, "Threads are not joinable")
-    return;
+  if (publisher_connected) {
+    bool status = _publisher->close(100, 10);
+    CWARNING(RMQInterface,
+            !status,
+            "Could not gracefully close publisher TCP connection")
+
+    DBG(RMQInterface, "Number of messages sent: %d", _msg_tag)
+    DBG(RMQInterface,
+        "Number of unacknowledged messages are %d",
+        _publisher->unacknowledged())
+    _publisher->stop();
+    if (_publisher_thread.joinable())
+      _publisher_thread.join();
+    publisher_connected = false;
   }
-  bool status = _publisher->close(100, 10);
-  CWARNING(RabbitMQDB,
-           !status,
-           "Could not gracefully close publisher TCP connection")
 
-  DBG(RabbitMQInterface, "Number of messages sent: %d", _msg_tag)
-  DBG(RabbitMQInterface,
-      "Number of unacknowledged messages are %d",
-      _publisher->unacknowledged())
-  _publisher->stop();
-  _publisher_thread.join();
-
-  status = _consumer->close(100, 10);
-  CWARNING(RabbitMQDB,
-           !status,
-           "Could not gracefully close consumer TCP connection")
-  _consumer->stop();
-  _consumer_thread.join();
-
-  connected = false;
+  if (consumer_connected) {
+    bool status = _consumer->close(100, 10);
+    CWARNING(RMQInterface,
+            !status,
+            "Could not gracefully close consumer TCP connection")
+    _consumer->stop();
+    if (_consumer_thread.joinable())
+      _consumer_thread.join();
+    consumer_connected = false;
+  }
 }
