@@ -28,7 +28,7 @@ jobs:
           file: .github/containers/x86_64-broadwell-gcc11.2.1/Dockerfile
           push: true
           provenance: false
-          tags: ghcr.io/LLNL/ams-ci-almalinux8:latest
+          tags: ghcr.io/llnl/ams-ci-almalinux8:latest
 
       - name: Build and push cuda container
         uses: docker/build-push-action@v6
@@ -37,4 +37,4 @@ jobs:
           file: .github/containers/x86_64-broadwell-cuda11.6.1/Dockerfile
           push: true
           provenance: false
-          tags: ghcr.io/LLNL/ams-ci-cuda11.6.1:latest
+          tags: ghcr.io/llnl/ams-ci-cuda11.6.1:latest
