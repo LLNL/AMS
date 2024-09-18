@@ -24,7 +24,7 @@ import numpy as np
 from ams.config import AMSInstance
 from ams.faccessors import get_reader, get_writer
 from ams.monitor import AMSMonitor
-from ams.rmq import AMSMessage, AsyncConsumer
+from ams.rmq import AMSMessage, AsyncConsumer, AMSRMQConfiguration
 from ams.store import AMSDataStore
 from ams.util import get_unique_fn
 
@@ -35,6 +35,7 @@ class MessageType(Enum):
     Process = 1
     NewModel = 2
     Terminate = 3
+    Delete = 4
 
 
 class DataBlob:
@@ -85,6 +86,9 @@ class QueueMessage:
     def is_process(self):
         return self.msg_type == MessageType.Process
 
+    def is_delete(self):
+        return self.msg_type == MessageType.Delete
+
     def is_new_model(self):
         return self.msg_type == MessageType.NewModel
 
@@ -112,22 +116,36 @@ class ForwardTask(Task):
     Attributes:
         i_queue: The input queue to read input message
         o_queue: The output queue to write the transformed messages
-        callback: A callback to be applied on every message before pushing it to the next stage.
+        user_obj: An object providing the update_model_cb and data_cb callbacks to be applied on the respective control messages before pushing it to the next stage.
     """
 
-    def __init__(self, i_queue, o_queue, callback):
+    def __init__(self, db_path, db_store, name, i_queue, o_queue, user_obj):
         """
         initializes a ForwardTask class with the queues and the callback.
         """
-        if not isinstance(callback, Callable):
-            raise TypeError(f"{callback} argument is not Callable")
+
+        self._db_path = db_path
+        self._db_store = db_store
+        self._db_name = name
 
         self.i_queue = i_queue
         self.o_queue = o_queue
-        self.callback = callback
+        self.user_obj = user_obj
         self.datasize = 0
 
-    def _action(self, data):
+    @property
+    def db_path(self):
+        return self._db_path
+
+    @property
+    def db_store(self):
+        return self._db_store
+
+    @property
+    def db_name(self):
+        return self._db_name
+
+    def _data_cb(self, data):
         """
         Apply an 'action' to the incoming data
 
@@ -137,11 +155,17 @@ class ForwardTask(Task):
         Returns:
             A pair of inputs, outputs of the data after the transformation
         """
-        inputs, outputs = self.callback(data.inputs, data.outputs)
+        inputs, outputs = self.user_obj.data_cb(data.inputs, data.outputs)
         # This can be too conservative, we may want to relax it later
         if not (isinstance(inputs, np.ndarray) and isinstance(outputs, np.ndarray)):
-            raise TypeError(f"{self.callback.__name__} did not return numpy arrays")
+            raise TypeError(f"{self.user_obj.__name__}.data_cb did not return numpy arrays")
         return inputs, outputs
+
+    def _model_update_cb(self, db, msg):
+        domain = msg["domain"]
+        model = db.search(domain, "models", version="latest")
+        _updated = self.user_obj.update_model_cb(domain, model)
+        print(f"Model update status: {_updated}")
 
     @AMSMonitor(record=["datasize"])
     def __call__(self):
@@ -151,19 +175,27 @@ class ForwardTask(Task):
         the tasks waiting on the output queues about the terminations and returns from the function.
         """
 
-        while True:
-            # This is a blocking call
-            item = self.i_queue.get(block=True)
-            if item.is_terminate():
-                self.o_queue.put(QueueMessage(MessageType.Terminate, None))
-                break
-            elif item.is_process():
-                inputs, outputs = self._action(item.data())
-                self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(inputs, outputs)))
-                self.datasize += inputs.nbytes + outputs.nbytes
-            elif item.is_new_model():
-                # This is not handled yet
-                continue
+        with AMSDataStore(self.db_path, self.db_store, self.db_name) as db:
+            while True:
+                # This is a blocking call
+                item = self.i_queue.get(block=True)
+                if item.is_terminate():
+                    self.o_queue.put(QueueMessage(MessageType.Terminate, None))
+                    break
+                elif item.is_process():
+                    data = item.data()
+                    inputs, outputs = self._data_cb(data)
+                    self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(inputs, outputs, data.domain_name)))
+                    self.datasize += inputs.nbytes + outputs.nbytes
+                elif item.is_new_model():
+                    data = item.data()
+                    self._model_update_cb(db, data)
+                elif item.is_delete():
+                    print(f"Sending Delete Message Type {self.__class__.__name__}")
+                    self.o_queue.put(item)
+                elif item.is_new_model():
+                    # This is not handled yet
+                    continue
         return
 
 
@@ -194,26 +226,30 @@ class FSLoaderTask(Task):
         """
 
         start = time.time()
-        for fn in glob.glob(self.pattern):
+        files = list(glob.glob(self.pattern))
+        for fn in files:
             with self.loader(fn) as fd:
-                input_data, output_data = fd.load()
+                domain_name, input_data, output_data = fd.load()
+                print("Domain Name is", domain_name)
                 row_size = input_data[0, :].nbytes + output_data[0, :].nbytes
                 rows_per_batch = int(np.ceil(BATCH_SIZE / row_size))
                 num_batches = int(np.ceil(input_data.shape[0] / rows_per_batch))
                 input_batches = np.array_split(input_data, num_batches)
                 output_batches = np.array_split(output_data, num_batches)
                 for j, (i, o) in enumerate(zip(input_batches, output_batches)):
-                    self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(i, o)))
+                    self.o_queue.put(QueueMessage(MessageType.Process, DataBlob(i, o, domain_name)))
                 self.datasize += input_data.nbytes + output_data.nbytes
+            print(f"Sending Delete Message Type {self.__class__.__name__}")
+            self.o_queue.put(QueueMessage(MessageType.Delete, fn))
         self.o_queue.put(QueueMessage(MessageType.Terminate, None))
 
         end = time.time()
         print(f"Spend {end - start} at {self.__class__.__name__}")
 
 
-class RMQLoaderTask(Task):
+class RMQDomainDataLoaderTask(Task):
     """
-    A RMQLoaderTask consumes data from RabbitMQ bundles the data of
+    A RMQDomainDataLoaderTask consumes 'AMSMessages' from RabbitMQ bundles the data of
     the files into batches and forwards them to the next task waiting on the
     output queuee.
 
@@ -252,7 +288,7 @@ class RMQLoaderTask(Task):
         # Signals can only be used within the main thread
         if self.policy != "thread":
             # We ignore SIGTERM, SIGUSR1, SIGINT by default so later
-            # we can override that handler only for RMQLoaderTask
+            # we can override that handler only for RMQDomainDataLoaderTask
             for s in self.signals:
                 self.orig_sig_handlers[s] = signal.getsignal(s)
                 signal.signal(s, signal.SIG_IGN)
@@ -275,6 +311,7 @@ class RMQLoaderTask(Task):
         Callback that will be called when RabbitMQ will close
         the connection (or if a problem happened with the connection).
         """
+        print("Adding terminate message at queue:", self.o_queue)
         self.o_queue.put(QueueMessage(MessageType.Terminate, None))
 
     def callback_message(self, ch, basic_deliver, properties, body):
@@ -306,7 +343,6 @@ class RMQLoaderTask(Task):
 
     def stop(self):
         self.rmq_consumer.stop()
-        self.o_queue.put(QueueMessage(MessageType.Terminate, None))
         print(f"Spend {self.total_time} at {self.__class__.__name__}")
 
     @AMSMonitor(record=["datasize", "total_time"])
@@ -314,11 +350,42 @@ class RMQLoaderTask(Task):
         """
         Busy loop of consuming messages from RMQ queue
         """
-        # Installing signal callbacks only for RMQLoaderTask
+        # Installing signal callbacks only for RMQDomainDataLoaderTask
         if self.policy != "thread":
             for s in self.signals:
                 signal.signal(s, self.signal_wrapper(self.__class__.__name__, os.getpid()))
+        print(f"{self.__class__.__name__} PID is:", os.getpid())
         self.rmq_consumer.run()
+        print("Returning")
+
+
+class RMQControlMessageTask(RMQDomainDataLoaderTask):
+    """
+    A RMQControlMessageTask consumes JSON-messages from RabbitMQ and forwards them to
+    the o_queue of the pruning Task.
+
+    Attributes:
+        o_queue: The output queue to write the transformed messages
+        credentials: A JSON file with the credentials to log on the RabbitMQ server.
+        certificates: TLS certificates
+        rmq_queue: The RabbitMQ queue to listen to.
+        prefetch_count: Number of messages prefected by RMQ (impact performance)
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def callback_message(self, ch, basic_deliver, properties, body):
+        """
+        Callback that will be called each time a message will be consummed.
+        the connection (or if a problem happened with the connection).
+        """
+        start_time = time.time()
+        data = json.loads(body)
+        if data["request_type"] == "done-training":
+            self.o_queue.put(QueueMessage(MessageType.NewModel, data))
+
+        self.total_time += time.time() - start_time
 
 
 class FSWriteTask(Task):
@@ -358,14 +425,20 @@ class FSWriteTask(Task):
         with AMSMonitor(obj=self, tag="internal_loop", accumulate=False):
             while True:
                 # This is a blocking call
+                print(f"{self.__class__.__name__} Receives messages at queue:", self.i_queue)
                 item = self.i_queue.get(block=True)
+                print(f"{self.__class__.__name__} Received messages at queue:", self.i_queue)
                 if item.is_terminate():
                     for k, v in data_files.items():
                         v[0].close()
-                        self.o_queue.put(QueueMessage(MessageType.Process, v[0].file_name))
+                        self.o_queue.put(QueueMessage(MessageType.Process, (k, v[0].file_name)))
                     del data_files
+                    print(f"Received Terminate {self.__class__.__name__}")
                     self.o_queue.put(QueueMessage(MessageType.Terminate, None))
                     break
+                elif item.is_delete():
+                    print(f"Sending Delete Message Type {self.__class__.__name__}")
+                    self.o_queue.put(item)
                 elif item.is_process():
                     data = item.data()
                     if data.domain_name not in data_files:
@@ -384,7 +457,11 @@ class FSWriteTask(Task):
 
                     if data_files[data.domain_name][1] >= 2 * 1024 * 1024 * 1024:
                         data_files[data.domain_name][0].close()
-                        self.o_queue.put(QueueMessage(MessageType.Process, data_files[data.domain_name][0].file_name))
+                        self.o_queue.put(
+                            QueueMessage(
+                                MessageType.Process, (data.domain_name, data_files[data.domain_name][0].file_name)
+                            )
+                        )
                         del data_files[data.domain_name]
 
         end = time.time()
@@ -433,20 +510,28 @@ class PushToStore(Task):
 
         with AMSMonitor(obj=self, tag="internal_loop", record=[]):
             while True:
+                print(f"{self.__class__.__name__} Receives messages at queue:", self.i_queue)
                 item = self.i_queue.get(block=True)
+                print(f"{self.__class__.__name__} Received messages at queue:", self.i_queue)
                 if item.is_terminate():
+                    print(f"Received Terminate {self.__class__.__name__}")
                     break
+                if item.is_delete():
+                    print(f"Sending Delete Message Type {self.__class__.__name__}")
+                    fn = item.data()
+                    Path(fn).unlink()
                 elif item.is_process():
                     with AMSMonitor(obj=self, tag="request_block", record=["nb_requests", "total_filesize"]):
                         self.nb_requests += 1
-                        src_fn = Path(item.data())
+                        domain_name, file_name = item.data()
+                        if domain_name == None:
+                            domain_name = "unknown-domain"
+                        src_fn = Path(file_name)
                         dest_file = self.dir / src_fn.name
                         if src_fn != dest_file:
                             shutil.move(src_fn, dest_file)
-                        # TODO: Fix me candidates now will be "indexed by the name"
-                        warnings.warn("AMS Kosh manager does not operate with multi-models")
                         if self._store:
-                            db_store.add_candidates([str(dest_file)])
+                            db_store.add_candidates(domain_name, [str(dest_file)])
 
                         self.total_filesize += os.stat(src_fn).st_size
 
@@ -473,7 +558,7 @@ class Pipeline(ABC):
     supported_policies = {"sequential", "thread", "process"}
     supported_writers = {"shdf5", "dhdf5", "csv"}
 
-    def __init__(self, db_dir, store, dest_dir=None, stage_dir=None, db_type="hdf5"):
+    def __init__(self, db_dir, store, dest_dir=None, stage_dir=None, db_type="dhdf5"):
         """
         initializes the Pipeline class to write the final data in the 'dest_dir' using a file writer of type 'db_type'
         and optionally caching the data in the 'stage_dir' before making them available in the cache store.
@@ -493,7 +578,7 @@ class Pipeline(ABC):
         if stage_dir is not None:
             self.stage_dir = stage_dir
 
-        self.actions = list()
+        self.user_action = None
 
         self.db_type = db_type
 
@@ -501,17 +586,21 @@ class Pipeline(ABC):
 
         self.store = store
 
-    def add_data_action(self, callback):
+    def add_user_action(self, obj):
         """
         Adds an action to be performed at the data before storing them in the filesystem
 
         Args:
             callback: A callback to be called on every input, output.
         """
-        if not callable(callback):
-            raise TypeError(f"{self.__class__.__name__} requires a callable as an argument")
 
-        self.actions.append(callback)
+        if not (hasattr(obj, "data_cb") and callable(getattr(obj, "data_cb"))):
+            raise TypeError(f"User provided object {obj} does not have data_cb")
+
+        if not (hasattr(obj, "update_model_cb") and callable(getattr(obj, "update_model_cb"))):
+            raise TypeError(f"User provided object {obj} does not have data_cb")
+
+        self.user_action = obj
 
     def _seq_execute(self):
         """
@@ -536,8 +625,10 @@ class Pipeline(ABC):
         for e in executors:
             e.start()
 
+        print(f"{self.__class__.__name__} joining threads")
         for e in executors:
             e.join()
+        print(f"{self.__class__.__name__} Threads are done")
 
     def _execute_tasks(self, policy):
         """
@@ -567,17 +658,27 @@ class Pipeline(ABC):
         # Every action requires 1 input and one output q. But the output
         # q is used as an inut q on the next action thus we need num actions -1.
         # 2 extra queues to store to data-store and publish on kosh
-        num_queues = 1 + len(self.actions) - 1 + 2
-        self._queues = [_qType() for i in range(num_queues)]
+        self._queues = [_qType() for i in range(3)]
 
         self._tasks = [self.get_load_task(self._queues[0], policy)]
-        for i, a in enumerate(self.actions):
-            self._tasks.append(ForwardTask(self._queues[i], self._queues[i + 1], a))
+
+        self._tasks.append(
+            ForwardTask(
+                self.ams_config.db_path,
+                self.ams_config.db_store,
+                self.ams_config.name,
+                self._queues[0],
+                self._queues[1],
+                self.user_action,
+            )
+        )
+        if self.requires_model_update():
+            self._tasks.append(self.get_model_update_task(self._queues[0], policy))
 
         # After user actions we store into a file
-        self._tasks.append(FSWriteTask(self._queues[-2], self._queues[-1], self._writer, self.stage_dir))
+        self._tasks.append(FSWriteTask(self._queues[1], self._queues[2], self._writer, self.stage_dir))
         # After storing the file we make it public to the kosh store.
-        self._tasks.append(PushToStore(self._queues[-1], self.ams_config, self.dest_dir, self.store))
+        self._tasks.append(PushToStore(self._queues[2], self.ams_config, self.dest_dir, self.store))
 
     def execute(self, policy):
         """
@@ -595,6 +696,17 @@ class Pipeline(ABC):
         self._link_pipeline(policy)
         # Execute them
         self._execute_tasks(policy)
+
+    @abstractmethod
+    def requires_model_update(self):
+        """
+        Returns whether the pipeline provides a model-update message parsing mechanism
+        """
+        return False
+
+    @abstractmethod
+    def get_model_update_task(self, o_queue, policy):
+        pass
 
     @abstractmethod
     def get_load_task(self, o_queue, policy):
@@ -705,6 +817,12 @@ class FSPipeline(Pipeline):
             args.pattern,
         )
 
+    def requires_model_update(self):
+        return False
+
+    def get_model_update_task(self, o_queue, policy):
+        raise RuntimeError("FSPipeline does not support model update")
+
 
 class RMQPipeline(Pipeline):
     """
@@ -720,7 +838,22 @@ class RMQPipeline(Pipeline):
         rmq_queue: The RMQ queue to listen to.
     """
 
-    def __init__(self, db_dir, store, dest_dir, stage_dir, db_type, host, port, vhost, user, password, cert, rmq_queue):
+    def __init__(
+        self,
+        db_dir,
+        store,
+        dest_dir,
+        stage_dir,
+        db_type,
+        host,
+        port,
+        vhost,
+        user,
+        password,
+        cert,
+        data_queue,
+        model_update_queue=None,
+    ):
         """
         Initialize a RMQPipeline that will write data to the 'dest_dir' and optionally publish
         these files to the kosh-store 'store' by using the stage_dir as an intermediate directory.
@@ -732,7 +865,10 @@ class RMQPipeline(Pipeline):
         self._user = user
         self._password = password
         self._cert = Path(cert)
-        self._rmq_queue = rmq_queue
+        self._data_queue = data_queue
+        self._model_update_queue = model_update_queue
+        print("Received a data queue of", self._data_queue)
+        print("Received a model_update queue of", self._model_update_queue)
 
     def get_load_task(self, o_queue, policy):
         """
@@ -741,10 +877,10 @@ class RMQPipeline(Pipeline):
         Args:
             o_queue: The queue the load task will push read data.
 
-        Returns: An RMQLoaderTask instance reading data from the
+        Returns: An RMQDomainDataLoaderTask instance reading data from the
         filesystem and forwarding the values to the o_queue.
         """
-        return RMQLoaderTask(
+        return RMQDomainDataLoaderTask(
             o_queue,
             self._host,
             self._port,
@@ -752,19 +888,40 @@ class RMQPipeline(Pipeline):
             self._user,
             self._password,
             self._cert,
-            self._rmq_queue,
+            self._data_queue,
+            policy,
+        )
+
+    def get_model_update_task(self, o_queue, policy):
+        """
+        Return a Task receives messages from the training job regarding the status of new models
+
+        Args:
+            o_queue: The queue to push the model update message.
+
+        Returns: An RMQControlMessageTask instance reading data from self._model_update_queue
+        and forwarding the values to the o_queue.
+        """
+        return RMQControlMessageTask(
+            o_queue,
+            self._host,
+            self._port,
+            self._vhost,
+            self._user,
+            self._password,
+            self._cert,
+            self._model_update_queue,
             policy,
         )
 
     @staticmethod
     def add_cli_args(parser):
         """
-        Add cli arguments to the parser required by this Pipeline.
+        Add cli arguments to the parser required by this Pipelinereturn .
         """
         Pipeline.add_cli_args(parser)
-        parser.add_argument("-c", "--creds", help="Credentials file (JSON)", required=True)
-        parser.add_argument("-t", "--cert", help="TLS certificate file", required=True)
-        parser.add_argument("-q", "--queue", help="On which queue to receive messages", required=True)
+        parser.add_argument("-c", "--creds", help="AMS credentials file (JSON)", required=True)
+        parser.add_argument("-u", "--update-rmq-models", help="Update-rmq-models", action="store_true")
         return
 
     @classmethod
@@ -773,13 +930,7 @@ class RMQPipeline(Pipeline):
         Create RMQPipeline from the user provided CLI.
         """
 
-        # TODO: implement an interface so users can plug any parser for RMQ credentials
-        config = cls.parse_credentials(cls, args.creds)
-        host = config["service-host"]
-        port = config["service-port"]
-        vhost = config["rabbitmq-vhost"]
-        user = config["rabbitmq-user"]
-        password = config["rabbitmq-password"]
+        config = AMSRMQConfiguration.from_json(args.creds)
 
         return cls(
             args.persistent_db_path,
@@ -787,22 +938,18 @@ class RMQPipeline(Pipeline):
             args.dest_dir,
             args.stage_dir,
             args.db_type,
-            host,
-            port,
-            vhost,
-            user,
-            password,
-            args.cert,
-            args.queue,
+            config.service_host,
+            config.service_port,
+            config.rabbitmq_vhost,
+            config.rabbitmq_user,
+            config.rabbitmq_password,
+            config.rabbitmq_cert,
+            config.rabbitmq_outbound_queue,
+            config.rabbitmq_ml_status_queue if args.update_rmq_models else None,
         )
 
-    @staticmethod
-    def parse_credentials(self, json_file: str) -> dict:
-        """Internal method to parse the credentials file"""
-        data = {}
-        with open(json_file, "r") as f:
-            data = json.load(f)
-        return data
+    def requires_model_update(self):
+        return self._model_update_queue is not None
 
 
 def get_pipeline(src_mechanism="fs"):

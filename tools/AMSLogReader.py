@@ -29,23 +29,26 @@ def plot(df, uq, memory, out):
         fig = plt.figure(constrained_layout=True)
         subfigs = fig.subfigures(nrows=num_rows, ncols=1)
         for i, (fn, gdf) in enumerate(df.groupby("FileName")):
-            subfig = subfigs[i]
+            if num_rows > 1:
+                subfig = subfigs[i]
+            else:
+                subfig=subfigs
             subfig.suptitle(f"Log File : {fn}")
-            ax = subfig.subplots(nrows=1, ncols=2)
+            ax = subfig.subplots(nrows=1, ncols=1)
             plot_lines(
-                ax[0],
+                ax,
                 gdf[["AMS Memory At Intro", "AMS Memory At Outro"]],
                 xtitle="invocation-id",
                 ytitle="Memory (MB)",
             )
-            ax[0].legend(frameon=False, shadow=False, fancybox=False)
-            tmp = pd.DataFrame(gdf["AMS Memory At Outro"] - gdf["AMS Memory At Intro"], columns=["diff"])
-            plot_lines(
-                ax[1],
-                tmp,
-                xtitle="invocation-id",
-                ytitle="Memory Diff (Outro-Intro)",
-            )
+            ax.legend(frameon=False, shadow=False, fancybox=False)
+#            tmp = pd.DataFrame(gdf["AMS Memory At Outro"] - gdf["AMS Memory At Intro"], columns=["diff"])
+#            plot_lines(
+#                ax[1],
+#                tmp,
+#                xtitle="invocation-id",
+#                ytitle="Memory Diff (Outro-Intro)",
+#            )
 
         fig.savefig(f"{out}.ams.mem.pdf")
         plt.close()
@@ -82,13 +85,15 @@ def digest_memory(memory_lines):
         match = re.search(pattern, l)
         if match:
             value = float(match.group(1)) / (1024.0 * 1024.0)
+            print(value)
             if "Start" in l:
                 mem["Start"].append(value)
             elif "End" in l:
                 mem["End"].append(value)
             else:
                 raise RuntimeError(f"Memory Line : {l} does not contain End/Start")
-
+    
+    mem["End"] = mem["End"][0:len(mem["Start"])]
     return mem
 
 
@@ -173,6 +178,9 @@ def main():
 
     for k, v in files.items():
         if len(v[0]) > 0:
+            for v1 in v[0]:
+                print(len(v1))
+            print(v[1])
             data = np.array(v[0])
             df = pd.DataFrame(data.T, columns=v[1])
             df["FileName"] = k

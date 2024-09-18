@@ -18,7 +18,11 @@ class UserAction(ABC):
         pass
 
     @abstractmethod
-    def __call__(self, inputs, outputs):
+    def data_cb(self, inputs, outputs):
+        pass
+
+    @abstractmethod
+    def update_model_cb(self, domain, model):
         pass
 
     @staticmethod

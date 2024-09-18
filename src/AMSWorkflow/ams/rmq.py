@@ -3,14 +3,17 @@
 #
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+from dataclasses import dataclass
 import functools
 import logging
 import ssl
 import struct
 import traceback
-from typing import Callable, Tuple
+from pathlib import Path
+from typing import Callable, Optional, Tuple
 
 import numpy as np
+import json
 import pika
 
 
@@ -40,7 +43,7 @@ class AMSMessage(object):
 
             |_Header_|_Datatype_|_Rank_|_DomainSize_|_#elems_|_InDim_|_OutDim_|_Pad_|_DomainName_|.Real_Data.|
 
-        Then the data starts at byte 16 with the domain name, then the real data and 
+        Then the data starts at byte 16 with the domain name, then the real data and
         is structured as pairs of input/outputs. Let K be the total number of elements,
         then we have K pairs of inputs/outputs (either float or double):
 
@@ -143,9 +146,7 @@ class AMSMessage(object):
         # Multiple AMS messages could be packed in one RMQ message
         while body:
             header_info = self._parse_header(body)
-            print("Received domain name ", header_info["domain_size"])
             domain_name, temp_input, temp_output = self._parse_data(body, header_info)
-            print(f"MSG: {domain_name} input shape {temp_input.shape} outpute shape {temp_output.shape}")
             # total size of byte we read for that message
             chunk_size = header_info["hsize"] + header_info["dsize"] + header_info["domain_size"]
             input.append(temp_input)
@@ -302,16 +303,16 @@ class AsyncConsumer(object):
     def __init__(
         self,
         host: str,
-        port: str,
+        port: int,
         vhost: str,
         user: str,
         password: str,
         cert: str,
         queue: str,
         prefetch_count: int = 1,
-        on_message_cb: Callable = None,
-        on_close_cb: Callable = None,
-        logger: logging.Logger = None,
+        on_message_cb: Optional[Callable] = None,
+        on_close_cb: Optional[Callable] = None,
+        logger: Optional[logging.Logger] = None,
     ):
         """Create a new instance of the consumer class, passing in the AMQP
         URL used to connect to RabbitMQ.
@@ -320,7 +321,7 @@ class AsyncConsumer(object):
         :param str cacert: The TLS certificate
         :param str queue: The queue to listen to
         :param Callable: on_message_cb this function will be called each time Pika receive a message
-        :param Callable: on_message_cb this function will be called when Pika will close the connection
+        :param Callable: on_close_cb this function will be called when Pika will close the connection
         :param int: prefetch_count Define consumer throughput, should be relative to resource and number of messages expected
 
         """
@@ -667,3 +668,210 @@ class AsyncConsumer(object):
                 if self._connection:
                     self._connection.ioloop.stop()
             self.logger.debug("Stopped RabbitMQ connection")
+
+
+class AsyncFanOutConsumer(AsyncConsumer):
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        vhost: str,
+        user: str,
+        password: str,
+        cert: str,
+        queue: str,
+        prefetch_count: int = 1,
+        on_message_cb: Optional[Callable] = None,
+        on_close_cb: Optional[Callable] = None,
+        logger: Optional[logging.Logger] = None,
+    ):
+        super().__init__(
+            host, port, vhost, user, password, cert, queue, prefetch_count, on_message_cb, on_close_cb, logger
+        )
+
+    # Callback when the channel is open
+    def on_channel_open(self, channel):
+        self._channel = channel
+        self.logger.debug("Channel opened")
+        self.add_on_channel_close_callback()
+        self._channel.exchange_declare(
+            exchange="control-panel", exchange_type="fanout", callback=self.on_exchange_declared
+        )
+
+    # Callback when the exchange is declared
+    def on_exchange_declared(self, frame):
+        self._channel.queue_declare(queue="", exclusive=True, callback=self.on_queue_declared)
+
+    # Callback when the queue is declared
+    def on_queue_declared(self, queue_result):
+        self._queue = queue_result.method.queue
+        self._channel.queue_bind(exchange="control-panel", queue=self._queue, callback=self.on_queue_bound)
+
+    # Callback when the queue is bound to the exchange
+    def on_queue_bound(self, frame):
+        self.set_qos()
+
+
+class AMSSyncProducer:
+
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        vhost: str,
+        user: str,
+        password: str,
+        cert: str,
+        publish_queue: str,
+        logger: Optional[logging.Logger] = None,
+    ):
+
+        self.host = host
+        self.port = port
+        self.vhost = vhost
+        self.user = user
+        self.password = password
+        self.cert = cert
+        self._connected = False
+        self._publish_queue = publish_queue
+        self._num_sent_messages = 0
+        self._num_confirmed_messages = 0
+
+    def open(self):
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.verify_mode = ssl.CERT_REQUIRED
+        context.check_hostname = False
+        context.load_verify_locations(self.cert)
+        credentials = pika.PlainCredentials(self.user, self.password)
+        self.connection_parameters = pika.ConnectionParameters(
+            host=self.host,
+            port=self.port,
+            virtual_host=self.vhost,
+            credentials=credentials,
+            ssl_options=pika.SSLOptions(context),
+        )
+
+        self.connection = pika.BlockingConnection(self.connection_parameters)
+        self.channel = self.connection.channel()
+
+        result = self.channel.queue_declare(queue=self._publish_queue, exclusive=False)
+        # TODO: assert if publish_queue is different than method.queue.
+        # Verify if this is guaranteed by the RMQ specification.
+        self._publish_queue = result.method.queue
+        self._connected = True
+        return self
+
+    def close(self):
+        self.connection.close()
+
+    def __enter__(self):
+        return self.open()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def send_message(self, message):
+        self._num_sent_messages += 1
+        try:
+            self.channel.basic_publish(exchange="", routing_key=self._publish_queue, body=message)
+        except pika.exceptions.UnroutableError:
+            print(f" [{self._num_sent_messages}] Message could not be confirmed")
+        else:
+            self._num_confirmed_messages += 1
+
+
+class AMSFanOutProducer(AMSSyncProducer):
+
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        vhost: str,
+        user: str,
+        password: str,
+        cert: str,
+        logger: logging.Logger = None,
+    ):
+        super().__init__(host, port, vhost, user, password, cert, "control-panel", logger)
+
+    def open(self):
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.verify_mode = ssl.CERT_REQUIRED
+        context.check_hostname = False
+        context.load_verify_locations(self.cert)
+        credentials = pika.PlainCredentials(self.user, self.password)
+        self.connection_parameters = pika.ConnectionParameters(
+            host=self.host,
+            port=self.port,
+            virtual_host=self.vhost,
+            credentials=credentials,
+            ssl_options=pika.SSLOptions(context),
+        )
+
+        self.connection = pika.BlockingConnection(self.connection_parameters)
+        self.channel = self.connection.channel()
+        self.channel.exchange_declare(exchange="control-panel", exchange_type="fanout")
+        self._connected = True
+        return self
+
+    def close(self):
+        self.channel.exchange_delete(exchange=self._publish_queue)
+
+    def broadcast(self, message):
+        self._num_sent_messages += 1
+        try:
+            self.channel.basic_publish(exchange="control-panel", routing_key="", body=message)
+            print(f" [x] Sent '{message}'")
+        except pika.exceptions.UnroutableError:
+            print(f" [{self._num_sent_messages}] Message could not be confirmed")
+        else:
+            self._num_confirmed_messages += 1
+
+
+@dataclass
+class AMSRMQConfiguration:
+    service_port: int
+    service_host: str
+    rabbitmq_erlang_cookie: str
+    rabbitmq_name: str
+    rabbitmq_password: str
+    rabbitmq_user: str
+    rabbitmq_vhost: str
+    rabbitmq_cert: str
+    rabbitmq_inbound_queue: str
+    rabbitmq_outbound_queue: str
+    rabbitmq_ml_submit_queue: str
+    rabbitmq_ml_status_queue: str
+
+    def __post_init__(self):
+        if not Path(self.rabbitmq_cert).exists():
+            raise RuntimeError(f"Certificate rmq path: {self.rabbitmq_cert} does not exist")
+
+    @classmethod
+    def from_json(cls, json_file):
+        if not Path(json_file).exists():
+            raise RuntimeError(f"Certificate rmq path: {json_file} does not exist")
+
+        with open(json_file, "r") as fd:
+            data = json.load(fd)
+        data = {key.replace("-", "_"): value for key, value in data.items()}
+
+        return cls(**data)
+
+    def to_dict(self, AMSlib=False):
+        assert AMSlib, "AMSRMQConfiguration cannot convert class to non amslib dictionary"
+        if AMSlib:
+            return {
+                "service-port": self.service_port,
+                "service-host": self.service_host,
+                "rabbitmq-erlang-cookie": self.rabbitmq_erlang_cookie,
+                "rabbitmq-name": self.rabbitmq_name,
+                "rabbitmq-password": self.rabbitmq_password,
+                "rabbitmq-user": self.rabbitmq_user,
+                "rabbitmq-vhost": self.rabbitmq_vhost,
+                "rabbitmq-cert": self.rabbitmq_cert,
+                "rabbitmq-outbound-queue": self.rabbitmq_outbound_queue,
+                "rabbitmq-exchange": "not-used",
+                "rabbitmq-routing-key": "",
+            }
+        raise

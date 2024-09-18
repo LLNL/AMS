@@ -6,6 +6,7 @@
 import datetime
 import socket
 import uuid
+from pathlib import Path
 
 
 def get_unique_fn():
@@ -18,3 +19,10 @@ def get_unique_fn():
         str(datetime.datetime.now()).replace("-", "D").replace(" ", "T").replace(":", "C").replace(".", "p"),
     ]
     return "_".join(fn)
+
+
+def mkdir(root_path, fn):
+    _tmp = root_path / Path(fn)
+    if not _tmp.exists():
+        _tmp.mkdir(parents=True, exist_ok=True)
+    return _tmp
