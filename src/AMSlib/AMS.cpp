@@ -382,6 +382,11 @@ private:
         getEntry<std::string>(rmq_entry, "rabbitmq-routing-key");
     bool update_surrogate = getEntry<bool>(entry, "update_surrogate");
 
+    if(exchange == "") {
+      DBG(AMS, "Found empty RMQ exchange, deactivating model update")
+      update_surrogate = false;
+    }
+
     auto &DB = ams::db::DBManager::getInstance();
     DB.instantiate_rmq_db(port,
                           host,
