@@ -25,7 +25,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           platforms: linux/amd64
-          file: .github/containers/x86_64-broadwell-gcc11.2.1/Dockerfile
+          context: .github/containers/x86_64-broadwell-gcc11.2.1
           push: true
           provenance: false
           tags: ghcr.io/llnl/ams-ci-almalinux8:latest
@@ -34,7 +34,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           platforms: linux/amd64
-          file: .github/containers/x86_64-broadwell-cuda11.6.1/Dockerfile
+          context: .github/containers/x86_64-broadwell-cuda11.6.1
           push: true
           provenance: false
           tags: ghcr.io/llnl/ams-ci-cuda11.6.1:latest
