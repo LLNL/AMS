@@ -20,7 +20,8 @@ spack:
   - flux-sched
   - py-pika
   - amqp-cpp +tcp
-  - adiak
+  #- adiak
+  - nlohmann-json
   view: local
   concretizer:
     unify: true
@@ -77,6 +78,6 @@ spack:
       require: '@0.28'
     py-pika:
       require: '@1.3.1'
-    adiak:
-      require: '@0.4.0+shared+mpi'
+    #adiak:
+    #  require: '@0.4.0+shared+mpi'
 
