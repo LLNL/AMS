@@ -226,7 +226,7 @@ class AMSWorkflowManager:
         if not all(key in data["db"] for key in {"kosh-path", "name", "store-name"}):
             raise KeyError("Workflow description files misses entries in 'db'")
 
-        store = AMSDataStore(data["db"]["kosh-path"], data["db"]["store-name"], data["db"]["name"])
+        store = AMSDataStore(data["db"]["kosh-path"], data["db"]["store-name"], data["db"]["name"]).open()
 
         if "domain-jobs" not in data:
             raise KeyError("Workflow description files misses 'domain-jobs' entry")
@@ -235,6 +235,9 @@ class AMSWorkflowManager:
             raise RuntimeError("There are no jobs described in workflow description file")
 
         domain_jobs = create_domain_list(data["domain-jobs"])
+        ams_rmq_config = AMSRMQConfiguration.from_json(rmq_config)
+        for job in domain_jobs:
+            job.precede_deploy(store, ams_rmq_config)
 
         if "stage-job" not in data:
             raise RuntimeError("There is no description for a stage-job")
@@ -254,6 +257,7 @@ class AMSWorkflowManager:
         stage_job.environ = os.environ
         stage_job.stdout = "stager_test.out"
         stage_job.stderr = "stager_test.err"
+        print("Stager command is:", " ".join(stage_job.generate_cli_command()))
         stage_jobs.append(stage_job)
 
         sub_select_jobs = JobList()
@@ -279,8 +283,9 @@ class AMSWorkflowManager:
         for domain in wf_domain_names:
             assert domain in train_domains, f"Domain {domain} misses a train description"
             assert domain in sub_select_domains, f"Domain {domain} misses a subselection description"
-
+        store.close()
         store = AMSDataStore(data["db"]["kosh-path"], data["db"]["store-name"], data["db"]["name"])
+
         return cls(
             rmq_config,
             data["db"]["kosh-path"],

@@ -18,15 +18,15 @@ import torch.nn.init as init
 
 
 class ExampleDataset(Dataset):
-    def __init__(self, X, y):
-        self.X = X
+    def __init__(self, x, y):
+        self.x = x
         self.y = y
 
     def __len__(self):
-        return len(self.X)
+        return len(self.x)
 
     def __getitem__(self, idx):
-        features = torch.tensor(self.X[idx]).to(torch.float32)
+        features = torch.tensor(self.x[idx]).to(torch.float32)
         target = torch.tensor(self.y[idx]).to(torch.float32)
         return features, target
 

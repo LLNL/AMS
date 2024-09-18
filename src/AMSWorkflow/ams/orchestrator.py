@@ -7,6 +7,7 @@ import json
 import threading
 import signal
 import time
+import os
 from queue import Queue
 import warnings
 from enum import Enum
@@ -209,6 +210,7 @@ class DomainSpec:
             self._train_job_spec = value
         elif isinstance(value, dict):
             self._train_job_spec = AMSJob.from_dict(value)
+            self._train_job_spec.environ = os.environ
         else:
             raise ValueError("The train job spec expects either a dictionary or a AMSJob type")
         return
@@ -225,6 +227,7 @@ class DomainSpec:
             self._sub_select_job_spec = value
         elif isinstance(value, dict):
             self._sub_select_job_spec = AMSJob.from_dict(value)
+            self._sub_select_job_spec.environ = os.environ
         else:
             raise ValueError("The train job spec expects either a dictionary or a AMSJob type")
         return

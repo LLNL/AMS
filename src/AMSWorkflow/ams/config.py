@@ -70,7 +70,7 @@ class AMSInstance(metaclass=AMSSingleton):
             raise RuntimeError("Config file expects a 'db' entry\n")
 
         for key in {"path", "type"}:
-            assert key in db, f"Config does not have {k} entry"
+            assert key in db, f"Config does not have {key} entry"
         return cls(config["name"], db["path"], db["type"], db["store"] if "store" in db else None)
 
     @classmethod

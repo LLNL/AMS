@@ -41,7 +41,7 @@ class AMSFluxExecutorFuture(Future):
 
     # NOTE: This is the primary difference of the original FluxExecutorFuture.
     # FluxExecutorFuture uses frozensets without adding "memo" and requires all registered
-    # callbacks  to be part of the EVENTS. Thus we cannot inherit directly from it and
+    # callbacks  to be part of the EVENTS.
     EVENTS = frozenset(("memo", *list(MAIN_EVENTS)))
 
     @staticmethod
