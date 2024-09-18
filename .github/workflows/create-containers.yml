@@ -2,6 +2,7 @@ name: Deploy containers
 
 on:
   workflow_dispatch:
+  pull_request:
 
 jobs:
   deploy-containers:
