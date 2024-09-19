@@ -38,7 +38,7 @@ def verify_data_collection(fs_path, db_type, num_inputs, num_outputs, name="test
     fp = Path(f"{fs_path}/{fn}")
 
     if name == "" and fp.exists():
-        print("I was expecting file to not exist")
+        print(f"I was expecting file({fp}) to not exist")
         fp.unlink()
         return None, 1
     elif name == "":
@@ -62,7 +62,9 @@ def verify_data_collection(fs_path, db_type, num_inputs, num_outputs, name="test
     elif db_type == "hdf5":
         with h5py.File(fp, "r") as fd:
             dsets = fd.keys()
-            assert len(dsets) == (num_inputs + num_outputs + int(debug_db)), "Expected equal number of inputs/outputs"
+            assert len(dsets) == (
+                num_inputs + num_outputs + int(debug_db) + 1
+            ), "Expected equal number of inputs/outputs"
             inputs = sum(1 for s in dsets if "input" in s)
             assert inputs == num_inputs, "Expected equal number of inputs"
             outputs = sum(1 for s in dsets if "output" in s)
@@ -70,7 +72,7 @@ def verify_data_collection(fs_path, db_type, num_inputs, num_outputs, name="test
             input_data = [[] for _ in range(num_inputs)]
             output_data = [[] for _ in range(num_outputs)]
             for d in dsets:
-                if d == "predicate":
+                if not ("input_" in d or "output_" in d):
                     continue
                 loc = int(d.split("_")[1])
                 if len(fd[d]):

@@ -7,6 +7,7 @@ import datetime
 import socket
 import subprocess
 import uuid
+from pathlib import Path
 
 from typing import Tuple
 
@@ -37,3 +38,9 @@ def generate_tls_certificate(host: str, port: int) -> Tuple[bool,str]:
     if sed.returncode != 0:
         return False, sed.stderr.decode().strip()
     return True, sed.stdout.decode().strip()
+
+def mkdir(root_path, fn):
+    _tmp = root_path / Path(fn)
+    if not _tmp.exists():
+        _tmp.mkdir(parents=True, exist_ok=True)
+    return _tmp

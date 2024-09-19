@@ -5,6 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import argparse
+import time
 import json
 from pathlib import Path
 import shutil
@@ -71,16 +72,18 @@ class AddToStore(StoreCommand):
         ["entry", "e", "Which entry to access", {"choices": AMSDataStore.valid_entries, "required": True}],
         ["metadata", "m", "metadata to search for", {"default": None}],
         ["file", "f", "File to add to store", {"required": True}],
+        ["domain", "d", "The ensemble to add this entry to", {"required": True}],
         ["version", "v", "Assign specific version to the file", {}],
         ["copy", "cp", "Copy data to the underlying AMS directory", {"action": "store_true"}],
     ]
 
-    def __init__(self, entry=None, file="", metadata=None, copy=True, version=None, **kwargs):
+    def __init__(self, entry=None, domain="", file="", metadata=None, copy=True, version=None, **kwargs):
         """
-        Initializes the 'SearchStore' class with the specific query
+        Initializes the 'AddToStore' class with the specific query
 
         Args:
-            entry: Optional name of an ensemble to search for names
+            entry: Mandatory entry name to add the file to
+            domain: Mandatory name of the ensemble to add the file to
             metadata: JSON-like string with key-values to match the kosh-store
             copy: copy the file from the initial location to the underlying store location
             version: Request a search for a specific version
@@ -103,6 +106,7 @@ class AddToStore(StoreCommand):
 
         self._copy = copy
         self._version = version
+        self._domain = domain
 
     def __call__(self, store):
         # If move is supported we first copy the file
@@ -113,27 +117,33 @@ class AddToStore(StoreCommand):
 
         metadata = self._md if self._md is not None else dict()
 
-        store._add_entry(self._entry, store.__class__.entry_mime_types[self._entry], [fn], self._version, metadata)
+        store._add_entry(
+            self._entry, self._domain, store.__class__.entry_mime_types[self._entry], [fn], self._version, metadata
+        )
 
 
 class RemoveFromStore(StoreCommand):
     __cli_options__ = [
         ["entry", "e", "Which entry to access", {"choices": AMSDataStore.valid_entries, "required": True}],
+        ["domain", "d", "The ensemble to add this entry to", {"required": True}],
         ["metadata", "m", "metadata to search for", {"default": None}],
         ["version", "v", "Assign specific version to the file", {}],
         ["purge", "rm", "Delete the files associated with this item", {"action": "store_true"}],
     ]
 
-    def __init__(self, entry=None, metadata=None, version=None, purge=False):
+    def __init__(self, domain=None, entry=None, metadata=None, version=None, purge=False, **kwargs):
         """
-        Initializes the 'SearchStore' class with the specific query
+        Initializes the 'RemoveFromStore' class with the specific query
 
         Args:
             entry: Optional name of an ensemble to search for names
+            domain: Mandatory name of the ensemble to delete the file from
             metadata: JSON-like string with key-values to match the kosh-store
             version: Request a search for a specific version
             purge: Delete the actual underlying file from the filesystem
         """
+
+        super().__init__(**kwargs)
 
         if entry not in AMSDataStore.valid_entries:
             raise RuntimeError(f"{entry} is not a valid entry for AMSStore")
@@ -151,25 +161,27 @@ class RemoveFromStore(StoreCommand):
                 assert version.isdigit(), "Version must be an integer"
                 self._version = int(version)
         self._purge = purge
+        self._domain = domain
 
     def __call__(self, store):
-        found = store.search(self._entry, self._version, self._md)
-        to_remove = [v["uri"] for v in found]
+        found = store.search(domain_name=self._domain, entry=self._entry, version=self._version, metadata=self._md)
+        to_remove = [v["file"] for v in found]
 
-        store._remove_entry_file(self._entry, to_remove, self._purge)
+        store._remove_entry_file(self._domain, self._entry, to_remove, self._purge)
 
 
 class SearchStore(StoreCommand):
     """A class serving kosh-queries"""
 
     __cli_options__ = [
+        ["domain", "d", "Query this domain for information", {"default": None}],
         ["entry", "e", "Query this entry for information", {"choices": AMSDataStore.valid_entries}],
         ["version", "v", "Specific version to query for", {"default": None}],
         ["metadata", "m", "metadata to search for", {"default": None}],
         ["field", "f", "Return field of requested item", {"default": None}],
     ]
 
-    def __init__(self, entry=None, metadata=None, version=None, field=None, **kwargs):
+    def __init__(self, domain=None, entry=None, metadata=None, version=None, field=None, **kwargs):
         """
         Initializes the 'SearchStore' class with the specific query
 
@@ -197,15 +209,16 @@ class SearchStore(StoreCommand):
                 self._version = int(version)
 
         self._field = field
+        self._domain = domain
 
     def __call__(self, store):
         """Searches the 'sttore' for the requested queries"""
-        found = store.search(self._entry, self._version, self._md)
+        found = store.search(domain_name=self._domain, entry=self._entry, version=self._version, metadata=self._md)
 
         if self._field != None:
             found = [p[self._field] for p in found]
             for p in found:
-                print(p)
+                print(json.dumps(p, indent=4))
             return
 
         print(json.dumps(found, indent=4))
@@ -246,7 +259,10 @@ def main():
     action = action_cls.from_cli(args)
 
     with AMSDataStore(action.ams_config.db_path, action.ams_config.db_store, action.ams_config.name, False) as store:
+        start = time.time()
         action(store)
+        end = time.time()
+        print(f"Total time passed: {end-start}")
 
 
 if __name__ == "__main__":

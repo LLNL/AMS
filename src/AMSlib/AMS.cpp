@@ -5,9 +5,12 @@
  * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
  */
 
-#include "AMS.h"
-
 #include <limits.h>
+
+#include "AMS.h"
+#ifdef __ENABLE_MPI__
+#include <mpi.h>
+#endif
 #include <unistd.h>
 
 #include <fstream>
@@ -265,7 +268,7 @@ class AMSWrap
 
 public:
   std::vector<std::pair<AMSDType, void *>> executors;
-  std::vector<AMSAbstractModel> registered_models;
+  std::vector<std::pair<std::string, AMSAbstractModel>> registered_models;
   std::unordered_map<std::string, int> ams_candidate_models;
   AMSDBType dbType = AMSDBType::AMS_NONE;
   ams::ResourceManager &memManager;
@@ -286,7 +289,7 @@ private:
               "(%d)",
               KV.second);
       }
-      auto &abstract_model = registered_models[KV.second];
+      auto &abstract_model = registered_models[KV.second].second;
       abstract_model.dump();
     }
   }
@@ -325,7 +328,9 @@ private:
               ml_domain_mapping[key].c_str())
       }
 
-      registered_models.push_back(AMSAbstractModel(field.value()));
+      registered_models.push_back(
+          std::make_pair(ml_domain_mapping[key],
+                         AMSAbstractModel(field.value())));
       // We add the value of the domain mappings, as the application can
       // only query based on these.
       ams_candidate_models.emplace(ml_domain_mapping[key],
@@ -529,10 +534,15 @@ public:
             "Trying to register model on domain: %s but model already exists "
             "%s",
             domain_name,
-            registered_models[model->second].SPath.c_str());
+            registered_models[model->second].second.SPath.c_str());
     }
-    registered_models.push_back(AMSAbstractModel(
-        uq_policy, surrogate_path, uq_path, db_label, threshold, num_clusters));
+    registered_models.push_back(std::make_pair(std::string(domain_name),
+                                               AMSAbstractModel(uq_policy,
+                                                                surrogate_path,
+                                                                uq_path,
+                                                                db_label,
+                                                                threshold,
+                                                                num_clusters)));
     ams_candidate_models.emplace(std::string(domain_name),
                                  registered_models.size() - 1);
     return registered_models.size() - 1;
@@ -546,7 +556,7 @@ public:
     return model->second;
   }
 
-  AMSAbstractModel &get_model(int index)
+  std::pair<std::string, AMSAbstractModel> &get_model(int index)
   {
     if (index >= registered_models.size()) {
       FATAL(AMS, "Model id: %d does not exist", index);
@@ -623,18 +633,19 @@ ams::AMSWorkflow<FPTypeValue> *_AMSCreateExecutor(AMSCAbstrModel model,
     rm.init();
   });
 
-  AMSAbstractModel &model_descr = _amsWrap.get_model(model);
+  auto &model_descr = _amsWrap.get_model(model);
 
   ams::AMSWorkflow<FPTypeValue> *WF =
       new ams::AMSWorkflow<FPTypeValue>(call_back,
-                                        model_descr.UQPath,
-                                        model_descr.SPath,
-                                        model_descr.DBLabel,
-                                        model_descr.DebugDB,
+                                        model_descr.second.UQPath,
+                                        model_descr.second.SPath,
+                                        model_descr.first,
+                                        model_descr.second.DBLabel,
+                                        model_descr.second.DebugDB,
                                         resource_type,
-                                        model_descr.threshold,
-                                        model_descr.uqPolicy,
-                                        model_descr.nClusters,
+                                        model_descr.second.threshold,
+                                        model_descr.second.uqPolicy,
+                                        model_descr.second.nClusters,
                                         process_id,
                                         world_size);
   return WF;

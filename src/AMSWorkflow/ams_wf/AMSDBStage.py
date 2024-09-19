@@ -73,7 +73,7 @@ def main():
 
     if user_class is not None:
         obj = user_class.from_cli(user_args)
-        pipeline.add_data_action(obj)
+        pipeline.add_user_action(obj)
 
     start = time.time()
     pipeline.execute(args.policy)

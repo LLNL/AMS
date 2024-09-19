@@ -25,6 +25,7 @@ AMSDBStage = "ams_wf.AMSDBStage:main"
 AMSOrchestrator = "ams_wf.AMSOrchestrator:main"
 AMSStore = "ams_wf.AMSStore:main"
 AMSTrain = "ams_wf.AMSTrain:main"
+AMSDeploy = "ams_wf.AMSDeploy:main"
 
 [project.urls]
 "Homepage" = "https://github.com/LLNL/AMS/"

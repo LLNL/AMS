@@ -147,7 +147,7 @@ class AMSHDF5VirtualDBReader:
 
 
 class AMSDataView(abc.ABC):
-    def __init__(self, ams_store, entry="data", versions=None, **options):
+    def __init__(self, ams_store, domain_name, entry="data", versions=None, **options):
         assert len(self.input_feature_names) == len(
             self.input_feature_dims
         ), "input feature names does not match dimensions"
@@ -168,6 +168,8 @@ class AMSDataView(abc.ABC):
         self._store = ams_store
         self._entry = entry
         self._versions = versions
+        self._domain_name = domain_name
+        self._data_files = None
 
     def __enter__(self):
         return self.open()
@@ -183,17 +185,17 @@ class AMSDataView(abc.ABC):
 
     def open(self):
         if self._store.is_open():
-            data_files = self._store.get_files(self._entry, self._versions)
+            self._data_files = self._store.get_files(self._domain_name, self._entry, self._versions)
         else:
             store = self._store.open()
-            data_files = self._store.get_files(self._entry, self._versions)
+            self._data_files = self._store.get_files(self._domain_name, self._entry, self._versions)
             store.close()
-        if not data_files:
+        if not self._data_files:
             raise ValueError(
                 f"Opening AMS Store in entry '{self._entry}' does not have files for the requested versions"
             )
 
-        self._hvds = AMSHDF5VirtualDBReader(data_files, self.input_feature_names, self.output_feature_names)
+        self._hvds = AMSHDF5VirtualDBReader(self._data_files, self.input_feature_names, self.output_feature_names)
         self._fd = h5py.File(self._hvds.fn, "r")
         return self
 
@@ -235,14 +237,17 @@ class AMSDataView(abc.ABC):
             "feature types": self.output_feature_types,
         }
 
-    # methods for collecting data. Should be overloaded for more complex workflows
+    def get_files(self):
+        return self._data_files
 
+    # methods for collecting data. Should be overloaded for more complex workflows
     def get_input_data(self):
         """Return the input data for this dataset"""
 
         if self._fd is None:
             raise RuntimeError("Trying to access closed AMS dataset")
-
+        print("Input keys are", self._fd.keys())
+        print(len(self._fd["inputs"]))
         return self._fd["inputs"]
 
     def get_output_data(self):

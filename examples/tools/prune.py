@@ -17,7 +17,7 @@ class RandomPruneAction(UserAction):
         super().__init__()
         self.drop_rate = drop_rate
 
-    def __call__(self, inputs, outputs):
+    def data_cb(self, inputs, outputs):
         if len(inputs) == 0:
             return
 
@@ -25,6 +25,9 @@ class RandomPruneAction(UserAction):
         pruned_inputs = inputs[randIndexes]
         pruned_outputs = outputs[randIndexes]
         return pruned_inputs, pruned_outputs
+
+    def update_model_cb(self, domain, model):
+        pass
 
     @staticmethod
     def add_cli_args(arg_parser):

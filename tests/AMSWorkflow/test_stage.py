@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 
 from ams import stage, store
+from ams.action import UserAction
 from ams.config import AMSInstance
 from ams.faccessors import get_reader, get_writer
 
@@ -91,14 +92,28 @@ class TestStage(unittest.TestCase):
         self.assertFalse(msg.is_new_model())
 
     def test_forward_task(self):
-        from queue import Queue
+        class FallThroughAction(UserAction):
+            def data_cb(self, inputs, outputs):
+                return inputs, outputs
 
-        def fw_callback(ins, outs):
-            return ins, outs
+            def update_model_cb(self, domain, model):
+                return
+
+            @staticmethod
+            def add_cli_args(parser):
+                return ""
+
+            @classmethod
+            def from_cli(cls, args):
+                return cls()
+
+        from queue import Queue
 
         i_q = Queue()
         o_q = Queue()
-        fw_task = stage.ForwardTask(i_q, o_q, fw_callback)
+        ams_config = AMSInstance()
+        action = FallThroughAction()
+        fw_task = stage.ForwardTask(ams_config.db_path, ams_config.db_store, ams_config.name, i_q, o_q, action)
 
         msgs = list()
         for i in range(0, 10):
@@ -123,7 +138,7 @@ class TestStage(unittest.TestCase):
     def verify(self, data, reader):
         ams_config = AMSInstance()
         with store.AMSDataStore(ams_config.db_path, ams_config.db_store, ams_config.name, False) as fd:
-            versions = fd.get_candidate_versions(True)
+            versions = fd.get_candidate_versions("unknown-domain", associate_files=True)
             r_inputs = list()
             r_outputs = list()
             files = list()
@@ -131,7 +146,7 @@ class TestStage(unittest.TestCase):
                 for fn in versions[k]:
                     files.append(fn)
                     with reader(fn) as tmp_fd:
-                        i, o = tmp_fd.load()
+                        _, i, o = tmp_fd.load()
                         r_inputs.append(i)
                         r_outputs.append(o)
             pipe_in_data = np.sort(np.concatenate(r_inputs, axis=0).flatten())
@@ -148,12 +163,30 @@ class TestStage(unittest.TestCase):
                 np.array_equal(pipe_out_data, origin_out_data),
                 "outputs {pipe_out_data} {r_outputs} do not match after writting them with pipeline",
             )
-            fd.remove_candidates(data_files=files, delete_files=True)
+            fd.remove_candidates("unknown-domain", data_files=files, delete_files=True)
 
         return
 
     def test_fs_pipeline(self):
+        class FallThroughAction(UserAction):
+            def data_cb(self, inputs, outputs):
+                return inputs, outputs
+
+            def update_model_cb(self, domain, model):
+                return
+
+            @staticmethod
+            def add_cli_args(parser):
+                return ""
+
+            @classmethod
+            def from_cli(cls, args):
+                return cls()
+
+        from queue import Queue
         data = list()
+        i_q = Queue()
+        o_q = Queue()
         for i in range(0, 10):
             in_data, out_data = np.random.rand(3, 2), np.random.rand(3, 3)
             data.append((in_data, out_data))
@@ -164,15 +197,16 @@ class TestStage(unittest.TestCase):
             for dest_fmt in stage.Pipeline.supported_writers:
                 dest_rd = get_reader(dest_fmt)
                 dest_wr = get_writer(dest_fmt)
-                # Write the files to disk
-                for j, (i, o) in enumerate(data):
-                    fn = "{0}/data_{1}.{2}".format(self.i_dir, j, src_wr.get_file_format_suffix())
-                    with src_wr(fn) as fd:
-                        fd.store(i, o)
 
                 for p in stage.Pipeline.supported_policies:
                     if "thread" in p:
                         continue
+
+                    # Write the files to disk
+                    for j, (i, o) in enumerate(data):
+                        fn = "{0}/data_{1}.{2}".format(self.i_dir, j, src_wr.get_file_format_suffix())
+                        with src_wr(fn) as fd:
+                            fd.store(i, o)
 
                     pipe = stage.FSPipeline(
                         self.o_dir,
@@ -184,6 +218,7 @@ class TestStage(unittest.TestCase):
                         src_fmt,
                         "*.{0}".format(src_wr.get_file_format_suffix()),
                     )
+                    pipe.add_user_action(FallThroughAction())
                     with timeout(
                         10,
                         error_message="Copying files from {0} to {1} using writer {2} and policy {3}".format(
@@ -192,10 +227,6 @@ class TestStage(unittest.TestCase):
                     ):
                         pipe.execute(p)
                     self.verify(data, dest_rd)
-
-                for j, (i, o) in enumerate(data):
-                    fn = "{0}/data_{1}.{2}".format(self.i_dir, j, src_wr.get_file_format_suffix())
-                    Path(fn).unlink()
 
 
 if __name__ == "__main__":

@@ -92,7 +92,7 @@ class CSVReader(FileReader):
         will have a generic header row specifying the inputs/outputs
 
         Returns:
-            A pair of input, output data values
+            A tuple of None, input, output data values
         """
 
         if self.fd and self.fd.closed:
@@ -105,7 +105,7 @@ class CSVReader(FileReader):
         data = np.array(data)
         input_data = data[:, :output_start]
         output_data = data[:, output_start:]
-        return (input_data.astype(np.float64), output_data.astype(np.float64))
+        return (None, input_data.astype(np.float64), output_data.astype(np.float64))
 
     @classmethod
     def get_file_format_suffix(cls):
@@ -156,11 +156,14 @@ class HDF5CLibReader(FileReader):
         dsets = self.fd.keys()
         input_map = self._map_name_to_index(dsets, "input")
         output_map = self._map_name_to_index(dsets, "output")
+        domain_name = None
+        if "domain_name" in dsets:
+            domain_name = "".join([chr(d) for d in self.fd["domain_name"]])
 
         input_data = np.array(self._pack_dsets_to_list(self.fd, input_map)).T
         output_data = np.array(self._pack_dsets_to_list(self.fd, output_map)).T
 
-        return input_data, output_data
+        return domain_name, input_data, output_data
 
     @classmethod
     def get_file_format_suffix(cls):
@@ -205,8 +208,11 @@ class HDF5PackedReader(FileReader):
 
         input_data = self.fd["inputs"]
         output_data = self.fd["outputs"]
+        domain_name = None
+        if "domain_name" in self.fd:
+            domain_name = "".join([chr(d) for d in self.fd["domain_name"]])
 
-        return np.array(input_data), np.array(output_data)
+        return None, np.array(input_data), np.array(output_data)
 
     @classmethod
     def get_file_format_suffix(cls):
