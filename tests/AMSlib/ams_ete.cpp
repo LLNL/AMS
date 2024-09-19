@@ -130,7 +130,7 @@ void callBackSingle(void *cls, long elements, void **inputs, void **outputs)
 
 int main(int argc, char **argv)
 {
-  if (argc != 13) {
+  if ((argc != 12) && (argc != 13)) {
     std::cout << "Wrong cli\n";
     std::cout << argv[0]
               << " use_device(0|1) num_inputs num_outputs model_path "
@@ -156,7 +156,8 @@ int main(int argc, char **argv)
   std::string db_type_str = std::string(argv[10]);
   std::string fs_path = std::string(argv[11]);
 #ifdef __ENABLE_MPI__
-  const bool use_mpi = static_cast<bool>(std::atoi(argv[12]));
+  const bool use_mpi = (argc == 13) ? static_cast<bool>(std::atoi(argv[12])) : false;
+  MPI_Init(&argc, &argv);
 #else
   const bool use_mpi = false;
 #endif // __ENABLE_MPI__
@@ -177,38 +178,55 @@ int main(int argc, char **argv)
   AMSCAbstrModel model_descr = AMSRegisterAbstractModel(
       "test", uq_policy, threshold, model_path, nullptr, "test", -1);
 
-  int process_id = 0;
-  int world_size = 1;
-
-#ifdef __ENABLE_MPI__
-  if (use_mpi) {
-    MPI_Comm_rank(MPI_COMM_WORLD, &process_id);
-    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-  }
-#endif // __ENABLE_MPI__
-
-
   if (data_type == AMSDType::AMS_SINGLE) {
     Problem<float> prob(num_inputs, num_outputs);
 
-    AMSExecutor wf = AMSCreateExecutor(model_descr,
-                                       AMSDType::AMS_SINGLE,
-                                       resource,
-                                       (AMSPhysicFn)callBackSingle,
-                                       process_id,
-                                       world_size);
+// TODO: I do not think we should pass the process id and world size here.
+// It should be obtained from the communicator passed.
+    AMSExecutor wf =
+#ifdef __ENABLE_MPI__
+      use_mpi?
+        AMSCreateDistributedExecutor(model_descr,
+                                     AMSDType::AMS_SINGLE,
+                                     resource,
+                                     (AMSPhysicFn)callBackSingle,
+                                     MPI_COMM_WORLD,
+                                     0,
+                                     1) :
+#endif // __ENABLE_MPI__
+        AMSCreateExecutor(model_descr,
+                          AMSDType::AMS_SINGLE,
+                          resource,
+                          (AMSPhysicFn)callBackSingle,
+                          0,
+                          1);
 
     prob.ams_run(wf, resource, num_iterations, avg_elements);
   } else {
     Problem<double> prob(num_inputs, num_outputs);
-    AMSExecutor wf = AMSCreateExecutor(model_descr,
-                                       AMSDType::AMS_DOUBLE,
-                                       resource,
-                                       (AMSPhysicFn)callBackDouble,
-                                       process_id,
-                                       world_size);
+    AMSExecutor wf =
+#ifdef __ENABLE_MPI__
+      use_mpi?
+        AMSCreateDistributedExecutor(model_descr,
+                                     AMSDType::AMS_DOUBLE,
+                                     resource,
+                                     (AMSPhysicFn)callBackDouble,
+                                     MPI_COMM_WORLD,
+                                     0,
+                                     1) :
+#endif // __ENABLE_MPI__
+        AMSCreateExecutor(model_descr,
+                          AMSDType::AMS_DOUBLE,
+                          resource,
+                          (AMSPhysicFn)callBackDouble,
+                          0,
+                          1);
     prob.ams_run(wf, resource, num_iterations, avg_elements);
   }
+
+#ifdef __ENABLE_MPI__
+  MPI_Finalize();
+#endif // __ENABLE_MPI__
 
   return 0;
 }

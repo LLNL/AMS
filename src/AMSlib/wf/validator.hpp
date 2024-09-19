@@ -201,8 +201,13 @@ VPCollector<FPTypeValue>::VPCollector(unsigned seed, MPI_Comm comm)
 : m_comm(comm), m_num_pred_loc(0u), m_pred_loc(nullptr), m_pred_loc_new(nullptr),
   m_tot_num_preds(0u), m_tot_num_preds_pos(0u)
 {
-  MPI_Comm_rank(comm, &m_rank);
-  MPI_Comm_size(comm, &m_num_ranks);
+  if (comm == MPI_COMM_NULL) {
+    m_rank = 0;
+    m_num_ranks = 1;
+  } else {
+    MPI_Comm_rank(comm, &m_rank);
+    MPI_Comm_size(comm, &m_num_ranks);
+  }
   m_rng.seed(seed + 1357u + m_rank);
   m_rng();
 }

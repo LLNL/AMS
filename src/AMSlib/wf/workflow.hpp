@@ -73,7 +73,7 @@ class AMSWorkflow
   std::shared_ptr<ams::db::BaseDB> DB;
 
   /** @brief The process id. For MPI runs this is the rank */
-  const int rId;
+  int rId;
 
   /** @brief The total number of processes participating in the simulation
    * (world_size for MPI) */
@@ -247,7 +247,17 @@ public:
   void set_physics(AMSPhysicFn _AppCall) { AppCall = _AppCall; }
 
 #ifdef __ENABLE_MPI__
-  void set_communicator(MPI_Comm communicator) { comm = communicator; }
+  void set_communicator(MPI_Comm communicator) {
+    comm = communicator;
+
+    if (comm == MPI_COMM_NULL) {
+      rId = 0;
+      wSize = 1;
+    } else {
+      MPI_Comm_rank(comm, &rId);
+      MPI_Comm_size(comm, &wSize);
+    }
+  }
 #endif
 
   void set_exec_policy(AMSExecPolicy policy) { ePolicy = policy; }
@@ -255,7 +265,7 @@ public:
   bool should_load_balance() const
   {
 #ifdef __ENABLE_MPI__
-    return (comm != MPI_COMM_NULL && ePolicy == AMSExecPolicy::AMS_BALANCED);
+    return (comm != MPI_COMM_NULL && ePolicy == AMSExecPolicy::AMS_BALANCED && (wSize > 1));
 #else
     return false;
 #endif
