@@ -28,6 +28,9 @@ build_and_test() {
     "WITH_CUDA ${WITH_CUDA}"
   echo "*******************************************************************************************"
 
+  mkdir -p /tmp/ams
+  pushd /tmp/ams
+
   cleanup
 
   python -m venv ci-venv
@@ -64,6 +67,9 @@ build_and_test() {
   popd
 
   cleanup
+
+  popd
+  rm -rf /tmp/ams
 }
 
 # build_and_test WITH_TORCH WITH_FAISS WITH_HDF5 WITH_MPI
