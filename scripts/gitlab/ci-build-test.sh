@@ -5,12 +5,19 @@ source scripts/gitlab/setup-env.sh
 export CTEST_OUTPUT_ON_FAILURE=1
 # WITH_CUDA is defined in the per machine job yml.
 
+cleanup() {
+  if [ -n "$VIRTUAL_ENV" ]; then
+    deactivate
+  fi
+  rm -rf ci-venv
+  rm -rf build
+}
+
 build_and_test() {
   WITH_TORCH=${1}
   WITH_FAISS=${2}
   WITH_HDF5=${3}
   WITH_MPI=${4}
-  WITH_CALIPER=${5}
 
   echo "*******************************************************************************************"
   echo "Build configuration" \
@@ -21,7 +28,13 @@ build_and_test() {
     "WITH_CUDA ${WITH_CUDA}"
   echo "*******************************************************************************************"
 
-  rm -rf build
+  mkdir -p /tmp/ams
+  pushd /tmp/ams
+
+  cleanup
+
+  python -m venv ci-venv
+  source ci-venv/bin/activate
   mkdir build
   pushd build
 
@@ -53,7 +66,10 @@ build_and_test() {
   make test || { echo "Tests failed"; exit 1; }
   popd
 
-  rm -rf build
+  cleanup
+
+  popd
+  rm -rf /tmp/ams
 }
 
 # build_and_test WITH_TORCH WITH_FAISS WITH_HDF5 WITH_MPI

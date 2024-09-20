@@ -1,0 +1,53 @@
+name: Deploy containers
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy-containers:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Free up disk space on runner
+        run: |
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/dotnet
+          sudo apt-get remove -y '^aspnetcore-.*'
+          sudo apt-get remove -y '^dotnet-.*' --fix-missing
+          sudo apt-get remove -y '^llvm-.*' --fix-missing
+          sudo apt-get remove -y google-cloud-cli --fix-missing
+          sudo apt-get remove -y azure-cli google-chrome-stable firefox powershell mono-devel libgl1-mesa-dri --fix-missing
+          sudo apt-get autoremove -y
+          sudo apt-get clean
+          sudo docker image prune --all --force
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+
+      - name: Build and push almalinux8 container
+        uses: docker/build-push-action@v6
+        with:
+          platforms: linux/amd64
+          context: "{{defaultContext}}:.github/containers/x86_64-broadwell-gcc11.2.1"
+          push: true
+          provenance: false
+          tags: ghcr.io/llnl/ams-ci-almalinux8:latest
+
+      - name: Build and push cuda container
+        uses: docker/build-push-action@v6
+        with:
+          platforms: linux/amd64
+          context: "{{defaultContext}}:.github/containers/x86_64-broadwell-cuda11.6.1"
+          push: true
+          provenance: false
+          tags: ghcr.io/llnl/ams-ci-cuda11.6.1:latest
