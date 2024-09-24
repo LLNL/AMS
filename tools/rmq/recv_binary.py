@@ -92,7 +92,7 @@ def parse_data(body: str, header_info: dict) -> Tuple[str, np.array, np.array]:
 
     try:
         if data_size == 4: #if datatype takes 4 bytes
-            data = np.frombuffer(body[header_siz+domain_name_size:header_size+domain_name_size+data_size], dtype=np.float32)
+            data = np.frombuffer(body[header_size+domain_name_size:header_size+domain_name_size+data_size], dtype=np.float32)
         else:
             data = np.frombuffer(body[header_size+domain_name_size:header_size+domain_name_size+data_size], dtype=np.float64)
     except ValueError as e:
@@ -133,7 +133,7 @@ def callback(ch, method, properties, body, args = None):
         stream = stream[chunk_size:]
         i += 1
 
-def main(credentials: str, cacert: str, queue: str):
+def main(credentials: str, cacert: str, queue: str, n_msgs : int = None, timeout : int = None):
     conn = get_rmq_connection(credentials)
     if cacert is None:
         ssl_options = None
@@ -165,17 +165,48 @@ def main(credentials: str, cacert: str, queue: str):
 
     result = channel.queue_declare(queue=queue, exclusive=False)
     queue_name = result.method.queue
-    channel.basic_consume(queue=queue_name, on_message_callback=callback, auto_ack=True)
-    print(f"Listening on queue = {queue_name}")
+    print(f"Listening on queue {queue_name}")
+    if timeout:
+        print(f"Set timeout of {timeout} secs")
 
     print(" [*] Waiting for messages. To exit press CTRL+C")
-    channel.start_consuming()
+
+    message_consumed = 0
+    # Get ten messages and break out
+    for method_frame, properties, body in channel.consume(queue_name, inactivity_timeout=timeout):
+        if (method_frame, properties, body) == (None, None, None):
+            print(f"Timed out after {timeout} seconds")
+            break
+        # Acknowledge the message
+        channel.basic_ack(method_frame.delivery_tag)
+
+        callback(channel, method_frame, properties, body, None)
+
+        message_consumed += 1
+        # if n_msgs is None, consume for ever
+        if message_consumed == n_msgs:
+            print(f"Consumed {message_consumed} messages")
+            break
+
+
+
+    # Cancel the consumer and return any pending messages
+    requeued_messages = channel.cancel()
+    if requeued_messages > 0:
+        print(f"Requeued {requeued_messages} messages")
+
+    # Close the channel and the connection
+    channel.close()
+    connection.close()
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Tools that consumes AMS-encoded messages from RabbitMQ queue")
     parser.add_argument('-c', '--creds', help="Credentials file (JSON)", required=True)
     parser.add_argument('-t', '--tls-cert', help="TLS certificate file", required=False)
     parser.add_argument('-q', '--queue', help="Queue to listen to", required=True)
+    parser.add_argument('-n', '--nmsgs', type=int, help="Max messages to consume", required=False, default=None)
+    parser.add_argument('--timeout', type=int, help="Numebr of seconds after which the consumer will timeout", default=10)
 
     args = parser.parse_args()
     return args
@@ -183,7 +214,13 @@ def parse_args():
 if __name__ == "__main__":
     try:
         args = parse_args()
-        main(credentials = args.creds, cacert = args.tls_cert, queue = args.queue)
+        main(
+            credentials = args.creds,
+            cacert = args.tls_cert,
+            queue = args.queue,
+            n_msgs = args.nmsgs,
+            timeout = args.timeout
+        )
     except KeyboardInterrupt:
         print("")
         print("Done")

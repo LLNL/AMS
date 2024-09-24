@@ -261,6 +261,12 @@ bool RMQHandler::connectionValid()
 
 bool RMQHandler::onSecuring(AMQP::TcpConnection* connection, SSL* ssl)
 {
+  // No TLS certificate provided
+  if (_cacert.empty()) {
+    DBG(RMQHandler, "No TLS certificate. Bypassing.")
+    return true;
+  }
+
   ERR_clear_error();
   unsigned long err;
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
@@ -943,11 +949,12 @@ bool RMQInterface::connect(std::string rmq_name,
   _rId = static_cast<uint64_t>(distrib(generator));
 
   AMQP::Login login(rmq_user, rmq_password);
-  _address = std::make_shared<AMQP::Address>(service_host,
-                                             service_port,
-                                             login,
-                                             rmq_vhost,
-                                             /*is_secure*/ true);
+  bool is_secure = true;
+  // No TLS certificate provided
+  if (_cacert.empty()) is_secure = false;
+
+  _address = std::make_shared<AMQP::Address>(
+      service_host, service_port, login, rmq_vhost, is_secure);
   _publisher =
       std::make_shared<RMQPublisher>(_rId, *_address, _cacert, _queue_sender);
 
