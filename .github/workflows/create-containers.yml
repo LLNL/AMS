@@ -6,6 +6,12 @@ on:
 jobs:
   deploy-containers:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [
+          { context: "x86_64-broadwell-gcc11.2.1", tag: "ams-ci-almalinux8" },
+          { context: "x86_64-broadwell-cuda11.6.1", tag: "ams-ci-cuda11.6.1" }
+        ]
     steps:
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -38,16 +44,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           platforms: linux/amd64
-          context: "{{defaultContext}}:.github/containers/x86_64-broadwell-gcc11.2.1"
+          context: "{{defaultContext}}:.github/containers/${{ matrix.target.context }}"
           push: true
           provenance: false
-          tags: ghcr.io/llnl/ams-ci-almalinux8:latest
-
-      - name: Build and push cuda container
-        uses: docker/build-push-action@v6
-        with:
-          platforms: linux/amd64
-          context: "{{defaultContext}}:.github/containers/x86_64-broadwell-cuda11.6.1"
-          push: true
-          provenance: false
-          tags: ghcr.io/llnl/ams-ci-cuda11.6.1:latest
+          tags: ghcr.io/llnl/${{ matrix.target.tag }}:latest
