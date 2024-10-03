@@ -29,6 +29,7 @@
 #include <mpi.h>
 
 #include "wf/redist_load.hpp"
+#include "wf/validator.hpp"
 #endif
 
 #include "wf/debug.h"
@@ -72,7 +73,7 @@ class AMSWorkflow
   std::shared_ptr<ams::db::BaseDB> DB;
 
   /** @brief The process id. For MPI runs this is the rank */
-  const int rId;
+  int rId;
 
   /** @brief The total number of processes participating in the simulation
    * (world_size for MPI) */
@@ -91,6 +92,18 @@ class AMSWorkflow
 
   /** @brief Is the evaluate a distributed execution **/
   bool isDistributed;
+
+#ifdef __ENABLE_MPI__
+  /** @brief outpus from surrogate and physics models sampled for validation
+    * over iterations and output dimensions **/
+  std::vector<std::vector<StepValPoints<FPTypeValue>>> valsteps;
+#endif
+
+  /** Seed for randonly choosing validation points **/
+  unsigned int val_seed;
+
+  /** minimum number of validation points per rank **/
+  unsigned int min_val_pts;
 
   /** \brief Store the data in the database and copies
    * data from the GPU to the CPU and then to the database.
@@ -219,7 +232,9 @@ public:
 #ifdef __ENABLE_MPI__
         comm(MPI_COMM_NULL),
 #endif
-        ePolicy(AMSExecPolicy::AMS_UBALANCED)
+        ePolicy(AMSExecPolicy::AMS_UBALANCED),
+        val_seed(1234u),
+        min_val_pts(0u)
   {
     DB = nullptr;
     auto &dbm = ams::db::DBManager::getInstance();
@@ -232,7 +247,17 @@ public:
   void set_physics(AMSPhysicFn _AppCall) { AppCall = _AppCall; }
 
 #ifdef __ENABLE_MPI__
-  void set_communicator(MPI_Comm communicator) { comm = communicator; }
+  void set_communicator(MPI_Comm communicator) {
+    comm = communicator;
+
+    if (comm == MPI_COMM_NULL) {
+      rId = 0;
+      wSize = 1;
+    } else {
+      MPI_Comm_rank(comm, &rId);
+      MPI_Comm_size(comm, &wSize);
+    }
+  }
 #endif
 
   void set_exec_policy(AMSExecPolicy policy) { ePolicy = policy; }
@@ -240,10 +265,21 @@ public:
   bool should_load_balance() const
   {
 #ifdef __ENABLE_MPI__
-    return (comm != MPI_COMM_NULL && ePolicy == AMSExecPolicy::AMS_BALANCED);
+    return (comm != MPI_COMM_NULL && ePolicy == AMSExecPolicy::AMS_BALANCED && (wSize > 1));
 #else
     return false;
 #endif
+  }
+
+#ifdef __ENABLE_MPI__
+  const std::vector<std::vector<StepValPoints<FPTypeValue>>>& get_validation_samples() const
+  { return valsteps; }
+#endif
+
+  void setup_validation(unsigned int s, unsigned int m)
+  {
+    val_seed = s;
+    min_val_pts = m;
   }
 
   ~AMSWorkflow() { DBG(Workflow, "Destroying Workflow Handler"); }
@@ -362,6 +398,24 @@ public:
 
     DBG(Workflow, "Computed Predicates")
 
+#ifdef __ENABLE_MPI__
+    //------------------------------------------------------------------
+    // Prepare validation of surrogate model with extra physics outputs
+    //------------------------------------------------------------------
+    // TODO: if the max number of iterations is known, reserve the vector
+    valsteps.push_back({});
+    auto& valstep = valsteps.back();
+
+    set_exec_policy(AMSExecPolicy::AMS_BALANCED);
+    VPCollector<FPTypeValue> vpcol(val_seed, comm);
+    if (should_load_balance()) {
+      vpcol.set_validation(predicate, totalElements, appDataLoc, min_val_pts);
+
+      // Backup the surrogate outputs for those selected to compute physics
+      vpcol.backup_surrogate_outs(origOutputs, valstep);
+    }
+#endif // __ENABLE_MPI__
+
     // Pointer values which store input data values
     // to be computed using the eos function.
     std::vector<FPTypeValue *> packedInputs;
@@ -436,6 +490,25 @@ public:
     CALIPER(CALI_MARK_END("UNPACK");)
 
     DBG(Workflow, "Finished physics evaluation")
+
+#ifdef __ENABLE_MPI__
+    //------------------------------------------------------------------
+    // Process validation of surrogate model with extra physics outputs
+    // Compute the error statistics between surrogate and physics model outpus
+    //------------------------------------------------------------------
+    if (should_load_balance()) {
+      auto stats = vpcol.get_error_stats(origOutputs, valstep);
+      for (int i = 0; i < outputDim; i++) {
+          CINFO(ErrorStats,
+                rId == 0,
+                "dim, %d, num_samples, %u, avg, %f, var, %f\n",
+                i,
+                stats[i].m_cnt,
+                stats[i].m_avg,
+                stats[i].m_var);
+      }
+    }
+#endif // __ENABLE_MPI__
 
     if (DB) {
       CALIPER(CALI_MARK_BEGIN("DBSTORE");)
