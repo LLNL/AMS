@@ -2,7 +2,7 @@
   "db" : {
     "dbType" : "rmq",
     "rmq_config" : {
-      "service-port": ,
+      "service-port": 0,
       "service-host": "",
       "rabbitmq-erlang-cookie": "",
       "rabbitmq-name": "",

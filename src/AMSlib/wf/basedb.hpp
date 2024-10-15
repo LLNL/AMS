@@ -1010,7 +1010,7 @@ private:
 class RMQHandler : public AMQP::LibEventHandler
 {
 protected:
-  /** @brief Path to TLS certificate */
+  /** @brief Path to TLS certificate (if empty, no TLS certificate)*/
   std::string _cacert;
   /** @brief MPI rank (0 if no MPI support) */
   uint64_t _rId;
@@ -1035,7 +1035,7 @@ public:
    */
   RMQHandler(uint64_t rId,
              std::shared_ptr<struct event_base> loop,
-             std::string cacert);
+             std::string cacert = "");
 
   ~RMQHandler() = default;
 
@@ -2076,10 +2076,11 @@ public:
   {
     fs::path Path(rmq_cert);
     std::error_code ec;
-    CFATAL(AMS,
-           !fs::exists(Path, ec),
-           "Certificate file '%s' for RMQ server does not exist",
-           rmq_cert.c_str());
+    CWARNING(AMS,
+             !fs::exists(Path, ec),
+             "Certificate file '%s' for RMQ server does not exist. AMS will "
+             "try to connect without it.",
+             rmq_cert.c_str());
     dbType = AMSDBType::AMS_RMQ;
     updateSurrogate = update_surrogate;
 #ifdef __ENABLE_RMQ__

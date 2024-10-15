@@ -3,7 +3,7 @@ MAINTAINER Giorgis Georgakoudis <georgakoudis1@llnl.gov>
 RUN \
     yum install -y dnf &&\
     dnf group install -y "Development Tools" &&\
-    dnf install -y git gcc-toolset-11 environment-modules &&\
+    dnf install -y git gcc-toolset-11 environment-modules libevent-devel openssl-devel &&\
     dnf upgrade -y
 COPY repo repo
 RUN \

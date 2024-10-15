@@ -261,6 +261,12 @@ bool RMQHandler::connectionValid()
 
 bool RMQHandler::onSecuring(AMQP::TcpConnection* connection, SSL* ssl)
 {
+  // No TLS certificate provided
+  if (_cacert.empty()) {
+    CFATAL(RMQHandler, false, "No TLS certificate. Bypassing.")
+    return true;
+  }
+
   ERR_clear_error();
   unsigned long err;
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
@@ -297,6 +303,7 @@ void RMQHandler::onClosed(AMQP::TcpConnection* connection)
 
 void RMQHandler::onError(AMQP::TcpConnection* connection, const char* message)
 {
+  CFATAL(RMQHandler, false, "In onError %s", message)
   WARNING(RMQHandler, "[r%d] fatal error on TCP connection: %s", _rId, message)
   try {
     error_connection.set_value(ERROR);
@@ -307,7 +314,7 @@ void RMQHandler::onError(AMQP::TcpConnection* connection, const char* message)
 
 void RMQHandler::onDetached(AMQP::TcpConnection* connection)
 {
-  DBG(RMQHandler, "[r%d] Connection is detached.", _rId)
+  CFATAL(RMQHandler, false, "[r%d] Connection is detached.", _rId)
   close_connection.set_value(CLOSED);
 }
 
@@ -318,6 +325,8 @@ bool RMQHandler::waitFuture(std::future<RMQConnectionStatus>& future,
   std::chrono::milliseconds span(ms);
   int iters = 0;
   std::future_status status;
+  CFATAL(RMQHandler, false, "in waitFuture")
+
   while ((status = future.wait_for(span)) == std::future_status::timeout &&
          (iters++ < repeat))
     std::future<RMQConnectionStatus> established;

@@ -5,9 +5,9 @@
  * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
  */
 
-#include <limits.h>
-
 #include "AMS.h"
+
+#include <limits.h>
 #ifdef __ENABLE_MPI__
 #include <mpi.h>
 #endif
@@ -378,7 +378,6 @@ private:
         getEntry<std::string>(rmq_entry, "rabbitmq-password");
     std::string rmq_user = getEntry<std::string>(rmq_entry, "rabbitmq-user");
     std::string rmq_vhost = getEntry<std::string>(rmq_entry, "rabbitmq-vhost");
-    std::string rmq_cert = getEntry<std::string>(rmq_entry, "rabbitmq-cert");
     std::string rmq_out_queue =
         getEntry<std::string>(rmq_entry, "rabbitmq-outbound-queue");
     std::string exchange =
@@ -386,6 +385,11 @@ private:
     std::string routing_key =
         getEntry<std::string>(rmq_entry, "rabbitmq-routing-key");
     bool update_surrogate = getEntry<bool>(entry, "update_surrogate");
+
+    // We allow connection to RabbitMQ without TLS certificate
+    std::string rmq_cert = "";
+    if (rmq_entry.contains("rabbitmq-cert"))
+      rmq_cert = getEntry<std::string>(rmq_entry, "rabbitmq-cert");
 
     auto &DB = ams::db::DBManager::getInstance();
     DB.instantiate_rmq_db(port,

@@ -33,6 +33,22 @@ function(JSON_TESTS db_type)
   unset(JSON_FP)
 endfunction()
 
+function(CHECK_RMQ_CONFIG file)
+  # Read the JSON file.
+  file(READ ${file} MY_JSON_STRING)
+  message(STATUS "RabbitMQ config ${file}")
+
+  string(JSON DB_CONF GET ${MY_JSON_STRING} db)
+  string(JSON DB_CONF GET ${DB_CONF} rmq_config)
+  string(JSON RMQ_HOST GET ${DB_CONF} "service-host")
+  string(JSON RMQ_PORT GET ${DB_CONF} "service-port")
+
+  if(NOT "${RMQ_HOST}" STREQUAL "" AND NOT "${RMQ_PORT}" STREQUAL "0")
+  message(STATUS "RabbitMQ config ${file}: ${RMQ_HOST}:${RMQ_PORT}")
+  else()
+    message(WARNING "RabbitMQ config file ${file} looks empty! Make sure to fill these fields before running the tests")
+  endif()
+endfunction()
 
 function(INTEGRATION_TEST_ENV)
   JSON_TESTS("csv")
@@ -43,11 +59,22 @@ function(INTEGRATION_TEST_ENV)
   add_test(NAME AMSEndToEndFromJSON::DuqMean::DuqMax::Double::DB::hdf5-debug::HOST COMMAND bash -c "AMS_OBJECTS=${JSON_FP} ${CMAKE_CURRENT_BINARY_DIR}/ams_end_to_end_env  0 8 9 \"double\" 1 1024 app_uq_mean_debug app_uq_max_debug;AMS_OBJECTS=${JSON_FP} python3 ${CMAKE_CURRENT_SOURCE_DIR}/verify_ete.py 0 8 9 \"double\" 1024 app_uq_mean_debug app_uq_max_debug")
   unset(JSON_FP)
   endif()
-  if (WITH_RMQ)
-    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/json_configs/rmq.json.in" "rmq.json" @ONLY)
-  endif()
 endfunction()
 
+function(INTEGRATION_TEST_RMQ)
+  if (WITH_RMQ)
+    if(EXISTS "${CMAKE_CURRENT_BINARY_DIR}/rmq.json")
+      # If file exists we do not overwrite it
+      message(STATUS "Ctest will use ${CMAKE_CURRENT_BINARY_DIR}/rmq.json as RabbitMQ configuration for testing. Make sure RabbitMQ parameters are valid.")
+    else()
+      message(STATUS "Copying empty configuration to ${CMAKE_CURRENT_BINARY_DIR}/rmq.json")
+      configure_file("${CMAKE_CURRENT_SOURCE_DIR}/json_configs/rmq.json.in" "rmq.json" @ONLY)
+    endif()
+    set(JSON_FP "${CMAKE_CURRENT_BINARY_DIR}/rmq.json")
+    CHECK_RMQ_CONFIG(${JSON_FP})
+    add_test(NAME AMSEndToEndFromJSON::NoModel::Double::DB::rmq::HOST COMMAND bash -c "AMS_OBJECTS=${JSON_FP} ${CMAKE_CURRENT_BINARY_DIR}/ams_rmq 0 8 9 \"double\" 2 1024; AMS_OBJECTS=${JSON_FP} python3 ${CMAKE_CURRENT_SOURCE_DIR}/verify_rmq.py 0 8 9 \"double\" 2 1024")
+  endif()
+endfunction()
 
 function (INTEGRATION_TEST)
   #######################################################
@@ -186,6 +213,8 @@ endif()
   INTEGRATION_TEST()
   BUILD_TEST(ams_end_to_end_env ams_ete_env.cpp)
   INTEGRATION_TEST_ENV()
+  BUILD_TEST(ams_rmq ams_rmq_env.cpp)
+  INTEGRATION_TEST_RMQ()
 
 
   # UQ Tests
