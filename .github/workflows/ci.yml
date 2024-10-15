@@ -7,10 +7,6 @@ on:
   workflow_dispatch:
 
 
-env:
-  ACTIONS_RUNNER_DEBUG: true
-
-
 jobs:
   # build-run-tests:
   #   # The type of runner that the job will run on
@@ -486,21 +482,23 @@ jobs:
             \"domain_models\": {}
           }""" > $GITHUB_WORKSPACE/build/tests/AMSlib/rmq.json
 
-          # echo """{
-          #   \"rabbitmq-name\": \"rabbit\",
-          #   \"rabbitmq-user\": \"${RABBITMQ_USER}\",
-          #   \"rabbitmq-password\": \"${RABBITMQ_PASS}\",
-          #   \"service-port\": ${RABBITMQ_PORT},
-          #   \"service-host\": \"${RABBITMQ_HOST}\",
-          #   \"rabbitmq-vhost\": \"/\",
-          #   \"rabbitmq-outbound-queue\": \"test-ci\",
-          #   \"rabbitmq-exchange\": \"ams-fanout\",
-          #   \"rabbitmq-routing-key\": \"training\"
-          # }""" > $GITHUB_WORKSPACE/rmq.json
+          echo """{
+            \"rabbitmq-name\": \"rabbit\",
+            \"rabbitmq-user\": \"${RABBITMQ_USER}\",
+            \"rabbitmq-password\": \"${RABBITMQ_PASS}\",
+            \"service-port\": ${RABBITMQ_PORT},
+            \"service-host\": \"${RABBITMQ_HOST}\",
+            \"rabbitmq-vhost\": \"/\",
+            \"rabbitmq-outbound-queue\": \"test-ci\",
+            \"rabbitmq-exchange\": \"ams-fanout\",
+            \"rabbitmq-routing-key\": \"training\"
+          }""" > $GITHUB_WORKSPACE/rmq.json
 
-          # python3 $GITHUB_WORKSPACE/tools/rmq/send_ams.py -c $GITHUB_WORKSPACE/rmq.json -r test3 -n 10
+          python3 $GITHUB_WORKSPACE/tools/rmq/send_ams.py -c $GITHUB_WORKSPACE/rmq.json -r test3 -n 10
+          python3 $GITHUB_WORKSPACE/tools/rmq/recv_binary.py -c $GITHUB_WORKSPACE/rmq.json -q test3 -n 10
+
           #  #> $GITHUB_WORKSPACE/output.txt 2>&1 || $GITHUB_WORKSPACE/output.txt
-          AMS_LOG_LEVEL=debug AMS_OBJECTS=$GITHUB_WORKSPACE/build/tests/AMSlib/rmq.json $GITHUB_WORKSPACE/build/tests/AMSlib/ams_rmq 0 8 9 "double" 2 1024 2
+          AMS_LOG_LEVEL=debug AMS_OBJECTS=$GITHUB_WORKSPACE/build/tests/AMSlib/rmq.json $GITHUB_WORKSPACE/build/tests/AMSlib/ams_rmq 0 8 9 "double" 2 1024
 
           #ctest --output-on-failure -R AMSEndToEndFromJSON::NoModel::Double::DB::rmq::HOST
         env:
