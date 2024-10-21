@@ -2,7 +2,7 @@ FROM nvidia/cuda:11.6.1-devel-ubi8 AS base
 MAINTAINER Giorgis Georgakoudis <georgakoudis1@llnl.gov>
 RUN \
     yum install -y dnf &&\
-    dnf install -y git xz autoconf automake unzip patch gcc-gfortran bzip2 file &&\
+    dnf install -y git xz autoconf automake unzip patch gcc-gfortran bzip2 file libevent-devel openssl-devel &&\
     dnf upgrade -y &&\
     dnf clean all
 COPY repo repo

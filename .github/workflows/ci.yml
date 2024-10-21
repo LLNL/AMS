@@ -6,6 +6,7 @@ on:
     branches: [ "develop" ]
   workflow_dispatch:
 
+
 jobs:
   build-run-tests:
     # The type of runner that the job will run on
@@ -389,3 +390,101 @@ jobs:
             -DWITH_ADIAK=Off \
             $GITHUB_WORKSPACE
             make
+
+  build-rmq-tests:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+    services:
+      rabbitmq:
+        image: rabbitmq:3.11
+        env:
+          RABBITMQ_DEFAULT_USER: ams
+          RABBITMQ_DEFAULT_PASS: ams
+        ports:
+          - 5672
+
+    container:
+      image: ghcr.io/llnl/ams-ci-almalinux8:latest
+      env:
+        RABBITMQ_USER: ams
+        RABBITMQ_PASS: ams
+        RABBITMQ_HOST: rabbitmq
+        RABBITMQ_PORT: 5672
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Torch=On FAISS=On RMQ=On AMS
+        shell: bash -l {0}
+        run: |
+          module load gcc/11.2.1
+          export SPACK_ROOT=/spack/
+          source /spack/share/spack/setup-env.sh
+          spack env activate -p /ams-spack-env
+          rm -rf build/
+          mkdir build
+          cd build
+          export AMS_MFEM_PATH=$(spack location -i mfem)
+          export AMS_TORCH_PATH=$(spack location -i py-torch)/lib/python3.10/site-packages/torch/share/cmake/Torch
+          export AMS_FAISS_PATH=$(spack location -i faiss)
+          export AMS_UMPIRE_PATH=$(spack location -i umpire)
+          export AMS_HDF5_PATH=$(spack location -i hdf5)
+          export AMS_AMQPCPP_PATH=$(spack location -i amqp-cpp)/cmake
+          cmake \
+            -DBUILD_SHARED_LIBS=On \
+            -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
+            -DWITH_CALIPER=On \
+            -DWITH_HDF5=On \
+            -DWITH_EXAMPLES=On \
+            -DAMS_HDF5_DIR=$AMS_HDF5_PATH \
+            -DCMAKE_INSTALL_PREFIX=./install \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DWITH_CUDA=Off \
+            -DUMPIRE_DIR=$AMS_UMPIRE_PATH \
+            -DMFEM_DIR=$AMS_MFEM_PATH \
+            -DWITH_FAISS=On \
+            -DWITH_MPI=On \
+            -DWITH_TORCH=On \
+            -DWITH_TESTS=On \
+            -DTorch_DIR=$AMS_TORCH_PATH \
+            -DFAISS_DIR=$AMS_FAISS_PATH \
+            -DWITH_AMS_DEBUG=On \
+            -DWITH_WORKFLOW=On \
+            -DWITH_ADIAK=Off \
+            -DWITH_RMQ=On \
+            -Damqpcpp_DIR=$AMS_AMQPCPP_PATH \
+            $GITHUB_WORKSPACE
+            make
+      - name: Run tests Torch=On FAISS=On RMQ=On AMSlib RabbitMQ egress
+        run: |
+          cd build
+          export SPACK_ROOT=/spack/
+          source /spack/share/spack/setup-env.sh
+          spack env activate -p /ams-spack-env
+
+          # We overwrite the rmq.json created by CMake
+          echo """{
+            \"db\": {
+              \"dbType\": \"rmq\",
+              \"rmq_config\": {
+                \"rabbitmq-name\": \"rabbit\",
+                \"rabbitmq-user\": \"${RABBITMQ_USER}\",
+                \"rabbitmq-password\": \"${RABBITMQ_PASS}\",
+                \"service-port\": ${RABBITMQ_PORT},
+                \"service-host\": \"${RABBITMQ_HOST}\",
+                \"rabbitmq-vhost\": \"/\",
+                \"rabbitmq-outbound-queue\": \"test-ci\",
+                \"rabbitmq-exchange\": \"ams-fanout\",
+                \"rabbitmq-routing-key\": \"training\"
+              },
+              \"update_surrogate\": false
+            },
+            \"ml_models\": {},
+            \"domain_models\": {}
+          }""" > $GITHUB_WORKSPACE/build/tests/AMSlib/rmq.json
+
+          make test
+        env:
+          RABBITMQ_USER: ams
+          RABBITMQ_PASS: ams
+          RABBITMQ_HOST: rabbitmq
+          RABBITMQ_PORT: 5672
