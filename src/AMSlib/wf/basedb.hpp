@@ -8,9 +8,6 @@
 #ifndef __AMS_BASE_DB__
 #define __AMS_BASE_DB__
 
-#include <ATen/core/TensorBody.h>
-#include <torch/torch.h>
-
 #include <cstdint>
 #include <experimental/filesystem>
 #include <fstream>
@@ -24,6 +21,7 @@
 #include <vector>
 
 #include "AMS.h"
+#include "AMSTensor.hpp"
 #include "ArrayRef.hpp"
 #include "debug.h"
 #include "macro.h"
@@ -128,8 +126,8 @@ public:
    * 'num_elements'  values to be stored
    */
 
-  virtual void store(ArrayRef<torch::Tensor> Inputs,
-                     ArrayRef<torch::Tensor> Outputs) = 0;
+  virtual void store(ArrayRef<AMSTensor> Inputs,
+                     ArrayRef<AMSTensor> Outputs) = 0;
 
   /**
    * @brief Store graph data with outputs/targets for training.
@@ -271,8 +269,8 @@ private:
    */
   hid_t getDataSet(hid_t group,
                    std::string dName,
-                   ams::SmallVector<hsize_t>& currentShape,
-                   const at::IntArrayRef Shape,
+                   SmallVector<hsize_t>& currentShape,
+                   ArrayRef<AMSTensor::IntDimType> Shape,
                    hid_t dataType,
                    const size_t Chunk = 1024L);
 
@@ -284,8 +282,8 @@ private:
    * @param[in] numIn number of input 1-D vectors
    * @param[in] numOut number of output 1-D vectors
    */
-  void createDataSets(const at::IntArrayRef InShapes,
-                      const at::IntArrayRef OutShapes);
+  void createDataSets(ArrayRef<AMSTensor::IntDimType> InShapes,
+                      ArrayRef<AMSTensor::IntDimType> OutShapes);
 
   /**
    * @brief Write all the data in the vectors in the respective datasets.
@@ -298,10 +296,10 @@ private:
 
   void writeDataToDataset(ams::MutableArrayRef<hsize_t> currentShape,
                           hid_t& dset,
-                          const at::Tensor& tensor_data);
+                          const AMSTensor& tensor_data);
 
   PERFFASPECT()
-  void _store(const at::Tensor& inputs, const at::Tensor& outputs);
+  void _store(const AMSTensor& inputs, const AMSTensor& outputs);
 
 public:
   // Delete copy constructors. We do not want to copy the DB around
@@ -332,6 +330,13 @@ public:
    */
   AMSDBType dbType() override { return AMSDBType::AMS_HDF5; };
 
+  /**
+   * @brief Concatenate tensors along the last dimension into a single contiguous tensor.
+   * @param[in] tensors List of tensors to concatenate.
+   *
+   * @note For now, we compute the total shape and do a manual copy.
+   */
+  AMSTensor concatAndStore(ArrayRef<AMSTensor> tensors);
 
   /**
    * @brief Takes an input and an output tensor each holding data,
@@ -339,8 +344,8 @@ public:
    * @param[in] inputs Tensor containing the inputs to bestored
    * @param[in] outputs Tensor containing the outputs to bestored
    */
-  virtual void store(ArrayRef<torch::Tensor> Inputs,
-                     ArrayRef<torch::Tensor> Outputs) override;
+  virtual void store(ArrayRef<AMSTensor> Inputs,
+                     ArrayRef<AMSTensor> Outputs) override;
 };
 
 #endif
@@ -449,7 +454,7 @@ static inline size_t serialize_data(uint8_t* dest, T src)
 class AMSMessage
 {
 private:
-  static size_t computeSerializedSize(const torch::Tensor& tensor)
+  static size_t computeSerializedSize(const AMSTensor& tensor)
   {
     // First we need to store how many dimensions this tensor has.
     size_t totalBytes = sizeof(size_t);
@@ -461,7 +466,7 @@ private:
     return totalBytes + tensor.nbytes();
   }
 
-  static void serializeTensorHeader(const torch::Tensor& tensor, uint8_t*& blob)
+  static void serializeTensorHeader(const AMSTensor& tensor, uint8_t*& blob)
   {
     blob += serialize_data(blob, static_cast<uint64_t>(tensor.sizes().size()));
     blob += serialize_data(blob, static_cast<uint64_t>(tensor.nbytes()));
@@ -473,7 +478,7 @@ private:
     }
   }
 
-  static void serializeTensor(const torch::Tensor& tensor, uint8_t*& blob)
+  static void serializeTensor(const AMSTensor& tensor, uint8_t*& blob)
   {
     serializeTensorHeader(tensor, blob);
     std::memcpy(blob, tensor.data_ptr(), tensor.nbytes());
@@ -508,18 +513,19 @@ public:
   }
 
   /**
-   * @brief Constructor
+   * @brief Constructor. Warning: Callers must ensure tensors are CPU-resident and
+   *        contiguous before constructing the message.
    * @param[in]  id                  ID of the message
    * @param[in]  rId                 MPI Rank of the messages (0 default)
-   * @param[in]  num_elements        Number of elements
-   * @param[in]  inputs              Inputs
-   * @param[in]  outputs             Outputs
+   * @param[in]  domain_name         Domain name
+   * @param[in]  inputs              Inputs (must be CPU, contiguous)
+   * @param[in]  outputs             Outputs (must be CPU, contiguous)
    */
   AMSMessage(int id,
              uint64_t rId,
              std::string& domain_name,
-             ArrayRef<torch::Tensor> Inputs,
-             ArrayRef<torch::Tensor> Outputs)
+             ArrayRef<AMSTensor> Inputs,
+             ArrayRef<AMSTensor> Outputs)
       : _id(id),
         _rank(rId),
         _input_dim(Inputs.size()),
@@ -527,25 +533,13 @@ public:
         _data(nullptr),
         _total_size(0)
   {
-    SmallVector<torch::Tensor> _inputs;
-    SmallVector<torch::Tensor> _outputs;
-    auto tOptions = torch::TensorOptions()
-                        .dtype(torch::kFloat32)
-                        .device(c10::DeviceType::CPU);
-
-    for (auto& tensor : Inputs)
-      _inputs.push_back(tensor.contiguous().to(tOptions));
-
-    for (auto& tensor : Outputs)
-      _outputs.push_back(tensor.contiguous().to(tOptions));
-
     AMSMsgHeader header(_rank, domain_name.size(), _input_dim, _output_dim);
 
     _total_size = AMSMsgHeader::size() + domain_name.size();
 
-    for (auto& tensor : _inputs)
+    for (auto& tensor : Inputs)
       _total_size += computeSerializedSize(tensor);
-    for (auto& tensor : _outputs)
+    for (auto& tensor : Outputs)
       _total_size += computeSerializedSize(tensor);
 
     auto& rm = ams::ResourceManager::getInstance();
@@ -560,9 +554,9 @@ public:
     uint8_t* blob = _data + current_offset;
 
 
-    for (auto& tensor : _inputs)
+    for (auto& tensor : Inputs)
       serializeTensor(tensor, blob);
-    for (auto& tensor : _outputs)
+    for (auto& tensor : Outputs)
       serializeTensor(tensor, blob);
     AMS_DBG(AMSMessage,
             "Allocated message {}: {} with size: {}",
@@ -1546,8 +1540,8 @@ public:
    * @param[in] outputs A vector containing arrays of outputs, each array has num_elements elements
    */
   void publish(std::string& domain_name,
-               ArrayRef<torch::Tensor> Inputs,
-               ArrayRef<torch::Tensor> Outputs)
+               ArrayRef<AMSTensor> Inputs,
+               ArrayRef<AMSTensor> Outputs)
   {
     CALIPER(CALI_MARK_BEGIN("STORE_RMQ");)
     AMS_DBG(RMQInterface,
@@ -1652,8 +1646,8 @@ public:
    * @param[in] predicate (NOT SUPPORTED YET) Series of predicate
    */
   PERFFASPECT()
-  virtual void store(ArrayRef<torch::Tensor> Inputs,
-                     ArrayRef<torch::Tensor> Outputs)
+  virtual void store(ArrayRef<AMSTensor> Inputs,
+                     ArrayRef<AMSTensor> Outputs)
   {
     interface.publish(appDomain, Inputs, Outputs);
   }

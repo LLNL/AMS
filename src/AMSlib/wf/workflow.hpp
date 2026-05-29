@@ -8,9 +8,6 @@
 #ifndef __AMS_WORKFLOW_HPP__
 #define __AMS_WORKFLOW_HPP__
 
-#include <ATen/core/TensorBody.h>
-#include <c10/core/DeviceType.h>
-
 #include <memory>
 #include <stdexcept>
 
@@ -19,11 +16,17 @@
 #include "SmallVector.hpp"
 #include "interface.hpp"
 #include "macro.h"
-#include "ml/surrogate.hpp"
 #include "resource_manager.hpp"
 #include "utils.hpp"
 #include "wf/basedb.hpp"
 #include "wf/debug.h"
+
+#if defined(__AMS_ENABLE_TORCH__)
+#include <ATen/core/TensorBody.h>
+#include <c10/core/DeviceType.h>
+
+#include "ml/surrogate.hpp"
+#endif
 
 //! ----------------------------------------------------------------------------
 //! AMS Workflow class
@@ -46,8 +49,10 @@ class AMSWorkflow
   /** @brief A string identifier describing the domain-model being solved. */
   std::string domainName;
 
+#if defined(__AMS_ENABLE_TORCH__)
   /** @brief The module that performs uncertainty quantification (UQ) */
   std::shared_ptr<SurrogateModel> MLModel;
+#endif
 
   /** @brief The database to store data for which we cannot apply the current
      * model */
@@ -70,7 +75,7 @@ class AMSWorkflow
   /** @brief whether we should store data **/
   bool storeData;
 
-#ifdef __AMS_ENABLE_MPI__
+#if defined(__AMS_ENABLE_MPI__)
   /** @brief MPI Communicator for all ranks that call collectively the evaluate function **/
   MPI_Comm comm;
 #endif
@@ -78,19 +83,23 @@ class AMSWorkflow
   /** @brief Is the evaluate a distributed execution **/
   bool isDistributed;
 
-  void storeComputedData(ArrayRef<torch::Tensor> Ins,
-                         ArrayRef<torch::Tensor> InOutsBefore,
-                         ArrayRef<torch::Tensor> Outs,
-                         ArrayRef<torch::Tensor> InOutsAfter)
+  void storeComputedData(ArrayRef<AMSTensor> Ins,
+                         ArrayRef<AMSTensor> InOutsBefore,
+                         ArrayRef<AMSTensor> Outs,
+                         ArrayRef<AMSTensor> InOutsAfter)
   {
     CALIPER(CALI_MARK_BEGIN("DBSTORE");)
-    SmallVector<torch::Tensor> StoreInputTensors(Ins.begin(), Ins.end());
-    SmallVector<torch::Tensor> StoreOutputTensors(Outs.begin(), Outs.end());
-    for (auto Tensor : InOutsBefore)
-      StoreInputTensors.push_back(Tensor);
-    for (auto Tensor : InOutsAfter) {
-      StoreOutputTensors.push_back(Tensor);
-    }
+
+    SmallVector<AMSTensor> StoreInputTensors;
+    SmallVector<AMSTensor> StoreOutputTensors;
+    for (auto& Tensor : Ins)
+      StoreInputTensors.push_back(AMSTensor::view(const_cast<AMSTensor&>(Tensor)));
+    for (auto& Tensor : InOutsBefore)
+      StoreInputTensors.push_back(AMSTensor::view(const_cast<AMSTensor&>(Tensor)));
+    for (auto& Tensor : Outs)
+      StoreOutputTensors.push_back(AMSTensor::view(const_cast<AMSTensor&>(Tensor)));
+    for (auto& Tensor : InOutsAfter)
+      StoreOutputTensors.push_back(AMSTensor::view(const_cast<AMSTensor&>(Tensor)));
 
     AMS_DBG(Workflow,
             "Storing data (#elements = {}) to database",
@@ -137,6 +146,29 @@ class AMSWorkflow
     }
   }
 
+// #if defined(__AMS_ENABLE_TORCH__)
+//   void storeComputedData(ArrayRef<torch::Tensor> Ins,
+//                          ArrayRef<torch::Tensor> InOutsBefore,
+//                          ArrayRef<torch::Tensor> Outs,
+//                          ArrayRef<torch::Tensor> InOutsAfter)
+//   {
+//     CALIPER(CALI_MARK_BEGIN("DBSTORE");)
+//     SmallVector<torch::Tensor> StoreInputTensors(Ins.begin(), Ins.end());
+//     SmallVector<torch::Tensor> StoreOutputTensors(Outs.begin(), Outs.end());
+//     for (auto Tensor : InOutsBefore)
+//       StoreInputTensors.push_back(Tensor);
+//     for (auto Tensor : InOutsAfter) {
+//       StoreOutputTensors.push_back(Tensor);
+//     }
+
+//     AMS_DBG(Workflow,
+//             "Storing data (#elements = {}) to database",
+//             StoreInputTensors[0].sizes()[0]);
+//     DB->store(StoreInputTensors, StoreOutputTensors);
+//     CALIPER(CALI_MARK_END("DBSTORE");)
+//   }
+// #endif // __AMS_ENABLE_TORCH__
+
   /** \brief Check if we can perform a surrogate model update.
      *  AMS can update surrogate model only when all MPI ranks have received 
      * the latest model from RabbitMQ.
@@ -166,7 +198,7 @@ public:
         rId(_pId),
         wSize(_wSize),
         storeData(store_data),
-#ifdef __AMS_ENABLE_MPI__
+#if defined(__AMS_ENABLE_MPI__)
         comm(MPI_COMM_NULL),
 #endif
         threshold(threshold),
@@ -176,9 +208,20 @@ public:
     auto& dbm = ams::db::DBManager::getInstance();
 
     if (storeData) DB = dbm.getDB(domainName, rId);
+#if defined(__AMS_ENABLE_TORCH__)
     MLModel = nullptr;
     if (!surrogate_path.empty())
       MLModel = SurrogateModel::getInstance(surrogate_path);
+#endif
+  }
+
+  ~AMSWorkflow()
+  {
+    AMS_DBG(Workflow, "Destroying Workflow Handler, DB: {}", DB.use_count());
+    if (DB.use_count() == 2) {
+      auto& dbm = ams::db::DBManager::getInstance();
+      dbm.dropDB(domainName, rId);
+    }
   }
 
   std::string getDBFilename() const
@@ -188,7 +231,7 @@ public:
   }
 
 
-#ifdef __AMS_ENABLE_MPI__
+#if defined(__AMS_ENABLE_MPI__)
   void set_communicator(MPI_Comm communicator) { comm = communicator; }
 #endif
 
@@ -196,13 +239,20 @@ public:
 
   bool should_load_balance() const
   {
-#ifdef __AMS_ENABLE_MPI__
+#if defined(__AMS_ENABLE_MPI__)
     return (comm != MPI_COMM_NULL && ePolicy == AMSExecPolicy::AMS_BALANCED);
 #else
     return false;
 #endif
   }
 
+  std::string getDBName()
+  {
+    if (!DB) return "";
+    return DB->getFilename();
+  }
+
+#if defined(__AMS_ENABLE_TORCH__)
 
   static SmallVector<torch::Tensor> subSelectTensors(
       ArrayRef<torch::Tensor> Tensors,
@@ -247,16 +297,6 @@ public:
       offset += ConcatAxisSize;
     }
     return offset;
-  }
-
-
-  ~AMSWorkflow()
-  {
-    AMS_DBG(Workflow, "Destroying Workflow Handler, DB: {}", DB.use_count());
-    if (DB.use_count() == 2) {
-      auto& dbm = ams::db::DBManager::getInstance();
-      dbm.dropDB(domainName, rId);
-    }
   }
 
   /** @brief This is the main entry point of AMSLib and replaces the original
@@ -364,7 +404,14 @@ public:
       CALIPER(CALI_MARK_BEGIN("PHYSICS MODULE");)
       callApplication(CallBack, Ins, InOuts, Outs);
       CALIPER(CALI_MARK_END("PHYSICS MODULE");)
-      if (DB) storeComputedData(Ins, PhysicInOutsBefore, Outs, InOuts);
+      if (DB) {
+        // Convert torch tensors to AMSTensor views for storage
+        auto amsIns = torchToAMSTensors(Ins);
+        auto amsInOutsBefore = torchToAMSTensors(PhysicInOutsBefore);
+        auto amsOuts = torchToAMSTensors(Outs);
+        auto amsInOuts = torchToAMSTensors(InOuts);
+        storeComputedData(amsIns, amsInOutsBefore, amsOuts, amsInOuts);
+      }
       CALIPER(CALI_MARK_END("AMSEvaluate");)
       return;
     }
@@ -435,10 +482,19 @@ public:
     AMS_DBG(Workflow, "Finished physics evaluation")
 
     if (DB) {
-      storeComputedData(PhysicIns,
-                        PhysicInOutsBefore,
-                        PhysicOuts,
-                        PhysicInOuts);
+      // Convert torch tensors to AMSTensor views for storage
+      auto amsPhysicIns = torchToAMSTensors(PhysicIns);
+      auto amsPhysicInOutsBefore = torchToAMSTensors(PhysicInOutsBefore);
+      auto amsPhysicOuts = torchToAMSTensors(PhysicOuts);
+      auto amsPhysicInOuts = torchToAMSTensors(PhysicInOuts);
+      // storeComputedData(PhysicIns,
+      //                   PhysicInOutsBefore,
+      //                   PhysicOuts,
+      //                   PhysicInOuts);
+      storeComputedData(amsPhysicIns,
+                        amsPhysicInOutsBefore,
+                        amsPhysicOuts,
+                        amsPhysicInOuts);
     }
 
     AMS_DBG(Workflow, "Finished AMSExecution")
@@ -511,11 +567,73 @@ public:
     CALIPER(CALI_MARK_END("AMSEvaluateGraph");)
   }
 
-  std::string getDBName()
+#else // !__AMS_ENABLE_TORCH__
+// -----------------------------------------------------------------------
+// Non-training evaluate path (AMSTensor)
+// -----------------------------------------------------------------------
+
+  void evaluate(DomainLambda CallBack,
+                ams::MutableArrayRef<AMSTensor> Ins,
+                ams::MutableArrayRef<AMSTensor> InOuts,
+                ams::MutableArrayRef<AMSTensor> Outs)
   {
-    if (!DB) return "";
-    return DB->getFilename();
+    CALIPER(CALI_MARK_BEGIN("AMSEvaluate");)
+    REPORT_MEM_USAGE(Workflow, "Start")
+    AMS_DBG(Workflow,
+            "Entering Workflow (no-torch) with In:{}, InOut:{}, Out:{}",
+            Ins.size(),
+            InOuts.size(),
+            Outs.size());
+
+    // Clone InOuts before physics overwrites them (for DB storage)
+    SmallVector<AMSTensor> InOutsBefore;
+    for (auto& S : InOuts)
+      InOutsBefore.push_back(S.clone());
+
+    CALIPER(CALI_MARK_BEGIN("PACK");)
+
+    SmallVector<AMSTensor> insVec;
+    for (auto& t : Ins)
+      insVec.push_back(AMSTensor::view(t));
+
+    SmallVector<AMSTensor> inoutsVec;
+    for (auto& t : InOuts)
+      inoutsVec.push_back(AMSTensor::view(t));
+
+    SmallVector<AMSTensor> outsVec;
+    for (auto& t : Outs)
+      outsVec.push_back(AMSTensor::view(t));
+    
+    CALIPER(CALI_MARK_END("PACK");)
+
+    // We call the application here
+    CALIPER(CALI_MARK_BEGIN("PHYSICS MODULE");)
+    CallBack(insVec, inoutsVec, outsVec);
+    CALIPER(CALI_MARK_END("PHYSICS MODULE");)
+  
+    if (DB) {
+      // Build views for the store call
+      // TODO: remove useless copies
+      SmallVector<AMSTensor> storeIns;
+      for (auto& t : Ins)
+        storeIns.push_back(AMSTensor::view(t));
+
+      SmallVector<AMSTensor> storeOuts;
+      for (auto& t : Outs)
+        storeOuts.push_back(AMSTensor::view(t));
+
+      SmallVector<AMSTensor> storeInOuts;
+      for (auto& t : InOuts)
+        storeInOuts.push_back(AMSTensor::view(t));
+      storeComputedData(storeIns, InOutsBefore, storeOuts, storeInOuts);
+    }
+
+    REPORT_MEM_USAGE(Workflow, "End")
+    CALIPER(CALI_MARK_END("AMSEvaluate");)
   }
+
+#endif // __AMS_ENABLE_TORCH__
+
 };
 
 

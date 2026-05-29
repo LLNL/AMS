@@ -24,12 +24,16 @@ static inline AMSTensor::IntDimType computeNumElements(ams::ArrayRef<T> shapes)
                          1,
                          std::multiplies<AMSTensor::IntDimType>());
 }
-// Helper function to check if the tensor is contiguous in memory
-bool AMSTensor::isContiguous(AMSTensor::IntDimType expected_stride) const
+
+bool AMSTensor::isContiguous(ams::ArrayRef<AMSTensor::IntDimType> shape,
+                         ams::ArrayRef<AMSTensor::IntDimType> strides) const
 {
-  for (int i = _shape.size() - 1; i >= 0; --i) {
-    if (_strides[i] != expected_stride) return false;
-    expected_stride *= _shape[i];
+  const size_t ndim = shape.size();
+  if (ndim == 0) return true;
+  if (strides[ndim - 1] != 1) return false;
+  for (int i = ndim - 2; i >= 0; --i) {
+    if (strides[i] != strides[i + 1] * shape[i + 1])
+      return false;
   }
   return true;
 }
@@ -70,7 +74,7 @@ AMSTensor::AMSTensor(uint8_t* data,
 {
   _elements = computeNumElements(shapes);
   _bytes = _elements * _element_size;
-  _contiguous = isContiguous(1);
+  _contiguous = isContiguous(shapes, strides);
   if (!_data) {
     throw std::runtime_error("Generating tensor with Null Pointer AMSTensor.");
   }
@@ -92,7 +96,6 @@ AMSTensor AMSTensor::create(ams::ArrayRef<AMSTensor::IntDimType> shapes,
                    scalar_to_ams_dtype<U>(),
                    location);
 }
-
 
 template <typename ScalarType>
 AMSTensor AMSTensor::view(ScalarType* data,
@@ -165,11 +168,11 @@ AMSTensor::AMSTensor(AMSTensor&& other) noexcept
 AMSTensor& AMSTensor::operator=(AMSTensor&& other) noexcept
 {
   if (this != &other) {
+    // Free existing resources if we own them
     if (_owned && _data) {
       auto& rm = ams::ResourceManager::getInstance();
       rm.deallocate(_data, _location);
     }
-
     // Steal resources from `other`
     _data = other._data;
     _elements = other._elements;
@@ -205,17 +208,137 @@ AMSTensor AMSTensor::transpose(AMSTensor::IntDimType axis1,
   std::swap(newStrides[axis1], newStrides[axis2]);
 
   // Create a new tensor with the same data, new shape, and strides
-  if (dType() == AMSDType::AMS_DOUBLE)
+  if (dtype() == AMSDType::AMS_DOUBLE)
     return view((double*)_data, newShape, newStrides, _location);
-  else if (dType() == AMSDType::AMS_SINGLE)
+  else if (dtype() == AMSDType::AMS_SINGLE)
     return view((float*)_data, newShape, newStrides, _location);
-  else if (dType() == AMSDType::AMS_INT32)
+  else if (dtype() == AMSDType::AMS_INT32)
     return view((int32_t*)_data, newShape, newStrides, _location);
-  else if (dType() == AMSDType::AMS_INT64)
+  else if (dtype() == AMSDType::AMS_INT64)
     return view((int64_t*)_data, newShape, newStrides, _location);
   // NOTE: Use defensive programming here and just crash. We can fix a better interface later
   // for error handling.
   throw std::runtime_error("Unknow data type in transpose\n");
+}
+
+AMSTensor AMSTensor::clone() const
+{
+  auto& rm = ams::ResourceManager::getInstance();
+  const size_t ndim = _shape.size();
+
+  uint8_t* dstData =
+      rm.allocate<uint8_t>(static_cast<size_t>(_elements) * _element_size,
+                           _location);
+
+  // Compute contiguous strides (C style) for the destination
+  ams::SmallVector<IntDimType> dstStrides(ndim);
+  if (ndim > 0) {
+    dstStrides[ndim-1] = 1;
+    for (int i = static_cast<int>(ndim) - 2; i >= 0; --i)
+      dstStrides[i] = dstStrides[i+1] * _shape[i+1];
+  }
+
+  if (_contiguous) {
+    ams::internal::_raw_copy(static_cast<void*>(_data),
+                             _location,
+                             static_cast<void*>(dstData),
+                             _location,
+                             static_cast<size_t>(_elements) * _element_size);
+  } else {
+    // Slow path: element-wise copy for non-contiguous tensors.
+    // We iterate over every element using an N-dimensional index,
+    // compute the source offset from the original strides and the
+    // destination offset from the contiguous strides, then copy
+    // one element at a time.
+
+    ams::SmallVector<IntDimType> idx(ndim, 0);
+    for (IntDimType e = 0; e < _elements; ++e) {
+      // Compute source and destination byte offsets
+      IntDimType srcOffset = 0;
+      IntDimType dstOffset = 0;
+      for (size_t d = 0; d < ndim; ++d) {
+        srcOffset += idx[d] * _strides[d];
+        dstOffset += idx[d] * dstStrides[d];
+      }
+
+      ams::internal::_raw_copy(
+          static_cast<void*>(_data + srcOffset * _element_size),
+          _location,
+          static_cast<void*>(dstData + dstOffset * _element_size),
+          _location,
+          static_cast<size_t>(_element_size));
+
+      // Increment the N-dimensional index (rightmost dimension first)
+      for (int d = static_cast<int>(ndim) - 1; d >= 0; --d) {
+        if (++idx[d] < _shape[d]) break;
+        idx[d] = 0;
+      }
+    }
+  }
+
+  // Construct the new owning tensor using the private constructor
+  return AMSTensor(dstData, _shape, dstStrides, _dType, _location, false);
+}
+
+AMSTensor AMSTensor::concat(ArrayRef<AMSTensor> tensors, AMSDType inputDType)
+{
+  if (tensors.size() == 1) {
+    // Single tensor: just return a view
+    return AMSTensor::view(const_cast<AMSTensor&>(tensors[0]));
+  }
+
+  // Compute concatenated shape: all dims same except last which sums
+  auto firstShape = tensors[0].shape();
+  size_t ndim = firstShape.size();
+  size_t lastDimTotal = 0;
+  for (auto& t : tensors) {
+    lastDimTotal += t.shape()[ndim-1];
+  }
+
+  ams::SmallVector<AMSTensor::IntDimType> newShape(firstShape.begin(), firstShape.end());
+  newShape[ndim-1] = static_cast<AMSTensor::IntDimType>(lastDimTotal);
+
+  // Compute contiguous strides for the concatenated tensor
+  ams::SmallVector<AMSTensor::IntDimType> newStrides(ndim);
+  newStrides[ndim - 1] = 1;
+  for (int i = static_cast<int>(ndim) - 2; i >= 0; --i) {
+    newStrides[i] = newStrides[i+1] * newShape[i + 1];
+  }
+
+  size_t elemSize = dtype_to_size(inputDType);
+  size_t totalElements = 1;
+  for (auto s : newShape) totalElements *= s;
+  size_t totalBytes = totalElements * elemSize;
+
+  auto& rm = ams::ResourceManager::getInstance();
+  uint8_t* buffer = rm.allocate<uint8_t>(totalBytes, AMSResourceType::AMS_HOST);
+
+  // Copy data row by row: for each row, copy each tensor's last-dim slice
+  size_t numRows = 1;
+  for (size_t i = 0; i < ndim - 1; ++i) numRows *= firstShape[i];
+
+  size_t dstOffset = 0;
+  for (size_t row = 0; row < numRows; ++row) {
+    for (auto& t : tensors) {
+      size_t sliceBytes = t.shape()[ndim - 1] * elemSize;
+      std::memcpy(buffer + dstOffset,
+                  static_cast<const uint8_t*>(t.data_ptr()) + row * sliceBytes,
+                  sliceBytes);
+      dstOffset += sliceBytes;
+    }
+  }
+
+  // Create owning tensor from the buffer
+  // TODO: improve error handling
+  if (inputDType == AMSDType::AMS_SINGLE)
+    return AMSTensor::view(reinterpret_cast<float*>(buffer), newShape, newStrides, AMSResourceType::AMS_HOST);
+  else if (inputDType == AMSDType::AMS_DOUBLE)
+    return AMSTensor::view(reinterpret_cast<double*>(buffer), newShape, newStrides, AMSResourceType::AMS_HOST);
+  else if (inputDType == AMSDType::AMS_INT32)
+    return AMSTensor::view(reinterpret_cast<int32_t*>(buffer), newShape, newStrides, AMSResourceType::AMS_HOST);
+  else if (inputDType == AMSDType::AMS_INT64)
+    return AMSTensor::view(reinterpret_cast<int64_t*>(buffer), newShape, newStrides, AMSResourceType::AMS_HOST);
+  throw std::runtime_error("Unsupported dtype in concat");
 }
 
 template AMSTensor AMSTensor::create<float>(ams::ArrayRef<IntDimType>,

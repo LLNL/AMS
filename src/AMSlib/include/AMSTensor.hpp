@@ -18,10 +18,13 @@ public:
   using IntDimType = long int;
   IntDimType elements() const { return _elements; }
   IntDimType element_size() const { return _element_size; }
-  AMSDType dType() const { return _dType; }
+  size_t nbytes() const { return _bytes; }
+  size_t dim() const { return _shape.size(); }
+  AMSDType dtype() const { return _dType; }
   AMSResourceType location() const { return _location; }
   ams::ArrayRef<IntDimType> strides() const { return _strides; }
-  ams::ArrayRef<IntDimType> shape() const { return _shape; }
+  ams::ArrayRef<IntDimType> shape() const { return _shape; } 
+  ams::ArrayRef<IntDimType> sizes() const { return _shape; } // To mimic PyTorch interface
   bool contiguous() const { return _contiguous; }
 
 
@@ -35,10 +38,15 @@ private:
   AMSResourceType _location;  // CPU/GPU/Pinned
   bool _owned;
   bool _contiguous;
-  bool _bytes;
+  size_t _bytes;
 
-  // Helper function to check if the tensor is contiguous in memory
-  bool isContiguous(IntDimType expected_stride) const;
+  /**
+   * @brief Helper function to check if the tensor is contiguous in memory.
+   * @param[in] shapes The shape of the tensor.
+   * @param[in] strides The strides of the tensor.
+   */
+  bool isContiguous(ams::ArrayRef<IntDimType> shape,
+                          ams::ArrayRef<IntDimType> strides) const;
 
   /**
    * @brief Constructs a new AMSTensor with the specified shape, strides, data type, and location.
@@ -127,7 +135,7 @@ public:
     return reinterpret_cast<T*>(_data);
   }
 
-  void* raw_data() const { return reinterpret_cast<void*>(_data); }
+  void* data_ptr() const { return reinterpret_cast<void*>(_data); }
 
   /**
    * @brief Creates a transposed view of the tensor by swapping two specified axes.
@@ -137,6 +145,37 @@ public:
    * @throw std::out_of_range if any axis is out of bounds.
    */
   AMSTensor transpose(IntDimType axis1 = 0, IntDimType axis2 = 1) const;
+
+  /**
+   * @brief Creates a deep copy of this tensor, analogous to torch::Tensor::clone().
+   * Allocates a new tensor with the same shape, data type, and memory location,
+   * and copies all element data into it. The returned tensor always owns its memory.
+   * If the source tensor is non-contiguous, the clone is compacted into a
+   * contiguous layout (row-major strides).
+   *
+   * @return A new owning AMSTensor containing a copy of the data.
+   */
+  AMSTensor clone() const;
+
+  /**
+  * @brief Concatenates multiple tensors along the last dimension into a single
+  *        contiguous tensor. All input tensors must have identical shapes except
+  *        for the last dimension, which is summed to form the output.
+  *        The resulting tensor is always contiguous in row-major (C) order and
+  *        allocated on the host.
+  * @param[in] tensors   The tensors to concatenate. Must be non-empty, and all
+  *                       tensors must share the same rank and agree on every
+  *                       dimension except the last.
+  * @param[in] inputDType The element data type (e.g., AMS_SINGLE, AMS_DOUBLE).
+  *                       Used to determine element size for the copy and to
+  *                       construct the returned tensor.
+  * @return A new owning AMSTensor containing the concatenated data.
+  *
+  * @note The caller is responsible for ensuring all tensors are CPU-resident
+  *       and contiguous. The returned tensor is allocated via ResourceManager
+  *       on AMS_HOST.
+  */
+  static AMSTensor concat(ArrayRef<AMSTensor> tensors, AMSDType inputDType);
 };
 
 // Explicit instantiation declarations

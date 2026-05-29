@@ -49,6 +49,7 @@ endif()
 option(ENABLE_WORKFLOW "Install python drivers used by the outer workflow" OFF)
 option(ENABLE_RMQ "Use RabbitMQ as a database back end" OFF)
 option(ENABLE_PERFFLOWASPECT "Use PerfFlowAspect for profiling" OFF)
+option(ENABLE_TORCH "Enable PyTorch ML inference support" ON)
 option(AMS_ENABLE_DEBUG "Enable verbose AMS messages" OFF)
 option(AMS_INSTALL_FLUX_PYTHON
        "Install AMS Workflow Python package with the flux-python optional dependency"
@@ -390,11 +391,19 @@ if (ENABLE_RMQ)
   find_package(libevent REQUIRED)
 endif()
 
-find_package(Torch REQUIRED)
-# This is annoying, torch populates all my cuda flags
-# and resets them
-set(CMAKE_CUDA_FLAGS "")
-set(CMAKE_CUDA_ARCHITECTURES ON)
+# ------------------------------------------------------------------------------
+if (ENABLE_TORCH)
+  find_package(Torch REQUIRED)
+  # This is annoying, torch populates all my cuda flags
+  # and resets them
+  set(CMAKE_CUDA_FLAGS "")
+  set(CMAKE_CUDA_ARCHITECTURES ON)
+  list(APPEND AMS_APP_DEFINES "__AMS_ENABLE_TORCH__")
+  # Torch adds this flag which is not valid for C++
+  string(REPLACE "-Wno-duplicate-decl-specifier" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+else()
+  message(STATUS "PyTorch support disabled (ENABLE_TORCH=OFF). ML inference will not be available.")
+endif()
 
 if (ENABLE_PERFFLOWASPECT)
   find_package(perfflowaspect CONFIG REQUIRED)

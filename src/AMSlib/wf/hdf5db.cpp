@@ -5,17 +5,17 @@
  * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
  */
 
-#include <ATen/core/ATen_fwd.h>
 #include <H5Ipublic.h>
 #include <H5Tpublic.h>
 #include <H5public.h>
-#include <c10/core/ScalarTypeToTypeMeta.h>
-#include <torch/torch.h>
-#include <torch/types.h>
+
 
 #include <experimental/filesystem>
 #include <stdexcept>
-
+#include <sstream>
+#include <vector>
+ 
+#include "AMSTensor.hpp"
 #include "ArrayRef.hpp"
 #include "wf/basedb.hpp"
 
@@ -42,7 +42,7 @@ static std::string SmallVectorToString(ams::MutableArrayRef<hsize_t> shape)
   return oss.str();
 }
 
-static std::string tensorSizeToString(const at::IntArrayRef shape)
+static std::string tensorSizeToString(ArrayRef<AMSTensor::IntDimType> shape)
 {
   std::ostringstream oss;
   oss << "[";
@@ -56,45 +56,32 @@ static std::string tensorSizeToString(const at::IntArrayRef shape)
   return oss.str();
 }
 
-// Helper function to convert torch::Dtype to a string
-static std::string dtypeToString(torch::Dtype dtype)
+static std::string amsDTypeToString(AMSDType dtype)
 {
-  static const std::unordered_map<torch::Dtype, std::string> dtypeMap = {
-      {torch::kFloat32, "float32"},
-      {torch::kFloat, "float32"},  // Alias for float32
-      {torch::kFloat64, "float64"},
-      {torch::kDouble, "float64"},  // Alias for float64
-      {torch::kInt32, "int32"},
-      {torch::kInt64, "int64"},
-      {torch::kBool, "bool"},
-      {torch::kUInt8, "uint8"},
-      {torch::kInt8, "int8"},
-      {torch::kHalf, "float16"},
-      {torch::kBFloat16, "bfloat16"}};
-  return dtypeMap.count(dtype) ? dtypeMap.at(dtype) : "unknown dtype";
+  switch (dtype) {
+    case AMSDType::AMS_SINGLE: return "float32";
+    case AMSDType::AMS_DOUBLE: return "float64";
+    case AMSDType::AMS_INT32:  return "int32";
+    case AMSDType::AMS_INT64:  return "int64";
+    default:                   return "unknown dtype";
+  }
 }
-// Helper function to convert torch::Dtype to a string
-static hid_t torchDTypeToHDF5Type(torch::Dtype dtype)
+
+static hid_t amsDTypeToHDF5Type(AMSDType dtype)
 {
-  static const std::unordered_map<torch::Dtype, hid_t> dtypeMap = {
-      {torch::kFloat32, H5T_NATIVE_FLOAT},
-      {torch::kFloat, H5T_NATIVE_FLOAT},  // Alias for float32
-      {torch::kFloat64, H5T_NATIVE_DOUBLE},
-      {torch::kDouble, H5T_NATIVE_DOUBLE},  // Alias for float64
-      {torch::kInt32, H5T_NATIVE_INT},
-      {torch::kInt64, H5T_NATIVE_LONG},
-      {torch::kBool, H5T_NO_CLASS},
-      {torch::kUInt8, H5T_NO_CLASS},
-      {torch::kInt8, H5T_NO_CLASS},
-      {torch::kHalf, H5T_NO_CLASS},
-      {torch::kBFloat16, H5T_NO_CLASS}};
-  return dtypeMap.count(dtype) ? dtypeMap.at(dtype) : H5T_NO_CLASS;
+  switch (dtype) {
+    case AMSDType::AMS_SINGLE: return H5T_NATIVE_FLOAT;
+    case AMSDType::AMS_DOUBLE: return H5T_NATIVE_DOUBLE;
+    case AMSDType::AMS_INT32:  return H5T_NATIVE_INT;
+    case AMSDType::AMS_INT64:  return H5T_NATIVE_LONG;
+    default:                   return H5T_NO_CLASS;
+  }
 }
 
 hid_t hdf5DB::getDataSet(hid_t group,
                          std::string dName,
-                         ams::SmallVector<hsize_t>& currentShape,
-                         const at::IntArrayRef Shape,
+                         SmallVector<hsize_t>& currentShape,
+                         ArrayRef<AMSTensor::IntDimType> Shape,
                          hid_t dataType,
                          const size_t Chunk)
 {
@@ -127,7 +114,7 @@ hid_t hdf5DB::getDataSet(hid_t group,
   hsize_t max_dims[Shape.size()];
   hsize_t initial_shape[Shape.size()];
   for (int i = 0; i < Shape.size(); i++) {
-    max_dims[i] = Shape[i];
+    max_dims[i] = static_cast<hsize_t>(Shape[i]);
     initial_shape[i] = 0;
   }
   max_dims[0] = H5S_UNLIMITED;
@@ -159,7 +146,7 @@ hid_t hdf5DB::getDataSet(hid_t group,
 }
 
 
-void hdf5DB::createDataSets(at::IntArrayRef InShapes, at::IntArrayRef OutShapes)
+void hdf5DB::createDataSets(ArrayRef<AMSTensor::IntDimType> InShapes, ArrayRef<AMSTensor::IntDimType> OutShapes)
 {
   HDIset = getDataSet(HFile, "input_data", currentInputShape, InShapes, HDType);
 
@@ -169,16 +156,17 @@ void hdf5DB::createDataSets(at::IntArrayRef InShapes, at::IntArrayRef OutShapes)
 
 void hdf5DB::writeDataToDataset(ams::MutableArrayRef<hsize_t> currentShape,
                                 hid_t& dset,
-                                const at::Tensor& tensor_data)
+                                const AMSTensor& tensor_data)
 {
   herr_t status;
 
-  // Ensure tensor is contiguous
-  torch::Tensor tensor_contiguous = tensor_data.contiguous();
+  // // Ensure tensor is contiguous
+  // torch::Tensor tensor_contiguous = tensor_data.contiguous();
 
-  // Get tensor dimensions
-  std::vector<hsize_t> tensor_dims(tensor_contiguous.sizes().begin(),
-                                   tensor_contiguous.sizes().end());
+  // TODO: make sure it is contiguous
+  std::vector<hsize_t> tensor_dims(tensor_data.sizes().begin(),
+                                   tensor_data.sizes().end());
+
   int rank = tensor_dims.size();
 
   // Initialize currentShape if it's empty (e.g., first write or reopening an existing file)
@@ -241,7 +229,7 @@ void hdf5DB::writeDataToDataset(ams::MutableArrayRef<hsize_t> currentShape,
                     memSpace,
                     fileSpace,
                     H5P_DEFAULT,
-                    tensor_contiguous.data_ptr());
+                    tensor_data.data_ptr());
   if (status < 0) {
     throw std::runtime_error("Failed to write data to dataset.");
   }
@@ -255,7 +243,7 @@ void hdf5DB::writeDataToDataset(ams::MutableArrayRef<hsize_t> currentShape,
 }
 
 
-void hdf5DB::_store(const at::Tensor& inputs, const at::Tensor& outputs)
+void hdf5DB::_store(const AMSTensor& inputs, const AMSTensor& outputs)
 {
   AMS_DBG(DB,
           "DB of type {} stores input/output tensors of  shapes {}, "
@@ -322,41 +310,52 @@ hdf5DB::~hdf5DB()
   HDF5_ERROR(err);
 }
 
-void hdf5DB::store(ArrayRef<torch::Tensor> Inputs,
-                   ArrayRef<torch::Tensor> Outputs)
+void hdf5DB::store(ArrayRef<AMSTensor> Inputs,
+                   ArrayRef<AMSTensor> Outputs)
 {
 
-  auto tOptions = torch::TensorOptions()
-                      .dtype(torch::kFloat32)
-                      .device(c10::DeviceType::CPU);
+  // auto tOptions = torch::TensorOptions()
+  //                     .dtype(torch::kFloat32)
+  //                     .device(c10::DeviceType::CPU);
 
-  c10::SmallVector<torch::Tensor> ConvertedInputs(Inputs.begin(), Inputs.end());
-  c10::SmallVector<torch::Tensor> ConvertedOutputs(Outputs.begin(),
-                                                   Outputs.end());
+  // c10::SmallVector<torch::Tensor> ConvertedInputs(Inputs.begin(), Inputs.end());
+  // c10::SmallVector<torch::Tensor> ConvertedOutputs(Outputs.begin(),
+  //                                                  Outputs.end());
 
-  auto inputs =
-      torch::cat(ConvertedInputs, Inputs[0].sizes().size() - 1).to(tOptions);
-  auto outputs =
-      torch::cat(ConvertedOutputs, Outputs[0].sizes().size() - 1).to(tOptions);
+  // auto inputs =
+  //     torch::cat(ConvertedInputs, Inputs[0].sizes().size() - 1).to(tOptions);
+  // auto outputs =
+  //     torch::cat(ConvertedOutputs, Outputs[0].sizes().size() - 1).to(tOptions);
 
+  // TODO: handle error in better fashion here
+  if (Inputs.size() == 0 || Outputs.size() == 0) {
+    throw std::invalid_argument("store() requires non-empty input and output tensors");
+  }
 
-  if (inputs.dtype() != outputs.dtype()) {
+  // TODO: Check every tensors type constentcy
+  AMSDType inputDType = Inputs[0].dtype();
+  AMSDType outputDType = Outputs[0].dtype();
+
+  if (inputDType != outputDType) {
     throw std::invalid_argument(
         "Storing into HDF5 database requires all tensors to have the same "
-        "datatype. Now they have:" +
-        dtypeToString(torch::typeMetaToScalarType(inputs.dtype())) + " and " +
-        dtypeToString(torch::typeMetaToScalarType(outputs.dtype())));
+        "datatype. Now they have: " +
+        amsDTypeToString(inputDType) + " and " +
+        amsDTypeToString(outputDType));
   }
 
   if (HDType == -1) {
-    HDType = torchDTypeToHDF5Type(torch::typeMetaToScalarType(inputs.dtype()));
+    HDType = amsDTypeToHDF5Type(inputDType);
   }
 
   if (HDType == -1 || HDType == H5T_NO_CLASS)
     throw std::invalid_argument(
         "Data base can not deduce the data type of the tensors" +
-        dtypeToString(torch::typeMetaToScalarType(inputs.dtype())) + " and " +
-        dtypeToString(torch::typeMetaToScalarType(outputs.dtype())));
+        amsDTypeToString(inputDType) + " and " +
+        amsDTypeToString(outputDType));
+
+  auto inputs = AMSTensor::concat(Inputs, inputDType);
+  auto outputs = AMSTensor::concat(Outputs, outputDType);
 
   _store(inputs, outputs);
 }

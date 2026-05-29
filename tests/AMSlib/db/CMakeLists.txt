@@ -7,7 +7,11 @@ function(BUILD_UNIT_TEST exe source)
   target_include_directories(${exe} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
   # DB tests use the AMS-owned main to avoid HIP shutdown finalizer crashes.
   target_sources(${exe} PRIVATE ../ams_catch_main.cpp)
-  target_link_libraries(${exe} PRIVATE stdc++fs AMS torch Catch2::Catch2)
+  target_link_libraries(${exe} PRIVATE stdc++fs AMS Catch2::Catch2)
+  if (ENABLE_TORCH)
+    target_link_libraries(${exe} PRIVATE torch)
+  endif()
+
   target_include_directories(${exe} PRIVATE ${AMS_TEST_ROOT})
   target_link_libraries(${exe} PRIVATE Threads::Threads)
   target_compile_features(${exe} PRIVATE cxx_std_17)
@@ -41,6 +45,10 @@ function(ADD_DB_UNIT_TEST name exec)
   set_tests_properties(${name} PROPERTIES LABELS HDF5_UNIT_TEST)
 endfunction()
 
-BUILD_UNIT_TEST(db_hdf5 db_hdf5.cpp)
-target_link_libraries(db_hdf5 PRIVATE fmt::fmt)
-ADD_DB_UNIT_TEST(DB::HDF5 db_hdf5)
+# db_hdf5 test currently uses torch::Tensor for test data generation/validation.
+# TODO: Rewrite with AMSTensor test harness to run without torch.
+if (ENABLE_TORCH)
+  BUILD_UNIT_TEST(db_hdf5 db_hdf5.cpp)
+  target_link_libraries(db_hdf5 PRIVATE fmt::fmt)
+  ADD_DB_UNIT_TEST(DB::HDF5 db_hdf5)
+endif()

@@ -8,6 +8,10 @@
 
 #include "AMSTypes.hpp"
 #include "wf/basedb.hpp"
+#include "wf/interface.hpp"
+
+#include <ATen/core/TensorBody.h>
+#include <torch/torch.h>
 
 CATCH_TEST_CASE("DBManager tracks instances and materializes files",
                 "[ams][db][instances]")
@@ -321,7 +325,9 @@ CATCH_TEST_CASE("HDF5 DB: append and verify input/output datasets",
       torch::Tensor OData =
           torch::rand({21, 4}, torch::TensorOptions().dtype(torch::kFloat32));
 
-      db.store(IData, OData);
+      auto amsIData = torchToAMSTensors(IData);
+      auto amsOData = torchToAMSTensors(OData);
+      db.store(amsIData, amsOData);
 
       inputTensors.emplace_back(std::move(IData));
       outputTensors.emplace_back(std::move(OData));

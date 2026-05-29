@@ -4,9 +4,13 @@
 
 # ------------------------------------------------------------------------------
 # handle sources and headers
-set(AMS_LIB_SRC wf/debug.cpp wf/logger.cpp wf/utils.cpp wf/SmallVector.cpp ml/surrogate.cpp wf/basedb.cpp AMSTensor.cpp AMSGraph.cpp wf/interface.cpp wf/resource_manager.cpp ml/Model.cpp ml/AbstractModel.cpp AMS.cpp)
+set(AMS_LIB_SRC wf/debug.cpp wf/logger.cpp wf/utils.cpp wf/SmallVector.cpp wf/basedb.cpp AMSTensor.cpp AMSGraph.cpp wf/interface.cpp wf/resource_manager.cpp AMS.cpp)
 
-  list(APPEND AMS_LIB_SRC wf/hdf5db.cpp wf/jsondb.cpp)
+if (ENABLE_TORCH)
+  list(APPEND AMS_LIB_SRC ml/surrogate.cpp ml/Model.cpp ml/AbstractModel.cpp)
+endif()
+
+list(APPEND AMS_LIB_SRC wf/hdf5db.cpp wf/jsondb.cpp)
 
 if (ENABLE_RMQ)
   list(APPEND AMS_LIB_SRC wf/rmqdb.cpp)
@@ -77,6 +81,12 @@ if (BUILD_SHARED_LIBS)
   target_link_libraries(AMS INTERFACE "-Wl,--allow-shlib-undefined")
 endif()
 target_link_libraries(AMS INTERFACE Threads::Threads)
+
+if (ENABLE_TORCH)
+  target_link_libraries(AMS PUBLIC
+      		$<BUILD_INTERFACE:torch> PRIVATE
+      		$<INSTALL_INTERFACE:torch>)
+endif()
 
 configure_file ("${CMAKE_CURRENT_SOURCE_DIR}/include/AMS-config.h.in" "${PROJECT_BINARY_DIR}/include/AMS-config.h")
 configure_file ("${CMAKE_CURRENT_SOURCE_DIR}/include/AMS.h" "${PROJECT_BINARY_DIR}/include/AMS.h" COPYONLY)
