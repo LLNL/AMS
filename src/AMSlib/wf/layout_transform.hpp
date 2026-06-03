@@ -1,5 +1,7 @@
 #pragma once
 
+#if defined(__AMS_ENABLE_TORCH__)
+
 #include <ATen/ATen.h>
 #include <torch/script.h>  // for torch::jit::IValue
 
@@ -39,3 +41,4 @@ public:
 };
 
 }  // namespace ams
+#endif // __AMS_ENABLE_TORCH__

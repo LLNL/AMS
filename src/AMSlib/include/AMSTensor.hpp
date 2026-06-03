@@ -96,6 +96,7 @@ public:
 
 
   static AMSTensor view(AMSTensor& tensor);
+  static AMSTensor view(const AMSTensor& tensor);
 
   /**
    * @brief Destructor for AMSTensor, deallocates memory if this tensor owns it.

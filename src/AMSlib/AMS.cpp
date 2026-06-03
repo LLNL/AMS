@@ -485,7 +485,6 @@ void AMSCExecute(AMSExecutor executor,
                  ams::SmallVector<ams::AMSTensor>& inouts,
                  ams::SmallVector<ams::AMSTensor>& outs)
 {
-
   // Define the lambda and let the compiler deduce the type conversion to std::function
   DomainLambda OrigComputation =
       [&](const ams::SmallVector<ams::AMSTensor>& ams_ins,

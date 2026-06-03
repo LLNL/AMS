@@ -8,7 +8,7 @@
 #ifndef __AMS_UTILS_HPP__
 #define __AMS_UTILS_HPP__
 
-#ifdef __AMS_ENABLE_TORCH__
+#if defined(__AMS_ENABLE_TORCH__)
 #include <ATen/core/TensorBody.h>
 #endif
 
@@ -94,14 +94,13 @@ static inline std::string shapeToString(const ams::AMSTensor& tensor)
   return oss.str();
 }
 
-#ifdef __AMS_ENABLE_TORCH__
+#if defined(__AMS_ENABLE_TORCH__)
 static inline std::string shapeToString(const at::Tensor& tensor)
 {
   std::ostringstream oss;
   oss << tensor.sizes();
   return oss.str();
 }
-#endif  // __AMS_ENABLE_TORCH__
 
 namespace ams
 {
@@ -111,6 +110,8 @@ SmallVector<at::Tensor> maskTensor(at::Tensor& Src, at::Tensor& Mask);
 }  // namespace tensor
 
 }  // namespace ams
+#endif  // __AMS_ENABLE_TORCH__
+
 
 template <>
 struct fmt::formatter<ams::AMSResourceType> : fmt::formatter<std::string_view> {

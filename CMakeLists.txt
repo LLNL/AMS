@@ -241,6 +241,7 @@ if (AMS_DEFER_STATIC_TPL_RESOLUTION AND NOT BUILD_SHARED_LIBS)
           "AMS_DEFER_STATIC_TPL_RESOLUTION is ignored when BUILD_SHARED_LIBS=OFF.")
 endif()
 
+# set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
 include(cmake/FetchAndAddFmt.cmake)
@@ -405,7 +406,21 @@ else()
   message(STATUS "PyTorch support disabled (ENABLE_TORCH=OFF). ML inference will not be available.")
 endif()
 
+<<<<<<< HEAD
 if (ENABLE_PERFFLOWASPECT)
+=======
+# ------------------------------------------------------------------------------
+if (WITH_RZ)
+  find_package(MPI REQUIRED)
+  add_subdirectory(rz)
+  list(APPEND AMS_APP_INCLUDES "${RZ_AMS_INCLUDES}" "${MPI_INCLUDE_PATH}")
+  list(APPEND AMS_APP_LIB_DIRS "${RZ_AMS_LIBDIRS}")
+  list(APPEND AMS_APP_LIBRARIES "${RZ_AMS_LIBRARIES}" "${MPI_C_LIBRARIES}")
+  list(APPEND AMS_APP_DEFINES "${RZ_AMS_DEFINES}")
+endif()
+
+if (WITH_PERFFLOWASPECT)
+>>>>>>> 9e3ac20 (Working version with -DWITH_TORCH=Off and -DWITH_TORCH=On)
   find_package(perfflowaspect CONFIG REQUIRED)
   list(APPEND AMS_APP_DEFINES "__AMS_ENABLE_PERFFLOWASPECT__")
   list(APPEND AMS_APP_LIB_DIRS "${PERFFLOWASPECT_LIB_DIR}")

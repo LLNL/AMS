@@ -1,5 +1,7 @@
 #pragma once
 
+#if defined(__AMS_ENABLE_TORCH__)
+
 #include <ATen/ATen.h>
 
 #include <algorithm>
@@ -111,3 +113,4 @@ struct TensorBundle {
 };
 
 }  // namespace ams
+#endif // __AMS_ENABLE_TORCH__

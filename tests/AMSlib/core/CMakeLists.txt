@@ -21,6 +21,7 @@ function(BUILD_UNIT_TEST exe source)
 
   target_link_libraries(${exe} PRIVATE ${AMS_HDF5_TARGET})
 
+  target_link_libraries(${exe} PRIVATE Threads::Threads)
 
   if(WITH_CUDA)
     target_link_libraries(${exe} PRIVATE CUDA::cudart)
@@ -48,12 +49,12 @@ function(BUILD_UNIT_TEST exe source)
 endfunction()
 
 # Tests that do NOT require torch
-BUILD_UNIT_TEST(int_tensors amstensor_int.cpp)
-ADD_CORE_UNIT_TEST(CORE::TENSOR_INT int_tensors)
-BUILD_UNIT_TEST(float_tensors amstensor_float.cpp)
-ADD_CORE_UNIT_TEST(CORE::TENSOR_FLOAT float_tensors)
-BUILD_UNIT_TEST(mixed_tensors amstensor_mixed.cpp)
-ADD_CORE_UNIT_TEST(CORE::TENSOR_MIXED mixed_tensors)
+BUILD_UNIT_TEST(amstensor_int amstensor_int.cpp)
+ADD_CORE_UNIT_TEST(CORE::TENSOR_INT amstensor_int)
+BUILD_UNIT_TEST(amstensor_float amstensor_float.cpp)
+ADD_CORE_UNIT_TEST(CORE::TENSOR_FLOAT amstensor_float)
+BUILD_UNIT_TEST(amstensor_mixed amstensor_mixed.cpp)
+ADD_CORE_UNIT_TEST(CORE::TENSOR_MIXED amstensor_mixed)
 
 # Tests that require torch
 # TODO: rewrite some of these tests with AMSTensor

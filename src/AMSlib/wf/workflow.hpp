@@ -93,13 +93,13 @@ class AMSWorkflow
     SmallVector<AMSTensor> StoreInputTensors;
     SmallVector<AMSTensor> StoreOutputTensors;
     for (auto& Tensor : Ins)
-      StoreInputTensors.push_back(AMSTensor::view(const_cast<AMSTensor&>(Tensor)));
+      StoreInputTensors.push_back(AMSTensor::view(Tensor));
     for (auto& Tensor : InOutsBefore)
-      StoreInputTensors.push_back(AMSTensor::view(const_cast<AMSTensor&>(Tensor)));
+      StoreInputTensors.push_back(AMSTensor::view(Tensor));
     for (auto& Tensor : Outs)
-      StoreOutputTensors.push_back(AMSTensor::view(const_cast<AMSTensor&>(Tensor)));
+      StoreOutputTensors.push_back(AMSTensor::view(Tensor));
     for (auto& Tensor : InOutsAfter)
-      StoreOutputTensors.push_back(AMSTensor::view(const_cast<AMSTensor&>(Tensor)));
+      StoreOutputTensors.push_back(AMSTensor::view(Tensor));
 
     AMS_DBG(Workflow,
             "Storing data (#elements = {}) to database",
@@ -573,7 +573,7 @@ public:
 // -----------------------------------------------------------------------
 
   void evaluate(DomainLambda CallBack,
-                ams::MutableArrayRef<AMSTensor> Ins,
+                ams::ArrayRef<AMSTensor> Ins,
                 ams::MutableArrayRef<AMSTensor> InOuts,
                 ams::MutableArrayRef<AMSTensor> Outs)
   {
@@ -612,7 +612,6 @@ public:
     CALIPER(CALI_MARK_END("PHYSICS MODULE");)
   
     if (DB) {
-      // Build views for the store call
       // TODO: remove useless copies
       SmallVector<AMSTensor> storeIns;
       for (auto& t : Ins)

@@ -89,4 +89,7 @@ if (ENABLE_TORCH)
   BUILD_UNIT_TEST(policy policy.cpp Catch2::Catch2 ../ams_catch_main.cpp)
   target_link_libraries(policy PRIVATE fmt::fmt)
   ADD_WORKFLOW_UNIT_TEST(WORKFLOW::POLICY policy)
+
+  BUILD_UNIT_TEST(pipeline pipeline.cpp)
+  ADD_WORKFLOW_UNIT_TEST(WORKFLOW::PIPELINE pipeline)
 endif()

@@ -1,5 +1,7 @@
 #pragma once
 
+#if defined(__AMS_ENABLE_TORCH__)
+
 #include <ATen/ATen.h>
 #include <torch/script.h>
 
@@ -165,3 +167,4 @@ private:
 };
 
 }  // namespace ams
+#endif // __AMS_ENABLE_TORCH__

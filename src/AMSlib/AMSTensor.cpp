@@ -112,7 +112,7 @@ AMSTensor AMSTensor::view(ScalarType* data,
                    true);
 }
 
-AMSTensor AMSTensor::view(AMSTensor& tensor)
+AMSTensor AMSTensor::view(const AMSTensor& tensor)
 {
   if (tensor._dType == AMS_DOUBLE)
     return AMSTensor::view((double*)tensor._data,
@@ -136,6 +136,11 @@ AMSTensor AMSTensor::view(AMSTensor& tensor)
                            tensor._location);
   throw std::runtime_error(
       "Creating view through copying constructor has incorrect dtype");
+}
+
+AMSTensor AMSTensor::view(AMSTensor& tensor)
+{
+  return view(static_cast<const AMSTensor&>(tensor));
 }
 
 AMSTensor::~AMSTensor()

@@ -1,5 +1,6 @@
 #pragma once
 
+#if defined(__AMS_ENABLE_TORCH__)
 #include <ATen/ATen.h>
 
 #include <cstdint>
@@ -74,3 +75,4 @@ struct EvalContext {
 };
 
 }  // namespace ams
+#endif // __AMS_ENABLE_TORCH__

@@ -1,5 +1,7 @@
 #pragma once
 
+#if defined(__AMS_ENABLE_TORCH__)
+
 #include "AMSError.hpp"
 
 namespace ams
@@ -24,3 +26,4 @@ public:
 };
 
 }  // namespace ams
+#endif // __AMS_ENABLE_TORCH__

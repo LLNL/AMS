@@ -1,5 +1,6 @@
 #pragma once
 
+#if defined(__AMS_ENABLE_TORCH__)
 #include "wf/pipeline.hpp"
 
 namespace ams
@@ -31,3 +32,4 @@ public:
 };
 
 }  // namespace ams
+#endif // __AMS_ENABLE_TORCH__
