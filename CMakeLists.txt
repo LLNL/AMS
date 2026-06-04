@@ -399,9 +399,26 @@ if (ENABLE_TORCH)
   # and resets them
   set(CMAKE_CUDA_FLAGS "")
   set(CMAKE_CUDA_ARCHITECTURES ON)
+  # Torch/PyTorch propagates C-only warning flags (e.g. -Wno-duplicate-decl-specifier)
+  # via imported target interface options and HIP variables.
+  # See: https://github.com/pytorch/pytorch/pull/164552
+  # Strip them so they don't get passed to the C++ compiler.
+  foreach(_target torch torch_cpu torch_cuda torch_hip c10 c10_cuda c10_hip)
+    if(TARGET ${_target})
+      get_target_property(_opts ${_target} INTERFACE_COMPILE_OPTIONS)
+      if(_opts)
+        string(REGEX REPLACE "-Wno-duplicate-decl-specifier" "" _opts "${_opts}")
+        set_target_properties(${_target} PROPERTIES INTERFACE_COMPILE_OPTIONS "${_opts}")
+      endif()
+    endif()
+  endforeach()
+  # Also strip from HIP-specific CMake variables that torch may have polluted
+  foreach(_var CMAKE_CXX_FLAGS CMAKE_HIP_FLAGS HIP_CXX_FLAGS HIP_HIPCC_FLAGS)
+    if(DEFINED ${_var})
+      string(REPLACE "-Wno-duplicate-decl-specifier" "" ${_var} "${${_var}}")
+    endif()
+  endforeach()
   list(APPEND AMS_APP_DEFINES "__AMS_ENABLE_TORCH__")
-  # Torch adds this flag which is not valid for C++
-  string(REPLACE "-Wno-duplicate-decl-specifier" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 else()
   message(STATUS "PyTorch support disabled (ENABLE_TORCH=OFF). ML inference will not be available.")
 endif()
