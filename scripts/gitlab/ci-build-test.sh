@@ -22,7 +22,8 @@ build_and_test() {
     "WITH_MPI=${WITH_MPI}" \
     "WITH_WORKFLOW=${WITH_WORKFLOW}" \
     "WITH_CUDA=${WITH_CUDA}" \
-    "WITH_HIP=${WITH_HIP}"
+    "WITH_HIP=${WITH_HIP}" \
+    "WITH_TORCH ${WITH_TORCH}"
   echo "*******************************************************************************************"
 
   build_dir="/tmp/ams/$(uuidgen)"
@@ -76,6 +77,7 @@ build_and_test() {
     -DENABLE_HIP=${WITH_HIP} \
     -DENABLE_MPI=${WITH_MPI} \
     -DAMS_ENABLE_DEBUG=On \
+    -DWITH_TORCH=${WITH_TORCH} \
     -DTorch_DIR="$AMS_TORCH_PATH" \
     -DZLIB_DIR="$AMS_ZLIB_PATH" \
     -Dcaliper_DIR="$AMS_CALIPER_PATH" \
