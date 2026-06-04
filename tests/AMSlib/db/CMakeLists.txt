@@ -14,6 +14,7 @@ function(BUILD_UNIT_TEST exe source)
 
   target_include_directories(${exe} PRIVATE ${AMS_TEST_ROOT})
   target_link_libraries(${exe} PRIVATE Threads::Threads)
+  target_link_libraries(${exe} PRIVATE fmt::fmt)
   target_compile_features(${exe} PRIVATE cxx_std_17)
 
   target_link_libraries(${exe} PRIVATE ${AMS_HDF5_LINK_TARGETS})
@@ -45,10 +46,13 @@ function(ADD_DB_UNIT_TEST name exec)
   set_tests_properties(${name} PROPERTIES LABELS HDF5_UNIT_TEST)
 endfunction()
 
+# AMSTensor-only tests (always built)
+BUILD_UNIT_TEST(db_hdf5_ams db_hdf5_ams.cpp)
+ADD_DB_UNIT_TEST(DB::HDF5_AMSTENSOR db_hdf5_ams)
+
 # db_hdf5 test currently uses torch::Tensor for test data generation/validation.
-# TODO: Rewrite with AMSTensor test harness to run without torch.
+
 if (ENABLE_TORCH)
-  BUILD_UNIT_TEST(db_hdf5 db_hdf5.cpp)
-  target_link_libraries(db_hdf5 PRIVATE fmt::fmt)
-  ADD_DB_UNIT_TEST(DB::HDF5 db_hdf5)
+  BUILD_UNIT_TEST(db_hdf5_torch db_hdf5_torch.cpp)
+  ADD_DB_UNIT_TEST(DB::HDF5_TORCH db_hdf5_torch)
 endif()

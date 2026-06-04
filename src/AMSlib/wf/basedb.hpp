@@ -1647,7 +1647,7 @@ public:
    */
   PERFFASPECT()
   virtual void store(ArrayRef<AMSTensor> Inputs,
-                     ArrayRef<AMSTensor> Outputs)
+                     ArrayRef<AMSTensor> Outputs) override
   {
     interface.publish(appDomain, Inputs, Outputs);
   }
