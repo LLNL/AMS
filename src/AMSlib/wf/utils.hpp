@@ -18,8 +18,8 @@
 #include <array>
 #include <iostream>
 #include <random>
-#include <vector>
 #include <sstream>
+#include <vector>
 
 #include "AMS.h"
 #include "AMSTensor.hpp"

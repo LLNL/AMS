@@ -26,14 +26,13 @@ static inline AMSTensor::IntDimType computeNumElements(ams::ArrayRef<T> shapes)
 }
 
 bool AMSTensor::isContiguous(ams::ArrayRef<AMSTensor::IntDimType> shape,
-                         ams::ArrayRef<AMSTensor::IntDimType> strides) const
+                             ams::ArrayRef<AMSTensor::IntDimType> strides) const
 {
   const size_t ndim = shape.size();
   if (ndim == 0) return true;
   if (strides[ndim - 1] != 1) return false;
   for (int i = ndim - 2; i >= 0; --i) {
-    if (strides[i] != strides[i + 1] * shape[i + 1])
-      return false;
+    if (strides[i] != strides[i + 1] * shape[i + 1]) return false;
   }
   return true;
 }
@@ -238,9 +237,9 @@ AMSTensor AMSTensor::clone() const
   // Compute contiguous strides (C style) for the destination
   ams::SmallVector<IntDimType> dstStrides(ndim);
   if (ndim > 0) {
-    dstStrides[ndim-1] = 1;
+    dstStrides[ndim - 1] = 1;
     for (int i = static_cast<int>(ndim) - 2; i >= 0; --i)
-      dstStrides[i] = dstStrides[i+1] * _shape[i+1];
+      dstStrides[i] = dstStrides[i + 1] * _shape[i + 1];
   }
 
   if (_contiguous) {
@@ -297,22 +296,24 @@ AMSTensor AMSTensor::concat(ArrayRef<AMSTensor> tensors, AMSDType inputDType)
   size_t ndim = firstShape.size();
   size_t lastDimTotal = 0;
   for (auto& t : tensors) {
-    lastDimTotal += t.shape()[ndim-1];
+    lastDimTotal += t.shape()[ndim - 1];
   }
 
-  ams::SmallVector<AMSTensor::IntDimType> newShape(firstShape.begin(), firstShape.end());
-  newShape[ndim-1] = static_cast<AMSTensor::IntDimType>(lastDimTotal);
+  ams::SmallVector<AMSTensor::IntDimType> newShape(firstShape.begin(),
+                                                   firstShape.end());
+  newShape[ndim - 1] = static_cast<AMSTensor::IntDimType>(lastDimTotal);
 
   // Compute contiguous strides for the concatenated tensor
   ams::SmallVector<AMSTensor::IntDimType> newStrides(ndim);
   newStrides[ndim - 1] = 1;
   for (int i = static_cast<int>(ndim) - 2; i >= 0; --i) {
-    newStrides[i] = newStrides[i+1] * newShape[i + 1];
+    newStrides[i] = newStrides[i + 1] * newShape[i + 1];
   }
 
   size_t elemSize = dtype_to_size(inputDType);
   size_t totalElements = 1;
-  for (auto s : newShape) totalElements *= s;
+  for (auto s : newShape)
+    totalElements *= s;
   size_t totalBytes = totalElements * elemSize;
 
   auto& rm = ams::ResourceManager::getInstance();
@@ -320,7 +321,8 @@ AMSTensor AMSTensor::concat(ArrayRef<AMSTensor> tensors, AMSDType inputDType)
 
   // Copy data row by row: for each row, copy each tensor's last-dim slice
   size_t numRows = 1;
-  for (size_t i = 0; i < ndim - 1; ++i) numRows *= firstShape[i];
+  for (size_t i = 0; i < ndim - 1; ++i)
+    numRows *= firstShape[i];
 
   size_t dstOffset = 0;
   for (size_t row = 0; row < numRows; ++row) {
@@ -336,13 +338,25 @@ AMSTensor AMSTensor::concat(ArrayRef<AMSTensor> tensors, AMSDType inputDType)
   // Create owning tensor from the buffer
   // TODO: improve error handling
   if (inputDType == AMSDType::AMS_SINGLE)
-    return AMSTensor::view(reinterpret_cast<float*>(buffer), newShape, newStrides, AMSResourceType::AMS_HOST);
+    return AMSTensor::view(reinterpret_cast<float*>(buffer),
+                           newShape,
+                           newStrides,
+                           AMSResourceType::AMS_HOST);
   else if (inputDType == AMSDType::AMS_DOUBLE)
-    return AMSTensor::view(reinterpret_cast<double*>(buffer), newShape, newStrides, AMSResourceType::AMS_HOST);
+    return AMSTensor::view(reinterpret_cast<double*>(buffer),
+                           newShape,
+                           newStrides,
+                           AMSResourceType::AMS_HOST);
   else if (inputDType == AMSDType::AMS_INT32)
-    return AMSTensor::view(reinterpret_cast<int32_t*>(buffer), newShape, newStrides, AMSResourceType::AMS_HOST);
+    return AMSTensor::view(reinterpret_cast<int32_t*>(buffer),
+                           newShape,
+                           newStrides,
+                           AMSResourceType::AMS_HOST);
   else if (inputDType == AMSDType::AMS_INT64)
-    return AMSTensor::view(reinterpret_cast<int64_t*>(buffer), newShape, newStrides, AMSResourceType::AMS_HOST);
+    return AMSTensor::view(reinterpret_cast<int64_t*>(buffer),
+                           newShape,
+                           newStrides,
+                           AMSResourceType::AMS_HOST);
   throw std::runtime_error("Unsupported dtype in concat");
 }
 

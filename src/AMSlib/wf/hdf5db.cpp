@@ -13,8 +13,9 @@
 #include <experimental/filesystem>
 #include <stdexcept>
 #include <sstream>
+#include <stdexcept>
 #include <vector>
- 
+
 #include "AMSTensor.hpp"
 #include "ArrayRef.hpp"
 #include "wf/basedb.hpp"
@@ -59,22 +60,32 @@ static std::string tensorSizeToString(ArrayRef<AMSTensor::IntDimType> shape)
 static std::string amsDTypeToString(AMSDType dtype)
 {
   switch (dtype) {
-    case AMSDType::AMS_SINGLE: return "float32";
-    case AMSDType::AMS_DOUBLE: return "float64";
-    case AMSDType::AMS_INT32:  return "int32";
-    case AMSDType::AMS_INT64:  return "int64";
-    default:                   return "unknown dtype";
+    case AMSDType::AMS_SINGLE:
+      return "float32";
+    case AMSDType::AMS_DOUBLE:
+      return "float64";
+    case AMSDType::AMS_INT32:
+      return "int32";
+    case AMSDType::AMS_INT64:
+      return "int64";
+    default:
+      return "unknown dtype";
   }
 }
 
 static hid_t amsDTypeToHDF5Type(AMSDType dtype)
 {
   switch (dtype) {
-    case AMSDType::AMS_SINGLE: return H5T_NATIVE_FLOAT;
-    case AMSDType::AMS_DOUBLE: return H5T_NATIVE_DOUBLE;
-    case AMSDType::AMS_INT32:  return H5T_NATIVE_INT;
-    case AMSDType::AMS_INT64:  return H5T_NATIVE_LONG;
-    default:                   return H5T_NO_CLASS;
+    case AMSDType::AMS_SINGLE:
+      return H5T_NATIVE_FLOAT;
+    case AMSDType::AMS_DOUBLE:
+      return H5T_NATIVE_DOUBLE;
+    case AMSDType::AMS_INT32:
+      return H5T_NATIVE_INT;
+    case AMSDType::AMS_INT64:
+      return H5T_NATIVE_LONG;
+    default:
+      return H5T_NO_CLASS;
   }
 }
 
@@ -146,7 +157,8 @@ hid_t hdf5DB::getDataSet(hid_t group,
 }
 
 
-void hdf5DB::createDataSets(ArrayRef<AMSTensor::IntDimType> InShapes, ArrayRef<AMSTensor::IntDimType> OutShapes)
+void hdf5DB::createDataSets(ArrayRef<AMSTensor::IntDimType> InShapes,
+                            ArrayRef<AMSTensor::IntDimType> OutShapes)
 {
   HDIset = getDataSet(HFile, "input_data", currentInputShape, InShapes, HDType);
 
@@ -224,12 +236,8 @@ void hdf5DB::writeDataToDataset(ams::MutableArrayRef<hsize_t> currentShape,
   }
 
   // Write the tensor data to the dataset
-  status = H5Dwrite(dset,
-                    HDType,
-                    memSpace,
-                    fileSpace,
-                    H5P_DEFAULT,
-                    tensor_data.data_ptr());
+  status = H5Dwrite(
+      dset, HDType, memSpace, fileSpace, H5P_DEFAULT, tensor_data.data_ptr());
   if (status < 0) {
     throw std::runtime_error("Failed to write data to dataset.");
   }
@@ -310,8 +318,7 @@ hdf5DB::~hdf5DB()
   HDF5_ERROR(err);
 }
 
-void hdf5DB::store(ArrayRef<AMSTensor> Inputs,
-                   ArrayRef<AMSTensor> Outputs)
+void hdf5DB::store(ArrayRef<AMSTensor> Inputs, ArrayRef<AMSTensor> Outputs)
 {
 
   // auto tOptions = torch::TensorOptions()
@@ -329,7 +336,8 @@ void hdf5DB::store(ArrayRef<AMSTensor> Inputs,
 
   // TODO: handle error in better fashion here
   if (Inputs.size() == 0 || Outputs.size() == 0) {
-    throw std::invalid_argument("store() requires non-empty input and output tensors");
+    throw std::invalid_argument(
+        "store() requires non-empty input and output tensors");
   }
 
   // TODO: Check every tensors type constentcy
@@ -340,8 +348,7 @@ void hdf5DB::store(ArrayRef<AMSTensor> Inputs,
     throw std::invalid_argument(
         "Storing into HDF5 database requires all tensors to have the same "
         "datatype. Now they have: " +
-        amsDTypeToString(inputDType) + " and " +
-        amsDTypeToString(outputDType));
+        amsDTypeToString(inputDType) + " and " + amsDTypeToString(outputDType));
   }
 
   if (HDType == -1) {
@@ -351,8 +358,7 @@ void hdf5DB::store(ArrayRef<AMSTensor> Inputs,
   if (HDType == -1 || HDType == H5T_NO_CLASS)
     throw std::invalid_argument(
         "Data base can not deduce the data type of the tensors" +
-        amsDTypeToString(inputDType) + " and " +
-        amsDTypeToString(outputDType));
+        amsDTypeToString(inputDType) + " and " + amsDTypeToString(outputDType));
 
   auto inputs = AMSTensor::concat(Inputs, inputDType);
   auto outputs = AMSTensor::concat(Outputs, outputDType);

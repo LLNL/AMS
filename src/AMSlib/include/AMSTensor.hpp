@@ -23,8 +23,11 @@ public:
   AMSDType dtype() const { return _dType; }
   AMSResourceType location() const { return _location; }
   ams::ArrayRef<IntDimType> strides() const { return _strides; }
-  ams::ArrayRef<IntDimType> shape() const { return _shape; } 
-  ams::ArrayRef<IntDimType> sizes() const { return _shape; } // To mimic PyTorch interface
+  ams::ArrayRef<IntDimType> shape() const { return _shape; }
+  ams::ArrayRef<IntDimType> sizes() const
+  {
+    return _shape;
+  }  // To mimic PyTorch interface
   bool contiguous() const { return _contiguous; }
 
 
@@ -46,7 +49,7 @@ private:
    * @param[in] strides The strides of the tensor.
    */
   bool isContiguous(ams::ArrayRef<IntDimType> shape,
-                          ams::ArrayRef<IntDimType> strides) const;
+                    ams::ArrayRef<IntDimType> strides) const;
 
   /**
    * @brief Constructs a new AMSTensor with the specified shape, strides, data type, and location.

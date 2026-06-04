@@ -106,32 +106,40 @@ CATCH_TEST_CASE("mixed: clone preserves dtype for all four types",
   std::vector<AMSTensor::IntDimType> shape = {3};
   std::vector<AMSTensor::IntDimType> strides = {1};
 
-  auto fView = AMSTensor::view<float>(
-      fData.data(), shape, strides, AMSResourceType::AMS_HOST);
+  auto fView = AMSTensor::view<float>(fData.data(),
+                                      shape,
+                                      strides,
+                                      AMSResourceType::AMS_HOST);
   auto fClone = fView.clone();
   CATCH_REQUIRE(fClone.dtype() == AMSDType::AMS_SINGLE);
   CATCH_REQUIRE(fClone.data<float>()[2] == 3.0f);
 
   // double
   std::vector<double> dData = {10.0, 20.0, 30.0};
-  auto dView = AMSTensor::view<double>(
-      dData.data(), shape, strides, AMSResourceType::AMS_HOST);
+  auto dView = AMSTensor::view<double>(dData.data(),
+                                       shape,
+                                       strides,
+                                       AMSResourceType::AMS_HOST);
   auto dClone = dView.clone();
   CATCH_REQUIRE(dClone.dtype() == AMSDType::AMS_DOUBLE);
   CATCH_REQUIRE(dClone.data<double>()[2] == 30.0);
 
   // int32
   std::vector<int32_t> i32Data = {100, 200, 300};
-  auto i32View = AMSTensor::view<int32_t>(
-      i32Data.data(), shape, strides, AMSResourceType::AMS_HOST);
+  auto i32View = AMSTensor::view<int32_t>(i32Data.data(),
+                                          shape,
+                                          strides,
+                                          AMSResourceType::AMS_HOST);
   auto i32Clone = i32View.clone();
   CATCH_REQUIRE(i32Clone.dtype() == AMSDType::AMS_INT32);
   CATCH_REQUIRE(i32Clone.data<int32_t>()[2] == 300);
 
   // int64
   std::vector<int64_t> i64Data = {1000, 2000, 3000};
-  auto i64View = AMSTensor::view<int64_t>(
-      i64Data.data(), shape, strides, AMSResourceType::AMS_HOST);
+  auto i64View = AMSTensor::view<int64_t>(i64Data.data(),
+                                          shape,
+                                          strides,
+                                          AMSResourceType::AMS_HOST);
   auto i64Clone = i64View.clone();
   CATCH_REQUIRE(i64Clone.dtype() == AMSDType::AMS_INT64);
   CATCH_REQUIRE(i64Clone.data<int64_t>()[2] == 3000);
@@ -160,7 +168,8 @@ CATCH_TEST_CASE("mixed: clone all types in a SmallVector",
       i64Data.data(), shape, strides, AMSResourceType::AMS_HOST));
 
   ams::SmallVector<AMSTensor> clones;
-  for (auto& t : originals) clones.push_back(t.clone());
+  for (auto& t : originals)
+    clones.push_back(t.clone());
 
   // Mutate all source buffers
   fData[0] = 999.0f;
@@ -204,10 +213,14 @@ CATCH_TEST_CASE("mixed: concat two 2D tensors for each dtype",
     std::vector<float> a = {1, 2, 3, 4};
     std::vector<float> b = {10, 20, 30, 40, 50, 60};
 
-    auto tA = AMSTensor::view<float>(
-        a.data(), shapeA, stridesA, AMSResourceType::AMS_HOST);
-    auto tB = AMSTensor::view<float>(
-        b.data(), shapeB, stridesB, AMSResourceType::AMS_HOST);
+    auto tA = AMSTensor::view<float>(a.data(),
+                                     shapeA,
+                                     stridesA,
+                                     AMSResourceType::AMS_HOST);
+    auto tB = AMSTensor::view<float>(b.data(),
+                                     shapeB,
+                                     stridesB,
+                                     AMSResourceType::AMS_HOST);
 
     ams::SmallVector<AMSTensor> tensors;
     tensors.push_back(AMSTensor::view(tA));
@@ -230,10 +243,14 @@ CATCH_TEST_CASE("mixed: concat two 2D tensors for each dtype",
     std::vector<double> a = {1, 2, 3, 4};
     std::vector<double> b = {10, 20, 30, 40, 50, 60};
 
-    auto tA = AMSTensor::view<double>(
-        a.data(), shapeA, stridesA, AMSResourceType::AMS_HOST);
-    auto tB = AMSTensor::view<double>(
-        b.data(), shapeB, stridesB, AMSResourceType::AMS_HOST);
+    auto tA = AMSTensor::view<double>(a.data(),
+                                      shapeA,
+                                      stridesA,
+                                      AMSResourceType::AMS_HOST);
+    auto tB = AMSTensor::view<double>(b.data(),
+                                      shapeB,
+                                      stridesB,
+                                      AMSResourceType::AMS_HOST);
 
     ams::SmallVector<AMSTensor> tensors;
     tensors.push_back(AMSTensor::view(tA));
@@ -256,10 +273,14 @@ CATCH_TEST_CASE("mixed: concat two 2D tensors for each dtype",
     std::vector<int32_t> a = {1, 2, 3, 4};
     std::vector<int32_t> b = {10, 20, 30, 40, 50, 60};
 
-    auto tA = AMSTensor::view<int32_t>(
-        a.data(), shapeA, stridesA, AMSResourceType::AMS_HOST);
-    auto tB = AMSTensor::view<int32_t>(
-        b.data(), shapeB, stridesB, AMSResourceType::AMS_HOST);
+    auto tA = AMSTensor::view<int32_t>(a.data(),
+                                       shapeA,
+                                       stridesA,
+                                       AMSResourceType::AMS_HOST);
+    auto tB = AMSTensor::view<int32_t>(b.data(),
+                                       shapeB,
+                                       stridesB,
+                                       AMSResourceType::AMS_HOST);
 
     ams::SmallVector<AMSTensor> tensors;
     tensors.push_back(AMSTensor::view(tA));
@@ -282,10 +303,14 @@ CATCH_TEST_CASE("mixed: concat two 2D tensors for each dtype",
     std::vector<int64_t> a = {1, 2, 3, 4};
     std::vector<int64_t> b = {10, 20, 30, 40, 50, 60};
 
-    auto tA = AMSTensor::view<int64_t>(
-        a.data(), shapeA, stridesA, AMSResourceType::AMS_HOST);
-    auto tB = AMSTensor::view<int64_t>(
-        b.data(), shapeB, stridesB, AMSResourceType::AMS_HOST);
+    auto tA = AMSTensor::view<int64_t>(a.data(),
+                                       shapeA,
+                                       stridesA,
+                                       AMSResourceType::AMS_HOST);
+    auto tB = AMSTensor::view<int64_t>(b.data(),
+                                       shapeB,
+                                       stridesB,
+                                       AMSResourceType::AMS_HOST);
 
     ams::SmallVector<AMSTensor> tensors;
     tensors.push_back(AMSTensor::view(tA));
@@ -368,14 +393,22 @@ CATCH_TEST_CASE("mixed: concat float then concat int32 independently",
   std::vector<AMSTensor::IntDimType> shape = {2};
   std::vector<AMSTensor::IntDimType> strides = {1};
 
-  auto ftA = AMSTensor::view<float>(
-      fA.data(), shape, strides, AMSResourceType::AMS_HOST);
-  auto ftB = AMSTensor::view<float>(
-      fB.data(), shape, strides, AMSResourceType::AMS_HOST);
-  auto itA = AMSTensor::view<int32_t>(
-      iA.data(), shape, strides, AMSResourceType::AMS_HOST);
-  auto itB = AMSTensor::view<int32_t>(
-      iB.data(), shape, strides, AMSResourceType::AMS_HOST);
+  auto ftA = AMSTensor::view<float>(fA.data(),
+                                    shape,
+                                    strides,
+                                    AMSResourceType::AMS_HOST);
+  auto ftB = AMSTensor::view<float>(fB.data(),
+                                    shape,
+                                    strides,
+                                    AMSResourceType::AMS_HOST);
+  auto itA = AMSTensor::view<int32_t>(iA.data(),
+                                      shape,
+                                      strides,
+                                      AMSResourceType::AMS_HOST);
+  auto itB = AMSTensor::view<int32_t>(iB.data(),
+                                      shape,
+                                      strides,
+                                      AMSResourceType::AMS_HOST);
 
   ams::SmallVector<AMSTensor> fTensors;
   fTensors.push_back(AMSTensor::view(ftA));
@@ -414,8 +447,10 @@ CATCH_TEST_CASE("mixed: move tensors into SmallVector preserves types",
 
   auto f = AMSTensor::create<float>(shape, strides, AMSResourceType::AMS_HOST);
   auto d = AMSTensor::create<double>(shape, strides, AMSResourceType::AMS_HOST);
-  auto i32 = AMSTensor::create<int32_t>(shape, strides, AMSResourceType::AMS_HOST);
-  auto i64 = AMSTensor::create<int64_t>(shape, strides, AMSResourceType::AMS_HOST);
+  auto i32 =
+      AMSTensor::create<int32_t>(shape, strides, AMSResourceType::AMS_HOST);
+  auto i64 =
+      AMSTensor::create<int64_t>(shape, strides, AMSResourceType::AMS_HOST);
 
   auto* fPtr = f.data<float>();
   auto* dPtr = d.data<double>();
@@ -467,15 +502,19 @@ CATCH_TEST_CASE("mixed: transpose then clone preserves dtype",
 
   // float: 2x3 → transpose → 3x2 → clone
   std::vector<float> fSrc = {1, 2, 3, 4, 5, 6};
-  auto fOrig = AMSTensor::view<float>(
-      fSrc.data(), shape, strides, AMSResourceType::AMS_HOST);
+  auto fOrig = AMSTensor::view<float>(fSrc.data(),
+                                      shape,
+                                      strides,
+                                      AMSResourceType::AMS_HOST);
   auto fTransposed = fOrig.transpose(0, 1);
   auto fClone = fTransposed.clone();
 
   // int32: same layout
   std::vector<int32_t> iSrc = {1, 2, 3, 4, 5, 6};
-  auto iOrig = AMSTensor::view<int32_t>(
-      iSrc.data(), shape, strides, AMSResourceType::AMS_HOST);
+  auto iOrig = AMSTensor::view<int32_t>(iSrc.data(),
+                                        shape,
+                                        strides,
+                                        AMSResourceType::AMS_HOST);
   auto iTransposed = iOrig.transpose(0, 1);
   auto iClone = iTransposed.clone();
 

@@ -70,8 +70,8 @@ CATCH_TEST_CASE("int32: create 3D tensor", "[ams][tensor][int32][create]")
   std::vector<AMSTensor::IntDimType> shape = {4, 3, 2};
   std::vector<AMSTensor::IntDimType> strides = {6, 2, 1};
 
-  auto tensor = AMSTensor::create<int32_t>(
-      shape, strides, AMSResourceType::AMS_HOST);
+  auto tensor =
+      AMSTensor::create<int32_t>(shape, strides, AMSResourceType::AMS_HOST);
 
   CATCH_REQUIRE(tensor.dtype() == AMSDType::AMS_INT32);
   CATCH_REQUIRE(tensor.elements() == 24);
@@ -92,8 +92,10 @@ CATCH_TEST_CASE("int32: view 1D from existing buffer",
   std::vector<AMSTensor::IntDimType> shape = {10};
   std::vector<AMSTensor::IntDimType> strides = {1};
 
-  auto v = AMSTensor::view<int32_t>(
-      data.data(), shape, strides, AMSResourceType::AMS_HOST);
+  auto v = AMSTensor::view<int32_t>(data.data(),
+                                    shape,
+                                    strides,
+                                    AMSResourceType::AMS_HOST);
 
   CATCH_REQUIRE(v.dtype() == AMSDType::AMS_INT32);
   CATCH_REQUIRE(v.elements() == 10);
@@ -112,8 +114,10 @@ CATCH_TEST_CASE("int32: view 2D from existing buffer",
   std::vector<AMSTensor::IntDimType> shape = {4, 5};
   std::vector<AMSTensor::IntDimType> strides = {5, 1};
 
-  auto v = AMSTensor::view<int32_t>(
-      data.data(), shape, strides, AMSResourceType::AMS_HOST);
+  auto v = AMSTensor::view<int32_t>(data.data(),
+                                    shape,
+                                    strides,
+                                    AMSResourceType::AMS_HOST);
 
   CATCH_REQUIRE(v.elements() == 20);
   CATCH_REQUIRE(v.shape()[0] == 4);
@@ -133,7 +137,8 @@ CATCH_TEST_CASE("int32: view from AMSTensor alias",
   auto tensor =
       AMSTensor::create<int32_t>(shape, strides, AMSResourceType::AMS_HOST);
   auto* ptr = tensor.data<int32_t>();
-  for (int i = 0; i < 6; ++i) ptr[i] = i + 1;
+  for (int i = 0; i < 6; ++i)
+    ptr[i] = i + 1;
 
   auto alias = AMSTensor::view(tensor);
 
@@ -147,8 +152,7 @@ CATCH_TEST_CASE("int32: view from AMSTensor alias",
 // int32_t — data access
 // =========================================================================
 
-CATCH_TEST_CASE("int32: write and read 1D data",
-                "[ams][tensor][int32][data]")
+CATCH_TEST_CASE("int32: write and read 1D data", "[ams][tensor][int32][data]")
 {
   AMSInit();
   std::vector<AMSTensor::IntDimType> shape = {5};
@@ -158,7 +162,8 @@ CATCH_TEST_CASE("int32: write and read 1D data",
       AMSTensor::create<int32_t>(shape, strides, AMSResourceType::AMS_HOST);
   auto* data = tensor.data<int32_t>();
 
-  for (int i = 0; i < 5; ++i) data[i] = i * 10;
+  for (int i = 0; i < 5; ++i)
+    data[i] = i * 10;
 
   CATCH_REQUIRE(data[0] == 0);
   CATCH_REQUIRE(data[1] == 10);
@@ -166,8 +171,7 @@ CATCH_TEST_CASE("int32: write and read 1D data",
 }
 
 
-CATCH_TEST_CASE("int32: write and read 2D data",
-                "[ams][tensor][int32][data]")
+CATCH_TEST_CASE("int32: write and read 2D data", "[ams][tensor][int32][data]")
 {
   AMSInit();
   std::vector<AMSTensor::IntDimType> shape = {3, 4};
@@ -192,8 +196,7 @@ CATCH_TEST_CASE("int32: write and read 2D data",
 // int32_t — transpose
 // =========================================================================
 
-CATCH_TEST_CASE("int32: transpose 2D tensor",
-                "[ams][tensor][int32][transpose]")
+CATCH_TEST_CASE("int32: transpose 2D tensor", "[ams][tensor][int32][transpose]")
 {
   AMSInit();
   std::vector<AMSTensor::IntDimType> shape = {3, 4};
@@ -221,7 +224,8 @@ CATCH_TEST_CASE("int32: move constructor", "[ams][tensor][int32][move]")
   std::vector<AMSTensor::IntDimType> shape = {10};
   std::vector<AMSTensor::IntDimType> strides = {1};
 
-  auto t1 = AMSTensor::create<int32_t>(shape, strides, AMSResourceType::AMS_HOST);
+  auto t1 =
+      AMSTensor::create<int32_t>(shape, strides, AMSResourceType::AMS_HOST);
   auto* ptr = t1.data<int32_t>();
 
   auto t2 = std::move(t1);
@@ -241,8 +245,10 @@ CATCH_TEST_CASE("int32: move assignment", "[ams][tensor][int32][move]")
   std::vector<AMSTensor::IntDimType> shape2 = {5};
   std::vector<AMSTensor::IntDimType> strides = {1};
 
-  auto t1 = AMSTensor::create<int32_t>(shape1, strides, AMSResourceType::AMS_HOST);
-  auto t2 = AMSTensor::create<int32_t>(shape2, strides, AMSResourceType::AMS_HOST);
+  auto t1 =
+      AMSTensor::create<int32_t>(shape1, strides, AMSResourceType::AMS_HOST);
+  auto t2 =
+      AMSTensor::create<int32_t>(shape2, strides, AMSResourceType::AMS_HOST);
   auto* ptr1 = t1.data<int32_t>();
 
   t2 = std::move(t1);
@@ -261,13 +267,16 @@ CATCH_TEST_CASE("int32: clone contiguous 2D tensor",
 {
   AMSInit();
   std::vector<int32_t> src(12);
-  for (int i = 0; i < 12; ++i) src[i] = i * 7;
+  for (int i = 0; i < 12; ++i)
+    src[i] = i * 7;
 
   std::vector<AMSTensor::IntDimType> shape = {3, 4};
   std::vector<AMSTensor::IntDimType> strides = {4, 1};
 
-  auto view = AMSTensor::view<int32_t>(
-      src.data(), shape, strides, AMSResourceType::AMS_HOST);
+  auto view = AMSTensor::view<int32_t>(src.data(),
+                                       shape,
+                                       strides,
+                                       AMSResourceType::AMS_HOST);
   auto cloned = view.clone();
 
   CATCH_REQUIRE(cloned.dtype() == AMSDType::AMS_INT32);
@@ -293,13 +302,16 @@ CATCH_TEST_CASE("int32: clone non-contiguous (transposed) tensor",
   AMSInit();
   // 3x4 row-major, transposed to 4x3 with strides [1,4]
   std::vector<int32_t> src(12);
-  for (int i = 0; i < 12; ++i) src[i] = i;
+  for (int i = 0; i < 12; ++i)
+    src[i] = i;
 
   std::vector<AMSTensor::IntDimType> shape = {3, 4};
   std::vector<AMSTensor::IntDimType> strides = {4, 1};
 
-  auto original = AMSTensor::view<int32_t>(
-      src.data(), shape, strides, AMSResourceType::AMS_HOST);
+  auto original = AMSTensor::view<int32_t>(src.data(),
+                                           shape,
+                                           strides,
+                                           AMSResourceType::AMS_HOST);
   auto transposed = original.transpose(0, 1);
   CATCH_REQUIRE(!transposed.contiguous());
 
@@ -328,8 +340,10 @@ CATCH_TEST_CASE("int32: clone is independent of source",
   std::vector<AMSTensor::IntDimType> shape = {4};
   std::vector<AMSTensor::IntDimType> strides = {1};
 
-  auto view = AMSTensor::view<int32_t>(
-      src.data(), shape, strides, AMSResourceType::AMS_HOST);
+  auto view = AMSTensor::view<int32_t>(src.data(),
+                                       shape,
+                                       strides,
+                                       AMSResourceType::AMS_HOST);
   auto cloned = view.clone();
 
   src[0] = 999;
@@ -341,16 +355,17 @@ CATCH_TEST_CASE("int32: clone is independent of source",
 // int32_t — concat
 // =========================================================================
 
-CATCH_TEST_CASE("int32: concat single tensor",
-                "[ams][tensor][int32][concat]")
+CATCH_TEST_CASE("int32: concat single tensor", "[ams][tensor][int32][concat]")
 {
   AMSInit();
   std::vector<int32_t> a = {1, 2, 3, 4, 5, 6};
   std::vector<AMSTensor::IntDimType> shape = {2, 3};
   std::vector<AMSTensor::IntDimType> strides = {3, 1};
 
-  auto tA = AMSTensor::view<int32_t>(
-      a.data(), shape, strides, AMSResourceType::AMS_HOST);
+  auto tA = AMSTensor::view<int32_t>(a.data(),
+                                     shape,
+                                     strides,
+                                     AMSResourceType::AMS_HOST);
 
   ams::SmallVector<AMSTensor> tensors;
   tensors.push_back(AMSTensor::view(tA));
@@ -360,12 +375,12 @@ CATCH_TEST_CASE("int32: concat single tensor",
   CATCH_REQUIRE(result.shape()[0] == 2);
   CATCH_REQUIRE(result.shape()[1] == 3);
   auto* p = result.data<int32_t>();
-  for (int i = 0; i < 6; ++i) CATCH_REQUIRE(p[i] == a[i]);
+  for (int i = 0; i < 6; ++i)
+    CATCH_REQUIRE(p[i] == a[i]);
 }
 
 
-CATCH_TEST_CASE("int32: concat two 2D tensors",
-                "[ams][tensor][int32][concat]")
+CATCH_TEST_CASE("int32: concat two 2D tensors", "[ams][tensor][int32][concat]")
 {
   AMSInit();
   //  A:[3,2]      B:[3,3]
@@ -382,14 +397,18 @@ CATCH_TEST_CASE("int32: concat two 2D tensors",
   std::vector<AMSTensor::IntDimType> shapeA = {3, 2};
   std::vector<AMSTensor::IntDimType> stridesA = {2, 1};
 
-  auto tA = AMSTensor::view<int32_t>(
-      a.data(), shapeA, stridesA, AMSResourceType::AMS_HOST);
+  auto tA = AMSTensor::view<int32_t>(a.data(),
+                                     shapeA,
+                                     stridesA,
+                                     AMSResourceType::AMS_HOST);
 
   std::vector<AMSTensor::IntDimType> shapeB = {3, 3};
   std::vector<AMSTensor::IntDimType> stridesB = {3, 1};
 
-  auto tB = AMSTensor::view<int32_t>(
-      b.data(), shapeB, stridesB, AMSResourceType::AMS_HOST);
+  auto tB = AMSTensor::view<int32_t>(b.data(),
+                                     shapeB,
+                                     stridesB,
+                                     AMSResourceType::AMS_HOST);
 
   ams::SmallVector<AMSTensor> tensors;
   tensors.push_back(AMSTensor::view(tA));
@@ -403,8 +422,8 @@ CATCH_TEST_CASE("int32: concat two 2D tensors",
   CATCH_REQUIRE(result.contiguous());
 
   auto* p = result.data<int32_t>();
-  std::vector<int32_t> expected = {1,  2,  10, 20, 30, 3,  4, 40,
-                                   50, 60, 5,  6,  70, 80, 90};
+  std::vector<int32_t> expected = {
+      1, 2, 10, 20, 30, 3, 4, 40, 50, 60, 5, 6, 70, 80, 90};
   for (int i = 0; i < 15; ++i) {
     CATCH_INFO("index " << i);
     CATCH_REQUIRE(p[i] == expected[i]);
@@ -412,8 +431,7 @@ CATCH_TEST_CASE("int32: concat two 2D tensors",
 }
 
 
-CATCH_TEST_CASE("int32: concat three tensors",
-                "[ams][tensor][int32][concat]")
+CATCH_TEST_CASE("int32: concat three tensors", "[ams][tensor][int32][concat]")
 {
   AMSInit();
   // A:[2,2]  B:[2,1]  C:[2,3]  →  [2,6]
@@ -430,12 +448,18 @@ CATCH_TEST_CASE("int32: concat three tensors",
   std::vector<AMSTensor::IntDimType> shapeC = {2, 3};
   std::vector<AMSTensor::IntDimType> stridesC = {3, 1};
 
-  auto tA = AMSTensor::view<int32_t>(
-      a.data(), shapeA, stridesA, AMSResourceType::AMS_HOST);
-  auto tB = AMSTensor::view<int32_t>(
-      b.data(), shapeB, stridesB, AMSResourceType::AMS_HOST);
-  auto tC = AMSTensor::view<int32_t>(
-      c.data(), shapeC, stridesC, AMSResourceType::AMS_HOST);
+  auto tA = AMSTensor::view<int32_t>(a.data(),
+                                     shapeA,
+                                     stridesA,
+                                     AMSResourceType::AMS_HOST);
+  auto tB = AMSTensor::view<int32_t>(b.data(),
+                                     shapeB,
+                                     stridesB,
+                                     AMSResourceType::AMS_HOST);
+  auto tC = AMSTensor::view<int32_t>(c.data(),
+                                     shapeC,
+                                     stridesC,
+                                     AMSResourceType::AMS_HOST);
 
   ams::SmallVector<AMSTensor> tensors;
   tensors.push_back(AMSTensor::view(tA));
@@ -475,10 +499,14 @@ CATCH_TEST_CASE("int32: concat 1D tensors", "[ams][tensor][int32][concat]")
   std::vector<AMSTensor::IntDimType> shapeB = {2};
   std::vector<AMSTensor::IntDimType> strides = {1};
 
-  auto tA = AMSTensor::view<int32_t>(
-      a.data(), shapeA, strides, AMSResourceType::AMS_HOST);
-  auto tB = AMSTensor::view<int32_t>(
-      b.data(), shapeB, strides, AMSResourceType::AMS_HOST);
+  auto tA = AMSTensor::view<int32_t>(a.data(),
+                                     shapeA,
+                                     strides,
+                                     AMSResourceType::AMS_HOST);
+  auto tB = AMSTensor::view<int32_t>(b.data(),
+                                     shapeB,
+                                     strides,
+                                     AMSResourceType::AMS_HOST);
 
   ams::SmallVector<AMSTensor> tensors;
   tensors.push_back(AMSTensor::view(tA));
@@ -508,10 +536,14 @@ CATCH_TEST_CASE("int32: concat result independent of source",
   std::vector<AMSTensor::IntDimType> shape = {2};
   std::vector<AMSTensor::IntDimType> strides = {1};
 
-  auto tA = AMSTensor::view<int32_t>(
-      a.data(), shape, strides, AMSResourceType::AMS_HOST);
-  auto tB = AMSTensor::view<int32_t>(
-      b.data(), shape, strides, AMSResourceType::AMS_HOST);
+  auto tA = AMSTensor::view<int32_t>(a.data(),
+                                     shape,
+                                     strides,
+                                     AMSResourceType::AMS_HOST);
+  auto tB = AMSTensor::view<int32_t>(b.data(),
+                                     shape,
+                                     strides,
+                                     AMSResourceType::AMS_HOST);
 
   ams::SmallVector<AMSTensor> tensors;
   tensors.push_back(AMSTensor::view(tA));
@@ -585,8 +617,10 @@ CATCH_TEST_CASE("int64: view from existing buffer",
   std::vector<AMSTensor::IntDimType> shape = {5};
   std::vector<AMSTensor::IntDimType> strides = {1};
 
-  auto v = AMSTensor::view<int64_t>(
-      data.data(), shape, strides, AMSResourceType::AMS_HOST);
+  auto v = AMSTensor::view<int64_t>(data.data(),
+                                    shape,
+                                    strides,
+                                    AMSResourceType::AMS_HOST);
 
   CATCH_REQUIRE(v.dtype() == AMSDType::AMS_INT64);
   CATCH_REQUIRE(v.elements() == 5);
@@ -624,8 +658,7 @@ CATCH_TEST_CASE("int64: write and read large values",
 // int64_t — transpose
 // =========================================================================
 
-CATCH_TEST_CASE("int64: transpose 2D tensor",
-                "[ams][tensor][int64][transpose]")
+CATCH_TEST_CASE("int64: transpose 2D tensor", "[ams][tensor][int64][transpose]")
 {
   AMSInit();
   std::vector<AMSTensor::IntDimType> shape = {5, 6};
@@ -652,7 +685,8 @@ CATCH_TEST_CASE("int64: move constructor", "[ams][tensor][int64][move]")
   std::vector<AMSTensor::IntDimType> shape = {20};
   std::vector<AMSTensor::IntDimType> strides = {1};
 
-  auto t1 = AMSTensor::create<int64_t>(shape, strides, AMSResourceType::AMS_HOST);
+  auto t1 =
+      AMSTensor::create<int64_t>(shape, strides, AMSResourceType::AMS_HOST);
   auto* ptr = t1.data<int64_t>();
 
   auto t2 = std::move(t1);
@@ -668,16 +702,17 @@ CATCH_TEST_CASE("int64: move constructor", "[ams][tensor][int64][move]")
 // int64_t — clone
 // =========================================================================
 
-CATCH_TEST_CASE("int64: clone contiguous tensor",
-                "[ams][tensor][int64][clone]")
+CATCH_TEST_CASE("int64: clone contiguous tensor", "[ams][tensor][int64][clone]")
 {
   AMSInit();
   std::vector<int64_t> src = {100, 200, 300, 400, 500, 600};
   std::vector<AMSTensor::IntDimType> shape = {3, 2};
   std::vector<AMSTensor::IntDimType> strides = {2, 1};
 
-  auto view = AMSTensor::view<int64_t>(
-      src.data(), shape, strides, AMSResourceType::AMS_HOST);
+  auto view = AMSTensor::view<int64_t>(src.data(),
+                                       shape,
+                                       strides,
+                                       AMSResourceType::AMS_HOST);
   auto cloned = view.clone();
 
   CATCH_REQUIRE(cloned.dtype() == AMSDType::AMS_INT64);
@@ -687,7 +722,8 @@ CATCH_TEST_CASE("int64: clone contiguous tensor",
 
   auto* p = cloned.data<int64_t>();
   CATCH_REQUIRE(p != src.data());
-  for (int i = 0; i < 6; ++i) CATCH_REQUIRE(p[i] == src[i]);
+  for (int i = 0; i < 6; ++i)
+    CATCH_REQUIRE(p[i] == src[i]);
 }
 
 
@@ -700,8 +736,10 @@ CATCH_TEST_CASE("int64: clone non-contiguous tensor",
   std::vector<AMSTensor::IntDimType> shape = {2, 3};
   std::vector<AMSTensor::IntDimType> strides = {3, 1};
 
-  auto original = AMSTensor::view<int64_t>(
-      src.data(), shape, strides, AMSResourceType::AMS_HOST);
+  auto original = AMSTensor::view<int64_t>(src.data(),
+                                           shape,
+                                           strides,
+                                           AMSResourceType::AMS_HOST);
   auto transposed = original.transpose(0, 1);
   auto cloned = transposed.clone();
 
@@ -726,8 +764,7 @@ CATCH_TEST_CASE("int64: clone non-contiguous tensor",
 // int64_t — concat
 // =========================================================================
 
-CATCH_TEST_CASE("int64: concat two 2D tensors",
-                "[ams][tensor][int64][concat]")
+CATCH_TEST_CASE("int64: concat two 2D tensors", "[ams][tensor][int64][concat]")
 {
   AMSInit();
   std::vector<int64_t> a = {1, 2, 3, 4};
@@ -737,10 +774,14 @@ CATCH_TEST_CASE("int64: concat two 2D tensors",
   std::vector<AMSTensor::IntDimType> shapeB = {2, 3};
   std::vector<AMSTensor::IntDimType> stridesB = {3, 1};
 
-  auto tA = AMSTensor::view<int64_t>(
-      a.data(), shapeA, stridesA, AMSResourceType::AMS_HOST);
-  auto tB = AMSTensor::view<int64_t>(
-      b.data(), shapeB, stridesB, AMSResourceType::AMS_HOST);
+  auto tA = AMSTensor::view<int64_t>(a.data(),
+                                     shapeA,
+                                     stridesA,
+                                     AMSResourceType::AMS_HOST);
+  auto tB = AMSTensor::view<int64_t>(b.data(),
+                                     shapeB,
+                                     stridesB,
+                                     AMSResourceType::AMS_HOST);
 
   ams::SmallVector<AMSTensor> tensors;
   tensors.push_back(AMSTensor::view(tA));

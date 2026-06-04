@@ -75,4 +75,4 @@ struct EvalContext {
 };
 
 }  // namespace ams
-#endif // __AMS_ENABLE_TORCH__
+#endif  // __AMS_ENABLE_TORCH__

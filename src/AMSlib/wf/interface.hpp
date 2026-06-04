@@ -43,5 +43,6 @@ void callAMS(ams::AMSWorkflow* executor,
 /** @brief Helper to create AMSTensor views from a vector of torch::Tensors.
 *  @note The torch::Tensors MUST outlive the returned views.
 */
-ams::SmallVector<ams::AMSTensor> torchToAMSTensors(ams::MutableArrayRef<torch::Tensor> tensorVector);
+ams::SmallVector<ams::AMSTensor> torchToAMSTensors(
+    ams::MutableArrayRef<torch::Tensor> tensorVector);
 #endif

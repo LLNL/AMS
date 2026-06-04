@@ -17,12 +17,12 @@
 // added operator<< for std::ostream
 
 
+#include "SmallVector.hpp"
+
 #include <cstdint>
 #include <new>
 #include <stdexcept>
 #include <string>
-
-#include "SmallVector.hpp"
 using namespace ams;
 
 // Check that no bytes are wasted and everything is well-aligned.

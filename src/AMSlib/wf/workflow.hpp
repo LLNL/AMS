@@ -567,10 +567,10 @@ public:
     CALIPER(CALI_MARK_END("AMSEvaluateGraph");)
   }
 
-#else // !__AMS_ENABLE_TORCH__
-// -----------------------------------------------------------------------
-// Non-training evaluate path (AMSTensor)
-// -----------------------------------------------------------------------
+#else  // !__AMS_ENABLE_TORCH__
+  // -----------------------------------------------------------------------
+  // Non-training evaluate path (AMSTensor)
+  // -----------------------------------------------------------------------
 
   void evaluate(DomainLambda CallBack,
                 ams::ArrayRef<AMSTensor> Ins,
@@ -603,14 +603,14 @@ public:
     SmallVector<AMSTensor> outsVec;
     for (auto& t : Outs)
       outsVec.push_back(AMSTensor::view(t));
-    
+
     CALIPER(CALI_MARK_END("PACK");)
 
     // We call the application here
     CALIPER(CALI_MARK_BEGIN("PHYSICS MODULE");)
     CallBack(insVec, inoutsVec, outsVec);
     CALIPER(CALI_MARK_END("PHYSICS MODULE");)
-  
+
     if (DB) {
       // TODO: remove useless copies
       SmallVector<AMSTensor> storeIns;
@@ -631,8 +631,7 @@ public:
     CALIPER(CALI_MARK_END("AMSEvaluate");)
   }
 
-#endif // __AMS_ENABLE_TORCH__
-
+#endif  // __AMS_ENABLE_TORCH__
 };
 
 
