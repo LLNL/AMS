@@ -12,6 +12,7 @@
 
 #include "AMS.h"
 #include "AMSTensor.hpp"
+#include "ams_test_device.hpp"
 #include "wf/resource_manager.hpp"
 #include "wf/utils.hpp"
 
@@ -27,9 +28,7 @@ CATCH_TEST_CASE("int32: create 1D tensor", "[ams][tensor][int32][create]")
   const auto device =
       GENERATE(AMSResourceType::AMS_HOST, AMSResourceType::AMS_DEVICE);
   if (device == AMSResourceType::AMS_DEVICE) {
-#if !defined(__AMS_ENABLE_CUDA__) && !defined(__AMS_ENABLE_HIP__)
-    CATCH_SKIP("GPU device not available");
-#endif
+    if (!ams::test::hasRuntimeDevice()) CATCH_SKIP("GPU device not available");
   }
 
   std::vector<AMSTensor::IntDimType> shape = {10};
@@ -569,9 +568,7 @@ CATCH_TEST_CASE("int64: create 1D tensor", "[ams][tensor][int64][create]")
   const auto device =
       GENERATE(AMSResourceType::AMS_HOST, AMSResourceType::AMS_DEVICE);
   if (device == AMSResourceType::AMS_DEVICE) {
-#if !defined(__AMS_ENABLE_CUDA__) && !defined(__AMS_ENABLE_HIP__)
-    CATCH_SKIP("GPU device not available");
-#endif
+    if (!ams::test::hasRuntimeDevice()) CATCH_SKIP("GPU device not available");
   }
 
   std::vector<AMSTensor::IntDimType> shape = {15};

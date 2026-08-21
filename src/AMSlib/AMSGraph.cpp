@@ -52,10 +52,10 @@ static void requireRank(const AMSTensor& tensor,
 
 static void requireFloating(const AMSTensor& tensor, const std::string& name)
 {
-  if (!isFloatingDType(tensor.dType())) {
+  if (!isFloatingDType(tensor.dtype())) {
     throw std::runtime_error("AMSHomogeneousGraph " + name +
                              " must be floating point, got " +
-                             dtypeName(tensor.dType()) + ".");
+                             dtypeName(tensor.dtype()) + ".");
   }
 }
 
@@ -65,7 +65,7 @@ static AMSTensor makeEmptyGlobalFeatures(const AMSTensor& node_features)
   const Dim shape[] = {0};
   const Dim strides[] = {1};
 
-  switch (node_features.dType()) {
+  switch (node_features.dtype()) {
     case AMS_SINGLE:
       return AMSTensor::create<float>(shape, strides, node_features.location());
     case AMS_DOUBLE:
@@ -76,7 +76,7 @@ static AMSTensor makeEmptyGlobalFeatures(const AMSTensor& node_features)
       throw std::runtime_error(
           "AMSHomogeneousGraph cannot create empty global_features from "
           "non-floating node_features dtype " +
-          dtypeName(node_features.dType()) + ".");
+          dtypeName(node_features.dtype()) + ".");
   }
 }
 
@@ -166,11 +166,11 @@ void AMSHomogeneousGraph::validate() const
   requireFloating(node_features, "node_features");
 
   requireRank(edge_index, 2, "edge_index");
-  if (!isIntegerDType(edge_index.dType())) {
+  if (!isIntegerDType(edge_index.dtype())) {
     throw std::runtime_error(
         "AMSHomogeneousGraph edge_index must have integer dtype "
         "(int64 preferred, int32 supported), got " +
-        dtypeName(edge_index.dType()) + ".");
+        dtypeName(edge_index.dtype()) + ".");
   }
   if (edge_index.shape()[0] != 2) {
     throw std::runtime_error(

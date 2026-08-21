@@ -68,7 +68,11 @@ if (ENABLE_RMQ)
   target_link_libraries(AMS PUBLIC ${LIBEVENT_LIBRARY} ${LIBEVENT_THREAD})
 endif()
 
-target_link_libraries(AMS PRIVATE stdc++fs torch)
+target_link_libraries(AMS PRIVATE stdc++fs)
+
+if (ENABLE_TORCH)
+  target_link_libraries(AMS PRIVATE torch)
+endif()
 
 # torch adds -Wl,--as-needed to the link line which leads to issue with libstdc++ when building against AMS in static mode
 # TorchConfig.cmake wraps libtorch_cpu.so in -Wl,--no-as-needed and then re-enables --as-needed without restoring the prior state
@@ -81,12 +85,6 @@ if (BUILD_SHARED_LIBS)
   target_link_libraries(AMS INTERFACE "-Wl,--allow-shlib-undefined")
 endif()
 target_link_libraries(AMS INTERFACE Threads::Threads)
-
-if (ENABLE_TORCH)
-  target_link_libraries(AMS PUBLIC
-      		$<BUILD_INTERFACE:torch> PRIVATE
-      		$<INSTALL_INTERFACE:torch>)
-endif()
 
 configure_file ("${CMAKE_CURRENT_SOURCE_DIR}/include/AMS-config.h.in" "${PROJECT_BINARY_DIR}/include/AMS-config.h")
 configure_file ("${CMAKE_CURRENT_SOURCE_DIR}/include/AMS.h" "${PROJECT_BINARY_DIR}/include/AMS.h" COPYONLY)

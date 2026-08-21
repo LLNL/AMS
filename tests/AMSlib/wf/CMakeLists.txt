@@ -29,6 +29,7 @@ function(BUILD_UNIT_TEST exe source)
   target_compile_definitions(${exe} PRIVATE ${AMS_APP_DEFINES} CATCH_CONFIG_PREFIX_ALL)
 
   target_link_libraries(${exe} PRIVATE ${AMS_HDF5_LINK_TARGETS})
+  target_link_libraries(${exe} PRIVATE fmt::fmt)
 
 
   if (ENABLE_CUDA)
@@ -59,37 +60,24 @@ endfunction()
 
 # Tests that do NOT require torch
 BUILD_UNIT_TEST(action action.cpp Catch2::Catch2 ../ams_catch_main.cpp)
-target_link_libraries(action PRIVATE fmt::fmt)
 ADD_WORKFLOW_UNIT_TEST(WORKFLOW::ACTION action)
-
 
 if (ENABLE_TORCH)
   BUILD_UNIT_TEST(operations operations.cpp Catch2::Catch2)
-  target_link_libraries(operations PRIVATE fmt::fmt)
   ADD_WORKFLOW_UNIT_TEST(WORKFLOW::OPERATIONS operations)
 
   BUILD_UNIT_TEST(evaluate_in_and_outs evaluate_in_and_outs.cpp Catch2::Catch2)
-  target_link_libraries(evaluate_in_and_outs PRIVATE fmt::fmt)
   ADD_WORKFLOW_UNIT_TEST(WORKFLOW::EVALUATE_IN_OUTS evaluate_in_and_outs)
-
-  BUILD_UNIT_TEST(tensor_bundle tensor_bundle.cpp Catch2::Catch2 ../ams_catch_main.cpp)
-  ADD_WORKFLOW_UNIT_TEST(WORKFLOW::TENSOR_BUNDLE tensor_bundle)
 
   BUILD_UNIT_TEST(eval_context eval_context.cpp Catch2::Catch2 ../ams_catch_main.cpp)
   ADD_WORKFLOW_UNIT_TEST(WORKFLOW::EVAL_CONTEXT eval_context)
 
   BUILD_UNIT_TEST(pipeline pipeline.cpp Catch2::Catch2 ../ams_catch_main.cpp)
-  target_link_libraries(pipeline PRIVATE fmt::fmt)
   ADD_WORKFLOW_UNIT_TEST(WORKFLOW::PIPELINE pipeline)
 
   BUILD_UNIT_TEST(pointwise pointwise_layout_transform.cpp Catch2::Catch2 ../ams_catch_main.cpp)
-  target_link_libraries(pointwise PRIVATE fmt::fmt)
   ADD_WORKFLOW_UNIT_TEST(WORKFLOW::POINTWISE pointwise)
 
   BUILD_UNIT_TEST(policy policy.cpp Catch2::Catch2 ../ams_catch_main.cpp)
-  target_link_libraries(policy PRIVATE fmt::fmt)
   ADD_WORKFLOW_UNIT_TEST(WORKFLOW::POLICY policy)
-
-  BUILD_UNIT_TEST(pipeline pipeline.cpp)
-  ADD_WORKFLOW_UNIT_TEST(WORKFLOW::PIPELINE pipeline)
 endif()

@@ -108,6 +108,29 @@ class AMSWorkflow
     CALIPER(CALI_MARK_END("DBSTORE");)
   }
 
+  // #if defined(__AMS_ENABLE_TORCH__)
+  //   void storeComputedData(ArrayRef<torch::Tensor> Ins,
+  //                          ArrayRef<torch::Tensor> InOutsBefore,
+  //                          ArrayRef<torch::Tensor> Outs,
+  //                          ArrayRef<torch::Tensor> InOutsAfter)
+  //   {
+  //     CALIPER(CALI_MARK_BEGIN("DBSTORE");)
+  //     SmallVector<torch::Tensor> StoreInputTensors(Ins.begin(), Ins.end());
+  //     SmallVector<torch::Tensor> StoreOutputTensors(Outs.begin(), Outs.end());
+  //     for (auto Tensor : InOutsBefore)
+  //       StoreInputTensors.push_back(Tensor);
+  //     for (auto Tensor : InOutsAfter) {
+  //       StoreOutputTensors.push_back(Tensor);
+  //     }
+
+  //     AMS_DBG(Workflow,
+  //             "Storing data (#elements = {}) to database",
+  //             StoreInputTensors[0].sizes()[0]);
+  //     DB->store(StoreInputTensors, StoreOutputTensors);
+  //     CALIPER(CALI_MARK_END("DBSTORE");)
+  //   }
+  // #endif // __AMS_ENABLE_TORCH__
+
   void storeGraphData(const ams::AMSHomogeneousGraph& graph,
                       const ams::AMSHomogeneousGraphFields& outputs)
   {
@@ -145,29 +168,6 @@ class AMSWorkflow
                   e.what());
     }
   }
-
-// #if defined(__AMS_ENABLE_TORCH__)
-//   void storeComputedData(ArrayRef<torch::Tensor> Ins,
-//                          ArrayRef<torch::Tensor> InOutsBefore,
-//                          ArrayRef<torch::Tensor> Outs,
-//                          ArrayRef<torch::Tensor> InOutsAfter)
-//   {
-//     CALIPER(CALI_MARK_BEGIN("DBSTORE");)
-//     SmallVector<torch::Tensor> StoreInputTensors(Ins.begin(), Ins.end());
-//     SmallVector<torch::Tensor> StoreOutputTensors(Outs.begin(), Outs.end());
-//     for (auto Tensor : InOutsBefore)
-//       StoreInputTensors.push_back(Tensor);
-//     for (auto Tensor : InOutsAfter) {
-//       StoreOutputTensors.push_back(Tensor);
-//     }
-
-//     AMS_DBG(Workflow,
-//             "Storing data (#elements = {}) to database",
-//             StoreInputTensors[0].sizes()[0]);
-//     DB->store(StoreInputTensors, StoreOutputTensors);
-//     CALIPER(CALI_MARK_END("DBSTORE");)
-//   }
-// #endif // __AMS_ENABLE_TORCH__
 
   /** \brief Check if we can perform a surrogate model update.
      *  AMS can update surrogate model only when all MPI ranks have received 
@@ -487,10 +487,6 @@ public:
       auto amsPhysicInOutsBefore = torchToAMSTensors(PhysicInOutsBefore);
       auto amsPhysicOuts = torchToAMSTensors(PhysicOuts);
       auto amsPhysicInOuts = torchToAMSTensors(PhysicInOuts);
-      // storeComputedData(PhysicIns,
-      //                   PhysicInOutsBefore,
-      //                   PhysicOuts,
-      //                   PhysicInOuts);
       storeComputedData(amsPhysicIns,
                         amsPhysicInOutsBefore,
                         amsPhysicOuts,
