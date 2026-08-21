@@ -49,6 +49,8 @@ endfunction()
 if (ENABLE_TORCH)
   BUILD_UNIT_TEST(ams_explicit_end_to_end ams_ete.cpp Catch2::Catch2)
   ADD_AMS_UNIT_TEST(AMS_EXPLICIT ams_explicit_end_to_end)
+  BUILD_UNIT_TEST(ams_graph_surrogate test_graph_surrogate.cpp Catch2::Catch2 ../ams_catch_main.cpp)
+  ADD_AMS_UNIT_TEST(AMS_GRAPH_SURROGATE ams_graph_surrogate)
 endif()
 
 BUILD_UNIT_TEST(int_interface int_interface.cpp Catch2::Catch2 ../ams_catch_main.cpp)

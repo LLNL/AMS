@@ -59,8 +59,6 @@ function(BUILD_UNIT_TEST exe source)
 endfunction()
 
 # Tests that do NOT require torch
-BUILD_UNIT_TEST(action action.cpp Catch2::Catch2 ../ams_catch_main.cpp)
-ADD_WORKFLOW_UNIT_TEST(WORKFLOW::ACTION action)
 
 if (ENABLE_TORCH)
   BUILD_UNIT_TEST(operations operations.cpp Catch2::Catch2)
@@ -71,6 +69,9 @@ if (ENABLE_TORCH)
 
   BUILD_UNIT_TEST(eval_context eval_context.cpp Catch2::Catch2 ../ams_catch_main.cpp)
   ADD_WORKFLOW_UNIT_TEST(WORKFLOW::EVAL_CONTEXT eval_context)
+
+  BUILD_UNIT_TEST(action action.cpp Catch2::Catch2 ../ams_catch_main.cpp)
+  ADD_WORKFLOW_UNIT_TEST(WORKFLOW::ACTION action)
 
   BUILD_UNIT_TEST(pipeline pipeline.cpp Catch2::Catch2 ../ams_catch_main.cpp)
   ADD_WORKFLOW_UNIT_TEST(WORKFLOW::PIPELINE pipeline)

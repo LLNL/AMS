@@ -287,8 +287,7 @@ AMSTensor AMSTensor::clone() const
 AMSTensor AMSTensor::concat(ArrayRef<AMSTensor> tensors, AMSDType inputDType)
 {
   if (tensors.size() == 1) {
-    // Single tensor: just return a view
-    return AMSTensor::view(const_cast<AMSTensor&>(tensors[0]));
+    return AMSTensor::view(tensors[0]);
   }
 
   // Compute concatenated shape: all dims same except last which sums
@@ -335,29 +334,12 @@ AMSTensor AMSTensor::concat(ArrayRef<AMSTensor> tensors, AMSDType inputDType)
     }
   }
 
-  // Create owning tensor from the buffer
-  // TODO: improve error handling
-  if (inputDType == AMSDType::AMS_SINGLE)
-    return AMSTensor::view(reinterpret_cast<float*>(buffer),
-                           newShape,
-                           newStrides,
-                           AMSResourceType::AMS_HOST);
-  else if (inputDType == AMSDType::AMS_DOUBLE)
-    return AMSTensor::view(reinterpret_cast<double*>(buffer),
-                           newShape,
-                           newStrides,
-                           AMSResourceType::AMS_HOST);
-  else if (inputDType == AMSDType::AMS_INT32)
-    return AMSTensor::view(reinterpret_cast<int32_t*>(buffer),
-                           newShape,
-                           newStrides,
-                           AMSResourceType::AMS_HOST);
-  else if (inputDType == AMSDType::AMS_INT64)
-    return AMSTensor::view(reinterpret_cast<int64_t*>(buffer),
-                           newShape,
-                           newStrides,
-                           AMSResourceType::AMS_HOST);
-  throw std::runtime_error("Unsupported dtype in concat");
+  return AMSTensor(buffer,
+                   newShape,
+                   newStrides,
+                   inputDType,
+                   AMSResourceType::AMS_HOST,
+                   false);
 }
 
 template AMSTensor AMSTensor::create<float>(ams::ArrayRef<IntDimType>,

@@ -19,6 +19,12 @@ function(BUILD_UNIT_TEST exe source)
 
   target_link_libraries(${exe} PRIVATE ${AMS_HDF5_LINK_TARGETS})
 
+  if (ENABLE_CUDA)
+    target_link_libraries(${exe} PRIVATE CUDA::cudart)
+  elseif (ENABLE_HIP)
+    target_link_libraries(${exe} PRIVATE hip::host)
+  endif()
+
   if (ENABLE_CALIPER)
     message(STATUS "Building with caliper ${exe}")
     target_link_libraries(${exe} PRIVATE caliper)

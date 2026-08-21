@@ -152,3 +152,54 @@ CATCH_TEST_CASE("HDF5 DB: append and verify input/output datasets",
   }
   std::filesystem::remove_all(db_dir);
 }
+
+
+CATCH_TEST_CASE("HDF5 DB: collects multiple AMSTensors as flat rows",
+                "[ams][db][hdf5][collection]")
+{
+  ams::AMSInit();
+  auto db_dir = makeTempDir();
+  const std::string domain_name = "multi_tensor_collection";
+  std::string filename;
+
+  std::vector<float> input_a = {1.0f, 2.0f, 3.0f, 4.0f};
+  std::vector<float> input_b = {5.0f, 6.0f};
+  std::vector<float> output_a = {7.0f, 8.0f};
+  std::vector<float> output_b = {9.0f, 10.0f, 11.0f, 12.0f};
+  std::vector<IDT> two_columns = {2, 2};
+  std::vector<IDT> one_column = {2, 1};
+  std::vector<IDT> strides_two = {2, 1};
+  std::vector<IDT> strides_one = {1, 1};
+
+  {
+    ams::db::hdf5DB db(db_dir.string() + "/", domain_name, 0);
+    filename = db.getFilename();
+
+    ams::SmallVector<ams::AMSTensor> inputs;
+    inputs.push_back(ams::AMSTensor::view<float>(
+        input_a.data(), two_columns, strides_two, ams::AMS_HOST));
+    inputs.push_back(ams::AMSTensor::view<float>(
+        input_b.data(), one_column, strides_one, ams::AMS_HOST));
+
+    ams::SmallVector<ams::AMSTensor> outputs;
+    outputs.push_back(ams::AMSTensor::view<float>(
+        output_a.data(), one_column, strides_one, ams::AMS_HOST));
+    outputs.push_back(ams::AMSTensor::view<float>(
+        output_b.data(), two_columns, strides_two, ams::AMS_HOST));
+
+    db.store(inputs, outputs);
+  }
+
+  const std::vector<float> expected_inputs = {
+      1.0f, 2.0f, 5.0f, 3.0f, 4.0f, 6.0f};
+  const std::vector<float> expected_outputs = {
+      7.0f, 9.0f, 10.0f, 8.0f, 11.0f, 12.0f};
+  CATCH_REQUIRE(readVectorDataset<float>(filename,
+                                         "input_data",
+                                         H5T_NATIVE_FLOAT) == expected_inputs);
+  CATCH_REQUIRE(readVectorDataset<float>(filename,
+                                         "output_data",
+                                         H5T_NATIVE_FLOAT) == expected_outputs);
+
+  std::filesystem::remove_all(db_dir);
+}
