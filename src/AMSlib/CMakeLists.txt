@@ -19,6 +19,16 @@ endif()
 blt_add_library(NAME AMS SOURCES ${AMS_LIB_SRC})
 add_library(AMS::AMS ALIAS AMS)
 
+target_compile_features(AMS PUBLIC cxx_std_17)
+
+if (ENABLE_CUDA OR CMAKE_CUDA_COMPILER_LOADED)
+  target_compile_features(AMS PUBLIC cuda_std_17)
+endif()
+
+if (ENABLE_HIP OR CMAKE_HIP_COMPILER_LOADED)
+  target_compile_features(AMS PUBLIC hip_std_17)
+endif()
+
 # ------------------------------------------------------------------------------
 # setup the lib first
 message(STATUS "ALL INCLUDES ARE ${AMS_APP_INCLUDES}")

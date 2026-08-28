@@ -291,7 +291,17 @@ if (ENABLE_CUDA)
   find_package(CUDAToolkit REQUIRED)
   list(APPEND AMS_APP_DEFINES "__AMS_ENABLE_CUDA__")
 elseif (ENABLE_HIP)
-  find_package(HIP REQUIRED)
+  find_package(hip REQUIRED)
+  find_package(hiprtc QUIET) # can be needed down the line
+
+  # a bit ugly here
+  if (NOT TARGET hiprtc::hiprtc)
+    message(STATUS "hiprtc not found, linking directly to ${ROCM_PATH}/lib/libhiprtc.so")
+    add_library(hiprtc::hiprtc UNKNOWN IMPORTED)
+    set_target_properties(hiprtc::hiprtc PROPERTIES
+      IMPORTED_LOCATION "${ROCM_PATH}/lib/libhiprtc.so")
+  endif()
+
   list(APPEND AMS_APP_DEFINES "__AMS_ENABLE_HIP__")
   if (DEFINED ROCM_PATH)
     string(APPEND CMAKE_CXX_FLAGS "-I${ROCM_PATH}/include/")
