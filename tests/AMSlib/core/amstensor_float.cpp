@@ -9,6 +9,8 @@
 #include <catch2/generators/catch_generators.hpp>
 #include <cmath>
 #include <cstdint>
+#include <limits>
+#include <memory>
 #include <vector>
 
 #include "AMS.h"
@@ -18,6 +20,115 @@
 #include "wf/utils.hpp"
 
 using namespace ams;
+
+CATCH_TEST_CASE("float: validates metadata and access contracts",
+                "[ams][tensor][float][validation]")
+{
+  using D = AMSTensor::IntDimType;
+  float values[16]{};
+  CATCH_REQUIRE_THROWS_AS(AMSTensor::view(values,
+                                          std::vector<D>{2},
+                                          std::vector<D>{1, 1},
+                                          AMS_HOST),
+                          std::invalid_argument);
+  CATCH_REQUIRE_THROWS_AS(
+      AMSTensor::view(values, std::vector<D>{-1}, std::vector<D>{1}, AMS_HOST),
+      std::invalid_argument);
+  CATCH_REQUIRE_THROWS_AS(
+      AMSTensor::view(values, std::vector<D>{2}, std::vector<D>{0}, AMS_HOST),
+      std::invalid_argument);
+  CATCH_REQUIRE_THROWS_AS(AMSTensor::view(values,
+                                          std::vector<D>{2, 2},
+                                          std::vector<D>{1, 1},
+                                          AMS_HOST),
+                          std::invalid_argument);
+  CATCH_REQUIRE_THROWS_AS(AMSTensor::view(static_cast<float*>(nullptr),
+                                          std::vector<D>{1},
+                                          std::vector<D>{1},
+                                          AMS_HOST),
+                          std::invalid_argument);
+  CATCH_REQUIRE_THROWS_AS(AMSTensor::view(reinterpret_cast<float*>(
+                                              reinterpret_cast<char*>(values) +
+                                              1),
+                                          std::vector<D>{1},
+                                          std::vector<D>{1},
+                                          AMS_HOST),
+                          std::invalid_argument);
+  CATCH_REQUIRE_THROWS_AS(
+      AMSTensor::view(values,
+                      std::vector<D>{std::numeric_limits<D>::max(), 2},
+                      std::vector<D>{2, 1},
+                      AMS_HOST),
+      std::overflow_error);
+
+  auto tensor =
+      AMSTensor::view(values, std::vector<D>{4}, std::vector<D>{1}, AMS_HOST);
+  CATCH_REQUIRE_THROWS_AS(tensor.data<double>(), std::invalid_argument);
+  CATCH_REQUIRE_THROWS_AS(tensor.transpose(-1, 0), std::out_of_range);
+}
+
+CATCH_TEST_CASE("float: views retain owners and const views are read-only",
+                "[ams][tensor][float][view]")
+{
+  using D = AMSTensor::IntDimType;
+  auto derived = [] {
+    auto owner = AMSTensor::create<float>(std::vector<D>{2, 3},
+                                          std::vector<D>{3, 1},
+                                          AMS_HOST);
+    owner.data<float>()[5] = 42.0f;
+    return owner.transpose(0, 1);
+  }();
+  CATCH_REQUIRE(derived.data<float>()[5] == 42.0f);
+
+  int destroyed = 0;
+  auto foreign = std::shared_ptr<void>(new float[2], [&](void* pointer) {
+    delete[] static_cast<float*>(pointer);
+    ++destroyed;
+  });
+  auto retained = AMSTensor::view(static_cast<float*>(foreign.get()),
+                                  std::vector<D>{2},
+                                  std::vector<D>{1},
+                                  AMS_HOST,
+                                  foreign);
+  foreign.reset();
+  CATCH_REQUIRE(destroyed == 0);
+  retained = retained.clone();
+  CATCH_REQUIRE(destroyed == 1);
+
+  const auto& constTensor = retained;
+  auto readOnly = AMSTensor::view(constTensor);
+  CATCH_REQUIRE_FALSE(readOnly.writable());
+  CATCH_REQUIRE_THROWS_AS(readOnly.data<float>(), std::logic_error);
+  CATCH_REQUIRE(static_cast<const AMSTensor&>(readOnly).data<float>() !=
+                nullptr);
+}
+
+CATCH_TEST_CASE("float: concat handles strided inputs and rejects mismatch",
+                "[ams][tensor][float][concat]")
+{
+  using D = AMSTensor::IntDimType;
+  std::vector<float> left = {1, 2, -1, 3, 4};
+  std::vector<float> right = {5, -1, 6, -1};
+  auto leftView = AMSTensor::view(left.data(),
+                                  std::vector<D>{2, 2},
+                                  std::vector<D>{3, 1},
+                                  AMS_HOST);
+  auto rightView = AMSTensor::view(right.data(),
+                                   std::vector<D>{2, 1},
+                                   std::vector<D>{2, 1},
+                                   AMS_HOST);
+  SmallVector<AMSTensor> values;
+  values.push_back(std::move(leftView));
+  values.push_back(std::move(rightView));
+  auto joined = AMSTensor::concat(values, AMS_SINGLE);
+  const std::vector<float> expected = {1, 2, 5, 3, 4, 6};
+  for (size_t i = 0; i < expected.size(); ++i)
+    CATCH_REQUIRE(joined.data<float>()[i] == expected[i]);
+  CATCH_REQUIRE_THROWS_AS(AMSTensor::concat({}, AMS_SINGLE),
+                          std::invalid_argument);
+  CATCH_REQUIRE_THROWS_AS(AMSTensor::concat(values, AMS_DOUBLE),
+                          std::invalid_argument);
+}
 
 // =========================================================================
 // float — create

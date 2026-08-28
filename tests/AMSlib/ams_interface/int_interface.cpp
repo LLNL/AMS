@@ -24,7 +24,7 @@ struct AMSGlobalFixture {
 static AMSGlobalFixture amsGlobalFixture;
 
 // Simple computation function for int32_t
-void compute_int32(int32_t* input, int32_t* output, int num_elements)
+void compute_int32(const int32_t* input, int32_t* output, int num_elements)
 {
   for (int i = 0; i < num_elements; ++i) {
     // Simple computation: output = input * 2 + 1
@@ -33,7 +33,7 @@ void compute_int32(int32_t* input, int32_t* output, int num_elements)
 }
 
 // Simple computation function for int64_t
-void compute_int64(int64_t* input, int64_t* output, int num_elements)
+void compute_int64(const int64_t* input, int64_t* output, int num_elements)
 {
   for (int i = 0; i < num_elements; ++i) {
     // Simple computation: output = input * 3 + 10
@@ -81,7 +81,7 @@ CATCH_TEST_CASE("AMS API: int32_t tensor execution without model",
       CATCH_REQUIRE(ins[0].dtype() == AMSDType::AMS_INT32);
       CATCH_REQUIRE(outs[0].dtype() == AMSDType::AMS_INT32);
 
-      int32_t* in_ptr = ins[0].data<int32_t>();
+      const int32_t* in_ptr = ins[0].data<int32_t>();
       int32_t* out_ptr = outs[0].data<int32_t>();
       int count = ins[0].elements();
 
@@ -150,7 +150,7 @@ CATCH_TEST_CASE("AMS API: int64_t tensor execution without model",
       CATCH_REQUIRE(ins[0].dtype() == AMSDType::AMS_INT64);
       CATCH_REQUIRE(outs[0].dtype() == AMSDType::AMS_INT64);
 
-      int64_t* in_ptr = ins[0].data<int64_t>();
+      const int64_t* in_ptr = ins[0].data<int64_t>();
       int64_t* out_ptr = outs[0].data<int64_t>();
       int count = ins[0].elements();
 
@@ -220,7 +220,7 @@ CATCH_TEST_CASE("AMS API: 2D int32_t tensor execution", "[ams][api][int32][2d]")
       CATCH_REQUIRE(ins[0].shape()[0] == rows);
       CATCH_REQUIRE(ins[0].shape()[1] == cols);
 
-      int32_t* in_ptr = ins[0].data<int32_t>();
+      const int32_t* in_ptr = ins[0].data<int32_t>();
       int32_t* out_ptr = outs[0].data<int32_t>();
 
       for (int i = 0; i < num_elements; ++i) {
@@ -294,8 +294,8 @@ CATCH_TEST_CASE("AMS API: Mixed type tensors", "[ams][api][mixed]")
       CATCH_REQUIRE(ins[1].dtype() == AMSDType::AMS_INT32);
       CATCH_REQUIRE(outs[0].dtype() == AMSDType::AMS_INT32);
 
-      float* float_ptr = ins[0].data<float>();
-      int32_t* int_ptr = ins[1].data<int32_t>();
+      const float* float_ptr = ins[0].data<float>();
+      const int32_t* int_ptr = ins[1].data<int32_t>();
       int32_t* out_ptr = outs[0].data<int32_t>();
 
       for (int i = 0; i < num_elements; ++i) {

@@ -7,7 +7,7 @@
 set(AMS_LIB_SRC wf/debug.cpp wf/logger.cpp wf/utils.cpp wf/SmallVector.cpp wf/basedb.cpp AMSTensor.cpp AMSGraph.cpp wf/interface.cpp wf/resource_manager.cpp AMS.cpp)
 
 if (ENABLE_TORCH)
-  list(APPEND AMS_LIB_SRC ml/surrogate.cpp ml/Model.cpp ml/AbstractModel.cpp)
+  list(APPEND AMS_LIB_SRC ml/surrogate.cpp ml/Model.cpp ml/AbstractModel.cpp AMSTorchInterop.cpp)
 endif()
 
 list(APPEND AMS_LIB_SRC wf/hdf5db.cpp wf/jsondb.cpp)
@@ -72,6 +72,13 @@ target_link_libraries(AMS PRIVATE stdc++fs)
 
 if (ENABLE_TORCH)
   target_link_libraries(AMS PRIVATE torch)
+  add_library(AMSTorchInterop INTERFACE)
+  add_library(AMS::TorchInterop ALIAS AMSTorchInterop)
+  set_target_properties(AMSTorchInterop PROPERTIES EXPORT_NAME TorchInterop)
+  target_link_libraries(AMSTorchInterop INTERFACE AMS torch)
+  target_include_directories(AMSTorchInterop INTERFACE
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+      $<INSTALL_INTERFACE:include>)
 endif()
 
 # torch adds -Wl,--as-needed to the link line which leads to issue with libstdc++ when building against AMS in static mode
@@ -93,6 +100,9 @@ configure_file ("${CMAKE_CURRENT_SOURCE_DIR}/include/SmallVector.hpp" "${PROJECT
 configure_file ("${CMAKE_CURRENT_SOURCE_DIR}/include/ArrayRef.hpp" "${PROJECT_BINARY_DIR}/include/ArrayRef.hpp" COPYONLY)
 configure_file ("${CMAKE_CURRENT_SOURCE_DIR}/include/AMSTensor.hpp" "${PROJECT_BINARY_DIR}/include/AMSTensor.hpp" COPYONLY)
 configure_file ("${CMAKE_CURRENT_SOURCE_DIR}/include/AMSGraph.hpp" "${PROJECT_BINARY_DIR}/include/AMSGraph.hpp" COPYONLY)
+if (ENABLE_TORCH)
+  configure_file ("${CMAKE_CURRENT_SOURCE_DIR}/include/AMSTorchInterop.hpp" "${PROJECT_BINARY_DIR}/include/AMSTorchInterop.hpp" COPYONLY)
+endif()
 
 # setup the exec
 #SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath -Wl,$ORIGIN")
@@ -110,6 +120,9 @@ install(TARGETS AMS
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"      # For executables (Windows-specific)
     INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}" # Install headers directory
 )
+if (ENABLE_TORCH)
+  install(TARGETS AMSTorchInterop EXPORT AMSTargets)
+endif()
 
 # Export the AMS targets for use by external projects
 export(EXPORT AMSTargets
@@ -132,6 +145,10 @@ install(FILES
     ${PROJECT_BINARY_DIR}/include/SmallVector.hpp
     DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/"
 )
+if (ENABLE_TORCH)
+  install(FILES ${PROJECT_BINARY_DIR}/include/AMSTorchInterop.hpp
+          DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/")
+endif()
 
 
 # Generate a version file for the package

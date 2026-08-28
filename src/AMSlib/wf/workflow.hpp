@@ -9,6 +9,7 @@
 #define __AMS_WORKFLOW_HPP__
 
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 
 #include "AMS.h"
@@ -25,6 +26,7 @@
 #include <ATen/core/TensorBody.h>
 #include <c10/core/DeviceType.h>
 
+#include "AMSTorchInterop.hpp"
 #include "ml/surrogate.hpp"
 #endif
 
@@ -52,6 +54,12 @@ class AMSWorkflow
 #if defined(__AMS_ENABLE_TORCH__)
   /** @brief The module that performs uncertainty quantification (UQ) */
   std::shared_ptr<SurrogateModel> MLModel;
+  /** Protects per-executor Torch conversion/model workspace. */
+  mutable std::mutex InferenceMutex;
+  torch::Tensor PackedModelInput;
+  uint64_t TorchViewConversions = 0;
+  uint64_t PackedWorkspaceAllocations = 0;
+  uint64_t PackedWorkspaceReuses = 0;
 #endif
 
   /** @brief The database to store data for which we cannot apply the current
@@ -188,6 +196,22 @@ class AMSWorkflow
   }
 
 public:
+#if defined(__AMS_ENABLE_TORCH__)
+  struct InferenceStats {
+    uint64_t torchViewConversions;
+    uint64_t packedWorkspaceAllocations;
+    uint64_t packedWorkspaceReuses;
+  };
+
+  InferenceStats inferenceStats() const
+  {
+    std::lock_guard<std::mutex> lock(InferenceMutex);
+    return {TorchViewConversions,
+            PackedWorkspaceAllocations,
+            PackedWorkspaceReuses};
+  }
+#endif
+
   AMSWorkflow(std::string& surrogate_path,
               std::string& domain_name,
               float threshold,
@@ -253,6 +277,47 @@ public:
   }
 
 #if defined(__AMS_ENABLE_TORCH__)
+
+  void evaluate(DomainLambda CallBack,
+                ams::ArrayRef<AMSTensor> Ins,
+                ams::MutableArrayRef<AMSTensor> InOuts,
+                ams::MutableArrayRef<AMSTensor> Outs)
+  {
+    // The common physics-only path stays entirely in AMSTensor space.
+    if (!MLModel) {
+      SmallVector<AMSTensor> inputs;
+      SmallVector<AMSTensor> inouts;
+      SmallVector<AMSTensor> outputs;
+      for (const auto& tensor : Ins)
+        inputs.push_back(AMSTensor::view(tensor));
+      for (auto& tensor : InOuts)
+        inouts.push_back(AMSTensor::view(tensor));
+      for (auto& tensor : Outs)
+        outputs.push_back(AMSTensor::view(tensor));
+
+      SmallVector<AMSTensor> inoutsBefore;
+      if (DB)
+        for (const auto& tensor : InOuts)
+          inoutsBefore.push_back(tensor.clone());
+      CallBack(inputs, inouts, outputs);
+      if (DB) storeComputedData(inputs, inoutsBefore, outputs, inouts);
+      return;
+    }
+
+    // Cross into Torch only at the model boundary. The existing Torch path also
+    // performs packing/scattering for the physics fallback subset.
+    SmallVector<torch::Tensor> inputs;
+    SmallVector<torch::Tensor> inouts;
+    SmallVector<torch::Tensor> outputs;
+    for (const auto& tensor : Ins)
+      inputs.push_back(toTorchView(const_cast<AMSTensor&>(tensor)));
+    for (auto& tensor : InOuts)
+      inouts.push_back(toTorchView(tensor));
+    for (auto& tensor : Outs)
+      outputs.push_back(toTorchView(tensor));
+    TorchViewConversions += inputs.size() + inouts.size() + outputs.size();
+    evaluate(CallBack, inputs, inouts, outputs);
+  }
 
   static SmallVector<torch::Tensor> subSelectTensors(
       ArrayRef<torch::Tensor> Tensors,
@@ -350,6 +415,7 @@ public:
                 ams::MutableArrayRef<torch::Tensor> InOuts,
                 ams::MutableArrayRef<torch::Tensor> Outs)
   {
+    std::lock_guard<std::mutex> inferenceLock(InferenceMutex);
     CALIPER(CALI_MARK_BEGIN("AMSEvaluate");)
     AMS_DBG(Workflow,
             "Entering Workflow with TorchIn:{}, TorchInOut:{}, TorchOut:{}",
@@ -428,7 +494,19 @@ public:
     // -------------------------------------------------------------
     CALIPER(CALI_MARK_BEGIN("SURROGATE");)
     // The predicate with which we will split the data on a lateMLInputsr step
-    auto [MLOutputs, Predicate] = MLModel->evaluate(InputTensors, threshold);
+    const void* packedPointer =
+        PackedModelInput.defined() ? PackedModelInput.data_ptr() : nullptr;
+    bool reusedWorkspace = false;
+    auto [MLOutputs, Predicate] = MLModel->evaluate(InputTensors,
+                                                    threshold,
+                                                    &PackedModelInput,
+                                                    &reusedWorkspace);
+    if (PackedModelInput.defined()) {
+      if (reusedWorkspace && packedPointer == PackedModelInput.data_ptr())
+        ++PackedWorkspaceReuses;
+      else if (!packedPointer || packedPointer != PackedModelInput.data_ptr())
+        ++PackedWorkspaceAllocations;
+    }
 
     CALIPER(CALI_MARK_END("SURROGATE");)
 

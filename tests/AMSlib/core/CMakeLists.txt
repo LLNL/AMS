@@ -71,4 +71,67 @@ ADD_CORE_UNIT_TEST(CORE::TENSOR_MIXED amstensor_mixed)
 if (ENABLE_TORCH)
   BUILD_UNIT_TEST(tensor_bundle tensor_bundle.cpp Catch2::Catch2 ../ams_catch_main.cpp)
   ADD_CORE_UNIT_TEST(CORE::TENSOR_BUNDLE tensor_bundle)
+  BUILD_UNIT_TEST(amstorch_interop amstorch_interop.cpp Catch2::Catch2 ../ams_catch_main.cpp)
+  ADD_CORE_UNIT_TEST(CORE::TORCH_INTEROP amstorch_interop)
+
+  if (ENABLE_BENCHMARKS)
+    set(_ams_tensor_benchmark_commit "unknown")
+    set(_ams_tensor_benchmark_source_state "unknown")
+    if (GIT_FOUND)
+      execute_process(
+        COMMAND ${GIT_EXECUTABLE} rev-parse HEAD
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        RESULT_VARIABLE _ams_tensor_benchmark_git_result
+        OUTPUT_VARIABLE _ams_tensor_benchmark_git_output
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
+      if (_ams_tensor_benchmark_git_result EQUAL 0)
+        set(_ams_tensor_benchmark_commit
+            "${_ams_tensor_benchmark_git_output}")
+        execute_process(
+          COMMAND ${GIT_EXECUTABLE} status --porcelain --untracked-files=no
+          WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+          RESULT_VARIABLE _ams_tensor_benchmark_status_result
+          OUTPUT_VARIABLE _ams_tensor_benchmark_git_status
+          OUTPUT_STRIP_TRAILING_WHITESPACE)
+        if (_ams_tensor_benchmark_status_result EQUAL 0)
+          if (_ams_tensor_benchmark_git_status)
+            set(_ams_tensor_benchmark_source_state "dirty")
+          else()
+            set(_ams_tensor_benchmark_source_state "clean")
+          endif()
+        endif()
+      endif()
+    endif()
+
+    set(_ams_tensor_benchmark_csv
+        "${CMAKE_BINARY_DIR}/benchmark-results/amstensor_torch.csv")
+    file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/benchmark-results")
+
+    add_executable(amstensor_torch_benchmark amstensor_torch_benchmark.cpp)
+    target_compile_features(amstensor_torch_benchmark PRIVATE cxx_std_17)
+    target_compile_definitions(
+      amstensor_torch_benchmark
+      PRIVATE CATCH_CONFIG_PREFIX_ALL
+              AMS_BENCHMARK_GIT_COMMIT="${_ams_tensor_benchmark_commit}"
+              AMS_BENCHMARK_SOURCE_STATE="${_ams_tensor_benchmark_source_state}"
+              AMS_TENSOR_BENCHMARK_CSV_DEFAULT="${_ams_tensor_benchmark_csv}")
+    target_include_directories(amstensor_torch_benchmark
+                               PRIVATE ${CMAKE_BINARY_DIR}/include/
+                                       ${CMAKE_CURRENT_SOURCE_DIR}/..)
+    target_link_libraries(amstensor_torch_benchmark
+                          PRIVATE AMS torch Catch2::Catch2)
+
+    add_test(
+      NAME PERFORMANCE::AMSTENSOR_TORCH
+      COMMAND amstensor_torch_benchmark
+              --reporter console
+              --benchmark-samples 50
+              --benchmark-resamples 1000
+              --benchmark-warmup-time 100)
+    set_tests_properties(
+      PERFORMANCE::AMSTENSOR_TORCH
+      PROPERTIES LABELS PERFORMANCE_REGRESSION
+                 ENVIRONMENT
+                 "OMP_NUM_THREADS=1;MKL_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
+  endif()
 endif()

@@ -16,6 +16,29 @@
 
 using namespace ams;
 
+CATCH_TEST_CASE("mixed: scalar empty and padded storage",
+                "[ams][tensor][mixed][layout]")
+{
+  using D = AMSTensor::IntDimType;
+  auto scalar = AMSTensor::create<int64_t>({}, {}, AMS_HOST);
+  CATCH_REQUIRE(scalar.elements() == 1);
+  CATCH_REQUIRE(scalar.nbytes() == sizeof(int64_t));
+  CATCH_REQUIRE(scalar.storage_nbytes() == sizeof(int64_t));
+
+  auto empty = AMSTensor::create<float>(std::vector<D>{3, 0, 2},
+                                        std::vector<D>{2, 2, 1},
+                                        AMS_HOST);
+  CATCH_REQUIRE(empty.elements() == 0);
+  CATCH_REQUIRE(empty.nbytes() == 0);
+
+  auto padded = AMSTensor::create<int32_t>(std::vector<D>{2, 3},
+                                           std::vector<D>{5, 1},
+                                           AMS_HOST);
+  CATCH_REQUIRE(padded.nbytes() == 6 * sizeof(int32_t));
+  CATCH_REQUIRE(padded.storage_nbytes() == 8 * sizeof(int32_t));
+  CATCH_REQUIRE_FALSE(padded.contiguous());
+}
+
 // =========================================================================
 // SmallVector holding mixed-dtype tensors
 // =========================================================================

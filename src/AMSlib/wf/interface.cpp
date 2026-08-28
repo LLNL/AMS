@@ -13,6 +13,8 @@ using namespace ams;
 #include <c10/util/SmallVector.h>
 #include <torch/torch.h>
 
+#include "AMSTorchInterop.hpp"
+
 // ============================================================================
 // Torch device helper functions
 // ============================================================================
@@ -87,116 +89,18 @@ static c10::ScalarType amsToTorchDType(const ams::AMSDType dType)
 
 static ams::AMSTensor torchToAMSTensorView(torch::Tensor& tensor)
 {
-  // We should be able to completely remove these conversion by using some template "magic."
-  auto dType = torchDTypeToAMSType(tensor.scalar_type());
-  auto rType = torchDeviceToAMSDevice(tensor.device().type());
-
-  // In both cases, I am effectively only forwarding the pointer of begin/end to ams.
-  // this is a cheap operating. It should boil down to: shapes.start = tensor.sizes.start, shapes.end = tensor.sizes.end;
-  auto shapes = ams::ArrayRef(tensor.sizes().begin(), tensor.sizes().size());
-  auto strides =
-      ams::ArrayRef(tensor.strides().begin(), tensor.strides().size());
-
-  switch (dType) {
-    case AMSDType::AMS_SINGLE:
-      return AMSTensor::view(tensor.data_ptr<float>(), shapes, strides, rType);
-
-    case AMSDType::AMS_DOUBLE:
-      return AMSTensor::view(tensor.data_ptr<double>(), shapes, strides, rType);
-
-    case AMSDType::AMS_INT32:
-      return AMSTensor::view(tensor.data_ptr<int32_t>(),
-                             shapes,
-                             strides,
-                             rType);
-
-    case AMSDType::AMS_INT64:
-      return AMSTensor::view(tensor.data_ptr<int64_t>(),
-                             shapes,
-                             strides,
-                             rType);
-
-    default:
-      throw std::runtime_error("torchToAMSTensorView: unsupported Torch dtype");
-  }
+  return ams::fromTorchView(tensor);
 }
 
 static ams::AMSTensor torchToAMSTensorCopy(const torch::Tensor& tensor)
 {
-  torch::Tensor src = tensor.detach();
-  if (!src.is_contiguous()) {
-    src = src.contiguous();
-  }
-
-  auto dType = torchDTypeToAMSType(src.scalar_type());
-  auto rType = torchDeviceToAMSDevice(src.device().type());
-  if (rType == AMSResourceType::AMS_UNKNOWN) {
-    throw std::runtime_error("torchToAMSTensorCopy: unsupported Torch device");
-  }
-
-  ams::SmallVector<ams::AMSTensor::IntDimType> shapes;
-  ams::SmallVector<ams::AMSTensor::IntDimType> strides;
-  for (const auto dim : src.sizes()) {
-    shapes.push_back(static_cast<ams::AMSTensor::IntDimType>(dim));
-  }
-  for (const auto stride : src.strides()) {
-    strides.push_back(static_cast<ams::AMSTensor::IntDimType>(stride));
-  }
-
-  auto& rm = ams::ResourceManager::getInstance();
-  switch (dType) {
-    case AMSDType::AMS_SINGLE: {
-      auto out = AMSTensor::create<float>(shapes, strides, rType);
-      rm.copy(
-          src.data_ptr<float>(), rType, out.data<float>(), rType, src.numel());
-      return out;
-    }
-    case AMSDType::AMS_DOUBLE: {
-      auto out = AMSTensor::create<double>(shapes, strides, rType);
-      rm.copy(src.data_ptr<double>(),
-              rType,
-              out.data<double>(),
-              rType,
-              src.numel());
-      return out;
-    }
-    case AMSDType::AMS_INT32: {
-      auto out = AMSTensor::create<int32_t>(shapes, strides, rType);
-      rm.copy(src.data_ptr<int32_t>(),
-              rType,
-              out.data<int32_t>(),
-              rType,
-              src.numel());
-      return out;
-    }
-    case AMSDType::AMS_INT64: {
-      auto out = AMSTensor::create<int64_t>(shapes, strides, rType);
-      rm.copy(src.data_ptr<int64_t>(),
-              rType,
-              out.data<int64_t>(),
-              rType,
-              src.numel());
-      return out;
-    }
-    default:
-      throw std::runtime_error("torchToAMSTensorCopy: unsupported Torch dtype");
-  }
+  return ams::fromTorchCopy(tensor);
 }
 
 static torch::Tensor amsToTorchTensorView(const ams::AMSTensor& tensor)
 {
-  auto dType = amsToTorchDType(tensor.dtype());
-  auto deviceType = amsToTorchDevice(tensor.location());
-
-  c10::SmallVector<long> shapes(tensor.shape().begin(), tensor.shape().end());
-  c10::SmallVector<long> strides(tensor.strides().begin(),
-                                 tensor.strides().end());
-
-  return torch::from_blob(tensor.data_ptr(),
-                          shapes,
-                          strides,
-                          torch::TensorOptions().dtype(dType).device(
-                              deviceType));
+  // Internal const-only inference view: models contractually do not mutate input.
+  return ams::toTorchView(const_cast<ams::AMSTensor&>(tensor));
 }
 
 ams::SmallVector<ams::AMSTensor> torchToAMSTensors(
@@ -498,11 +402,7 @@ void callAMS(ams::AMSWorkflow* executor,
              ams::SmallVector<ams::AMSTensor>& inouts,
              ams::SmallVector<ams::AMSTensor>& outs)
 {
-  ams::SmallVector<torch::Tensor> tins = amsToTorchTensors(ins);
-  ams::SmallVector<torch::Tensor> tinouts = amsToTorchTensors(inouts);
-  ams::SmallVector<torch::Tensor> touts = amsToTorchTensors(outs);
-
-  executor->evaluate(Physics, tins, tinouts, touts);
+  executor->evaluate(Physics, ins, inouts, outs);
 }
 
 // ============================================================================
@@ -553,13 +453,13 @@ bool tryGraphSurrogate(AMSWorkflow* executor,
       torch::Tensor tensor = item.value().toTensor();
       if (parts[0] == "node") {
         requireOutputFirstDim(tensor, num_nodes, key, "node");
-        outputs.node_fields.insert(parts[1], torchToAMSTensorCopy(tensor));
+        outputs.node_fields.insert(parts[1], torchToAMSTensorView(tensor));
       } else if (parts[0] == "edge") {
         requireOutputFirstDim(tensor, num_edges, key, "edge");
-        outputs.edge_fields.insert(parts[1], torchToAMSTensorCopy(tensor));
+        outputs.edge_fields.insert(parts[1], torchToAMSTensorView(tensor));
       } else if (parts[0] == "global") {
         requireGlobalOutputShape(tensor, key);
-        outputs.global_fields.insert(parts[1], torchToAMSTensorCopy(tensor));
+        outputs.global_fields.insert(parts[1], torchToAMSTensorView(tensor));
       } else {
         throw std::runtime_error("Malformed homogeneous graph output key '" +
                                  key +
@@ -618,7 +518,7 @@ bool tryGraphSurrogate(AMSWorkflow* executor,
         const int64_t num_nodes = reference_tensor.shape()[0];
         requireOutputFirstDim(tensor, num_nodes, key, "node");
         outputs.getOrCreateNodeStore(parts[1]).insert(parts[2],
-                                                      torchToAMSTensorCopy(
+                                                      torchToAMSTensorView(
                                                           tensor));
       } else if (parts.size() == 3 && parts[0] == "edge" && !parts[1].empty() &&
                  !parts[2].empty()) {
@@ -637,12 +537,12 @@ bool tryGraphSurrogate(AMSWorkflow* executor,
         }
         requireOutputFirstDim(tensor, edge_index->shape()[1], key, "edge");
         outputs.getOrCreateEdgeStore(edge_type).insert(parts[2],
-                                                       torchToAMSTensorCopy(
+                                                       torchToAMSTensorView(
                                                            tensor));
       } else if (parts.size() == 2 && parts[0] == "global" &&
                  !parts[1].empty()) {
         requireGlobalOutputShape(tensor, key);
-        outputs.global_store.insert(parts[1], torchToAMSTensorCopy(tensor));
+        outputs.global_store.insert(parts[1], torchToAMSTensorView(tensor));
       } else {
         throw std::runtime_error("Malformed heterogeneous graph output key '" +
                                  key +

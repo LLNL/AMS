@@ -106,7 +106,9 @@ public:
 
   std::tuple<torch::Tensor, torch::Tensor> evaluate(
       ams::MutableArrayRef<at::Tensor> Inputs,
-      const float threshold);
+      const float threshold,
+      torch::Tensor* packedWorkspace = nullptr,
+      bool* reusedWorkspace = nullptr);
 
 
   inline bool is_gpu() const

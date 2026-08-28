@@ -34,7 +34,7 @@ struct Problem {
   {
   }
 
-  void run(long num_elements, DType** inputs, DType** outputs)
+  void run(long num_elements, const DType* const* inputs, DType** outputs)
   {
     for (int i = 0; i < num_elements; i++) {
       DType sum = 0;
@@ -97,7 +97,7 @@ struct Problem {
           [&](const ams::SmallVector<ams::AMSTensor>& ams_ins,
               ams::SmallVector<ams::AMSTensor>& ams_inouts,
               ams::SmallVector<ams::AMSTensor>& ams_outs) {
-            DType* ins[num_inputs];
+            const DType* ins[num_inputs];
             DType* outs[num_outputs];
             if (num_inputs != ams_ins.size())
               throw std::runtime_error(

@@ -8,6 +8,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <cstdint>
+#include <random>
 #include <vector>
 
 #include "AMS.h"
@@ -17,6 +18,59 @@
 #include "wf/utils.hpp"
 
 using namespace ams;
+
+CATCH_TEST_CASE("int32: move resets metadata and padded clone preserves values",
+                "[ams][tensor][int32][move][clone]")
+{
+  using D = AMSTensor::IntDimType;
+  std::vector<int32_t> storage(8, -1);
+  storage[0] = 1;
+  storage[1] = 2;
+  storage[2] = 3;
+  storage[5] = 4;
+  storage[6] = 5;
+  storage[7] = 6;
+  auto padded = AMSTensor::view(storage.data(),
+                                std::vector<D>{2, 3},
+                                std::vector<D>{5, 1},
+                                AMS_HOST);
+  auto clone = padded.clone();
+  for (int i = 0; i < 6; ++i)
+    CATCH_REQUIRE(clone.data<int32_t>()[i] == i + 1);
+  CATCH_REQUIRE(clone.contiguous());
+
+  auto moved = std::move(clone);
+  CATCH_REQUIRE_FALSE(clone.valid());
+  CATCH_REQUIRE_THROWS_AS(clone.nbytes(), std::logic_error);
+  CATCH_REQUIRE(moved.elements() == 6);
+}
+
+CATCH_TEST_CASE("int64: randomized positive-stride clones match reference",
+                "[ams][tensor][int64][clone]")
+{
+  using D = AMSTensor::IntDimType;
+  std::mt19937 random(12345);
+  for (int trial = 0; trial < 100; ++trial) {
+    const D rows = 1 + random() % 7;
+    const D cols = 1 + random() % 7;
+    const D padding = random() % 5;
+    const D rowStride = cols + padding;
+    std::vector<int64_t> source(
+        static_cast<size_t>((rows - 1) * rowStride + cols));
+    for (D row = 0; row < rows; ++row)
+      for (D col = 0; col < cols; ++col)
+        source[static_cast<size_t>(row * rowStride + col)] = row * 100 + col;
+    auto view = AMSTensor::view(source.data(),
+                                std::vector<D>{rows, cols},
+                                std::vector<D>{rowStride, 1},
+                                AMS_HOST);
+    auto clone = view.clone();
+    for (D row = 0; row < rows; ++row)
+      for (D col = 0; col < cols; ++col)
+        CATCH_REQUIRE(clone.data<int64_t>()[row * cols + col] ==
+                      row * 100 + col);
+  }
+}
 
 // =========================================================================
 // int32_t — create
