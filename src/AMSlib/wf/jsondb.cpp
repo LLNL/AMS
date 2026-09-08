@@ -566,7 +566,7 @@ void JSONDB::close()
   // Build complete manifest
   nlohmann::json manifest;
   manifest["format_version"] = 1;
-  manifest["endianness"] = "little";
+  manifest["endianness"] = isLittleEndian() ? "little" : "big";
 
   // Add metadata if set
   if (!metadata_.is_null()) {
