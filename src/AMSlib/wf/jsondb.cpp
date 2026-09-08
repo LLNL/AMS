@@ -358,7 +358,8 @@ void JSONDB::store(ArrayRef<torch::Tensor> Inputs,
 {
   // Create case directory
   std::ostringstream case_name;
-  case_name << "case_" << std::setw(6) << std::setfill('0') << case_counter_;
+  case_name << "case_" << getId() << "_" << std::setw(6) << std::setfill('0')
+            << case_counter_;
   std::string case_dir = case_name.str();
 
   nlohmann::json case_json;
@@ -431,7 +432,8 @@ void JSONDB::store(const ams::AMSHomogeneousGraph& graph,
 {
   // Create case directory
   std::ostringstream case_name;
-  case_name << "step_" << std::setw(6) << std::setfill('0') << case_counter_;
+  case_name << "step_" << getId() << "_" << std::setw(6) << std::setfill('0')
+            << case_counter_;
   std::string case_dir = case_name.str();
 
   // Extract graph dimensions

@@ -39,8 +39,9 @@ namespace db
  *
  * Output format is compatible with PyTorch Geometric data loaders.
  *
- * @note Case and step directories are not rank-scoped. Concurrent MPI ranks
- * writing to the same output directory are not currently supported.
+ * @note Case and step directory names include the database rank ID so
+ * concurrent MPI ranks can write to the same output directory without tensor
+ * file collisions.
  */
 class JSONDB final : public FileDB
 {
