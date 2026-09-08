@@ -13,7 +13,16 @@ function(BUILD_UNIT_TEST exe source)
     target_link_libraries(${exe} PRIVATE hip::host)
     target_link_libraries(${exe} PRIVATE Threads::Threads)
   endif()
-  
+
+  if (ENABLE_MPI)
+    target_link_libraries(${exe} PRIVATE MPI::MPI_CXX)
+  endif()
+
+  if (ENABLE_CALIPER)
+    target_link_libraries(${exe} PRIVATE caliper)
+    target_include_directories(${exe} PRIVATE ${caliper_INCLUDE_DIR})
+  endif()
+
   target_include_directories(${exe} PRIVATE ${CMAKE_SOURCE_DIR}/src/AMSlib/)
   target_include_directories(${exe} PRIVATE ${CMAKE_BINARY_DIR}/include/)
   target_include_directories(${exe} PRIVATE ${AMS_TEST_ROOT})
@@ -43,6 +52,10 @@ ADD_AMS_UNIT_TEST(AMS_GRAPH_FALLBACK ams_graph_fallback)
 
 BUILD_UNIT_TEST(ams_graph_surrogate test_graph_surrogate.cpp Catch2::Catch2 ../ams_catch_main.cpp)
 ADD_AMS_UNIT_TEST(AMS_GRAPH_SURROGATE ams_graph_surrogate)
+
+BUILD_UNIT_TEST(ams_graph_workflow_storage test_graph_workflow_storage.cpp Catch2::Catch2 ../ams_catch_main.cpp)
+target_link_libraries(ams_graph_workflow_storage PRIVATE nlohmann_json::nlohmann_json)
+ADD_AMS_UNIT_TEST(AMS_GRAPH_WORKFLOW_STORAGE ams_graph_workflow_storage)
 
 BUILD_UNIT_TEST(ams_graph_mgn_surrogate test_graph_mgn_surrogate.cpp Catch2::Catch2 ../ams_catch_main.cpp)
 target_link_libraries(ams_graph_mgn_surrogate PRIVATE nlohmann_json::nlohmann_json)

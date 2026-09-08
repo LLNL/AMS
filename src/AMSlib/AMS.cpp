@@ -12,6 +12,7 @@
 #endif
 #include <unistd.h>
 
+#include <experimental/filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <regex>
@@ -33,6 +34,8 @@ using namespace ams;
 
 namespace
 {
+
+namespace fs = std::experimental::filesystem;
 
 struct AMSAbstractModel {
 public:

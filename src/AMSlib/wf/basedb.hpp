@@ -31,7 +31,14 @@
 #include "wf/resource_manager.hpp"
 #include "wf/utils.hpp"
 
-namespace fs = std::experimental::filesystem;
+// Forward declarations for graph types
+namespace ams
+{
+struct AMSHomogeneousGraph;
+struct AMSHomogeneousGraphFields;
+struct AMSHeterogeneousGraph;
+struct AMSHeterogeneousGraphFields;
+}  // namespace ams
 
 #ifdef __AMS_ENABLE_HDF5__
 #include <H5Ipublic.h>
@@ -124,6 +131,35 @@ public:
   virtual void store(ArrayRef<torch::Tensor> Inputs,
                      ArrayRef<torch::Tensor> Outputs) = 0;
 
+  /**
+   * @brief Store graph data with outputs/targets for training.
+   * Default implementation throws - only backends that support graphs override this.
+   * @param[in] graph The homogeneous graph containing input features
+   * @param[in] outputs The graph fields containing output/target data
+   */
+  virtual void store(
+      [[maybe_unused]] const ams::AMSHomogeneousGraph& graph,
+      [[maybe_unused]] const ams::AMSHomogeneousGraphFields& outputs)
+  {
+    THROW(std::runtime_error,
+          (this->type() + " database does not support graph storage").c_str());
+  }
+
+  /**
+   * @brief Store heterogeneous graph data with outputs/targets for training.
+   * Default implementation throws - only backends that support graphs override this.
+   * @param[in] graph The heterogeneous graph containing input features
+   * @param[in] outputs The graph fields containing output/target data
+   */
+  virtual void store(
+      [[maybe_unused]] const ams::AMSHeterogeneousGraph& graph,
+      [[maybe_unused]] const ams::AMSHeterogeneousGraphFields& outputs)
+  {
+    THROW(std::runtime_error,
+          (this->type() + " database does not support heterogeneous graph "
+                          "storage")
+              .c_str());
+  }
 
   uint64_t getId() const { return id; }
 
@@ -175,29 +211,29 @@ public:
          uint64_t rId)
       : BaseDB(rId)
   {
-    fs::path Path(path);
+    std::experimental::filesystem::path Path(path);
     std::error_code ec;
 
-    if (!fs::exists(Path, ec)) {
+    if (!std::experimental::filesystem::exists(Path, ec)) {
       std::cerr << "[ERROR]: Path:'" << path << "' does not exist\n";
       exit(-1);
     }
 
     checkError(ec);
 
-    if (!fs::is_directory(Path, ec)) {
+    if (!std::experimental::filesystem::is_directory(Path, ec)) {
       std::cerr << "[ERROR]: Path:'" << path << "' is a file NOT a directory\n";
       exit(-1);
     }
 
-    Path = fs::absolute(Path);
+    Path = std::experimental::filesystem::absolute(Path);
     fp = Path.string();
 
     // We can now create the filename
     std::string dbfn(fn + "_");
     dbfn += std::to_string(rId) + suffix;
-    Path /= fs::path(dbfn);
-    this->fn = fs::absolute(Path).string();
+    Path /= std::experimental::filesystem::path(dbfn);
+    this->fn = std::experimental::filesystem::absolute(Path).string();
     AMS_DBG(DB, "File System DB writes to file {}", this->fn)
   }
 
@@ -1559,8 +1595,9 @@ public:
     flush(100, 100);
     _publishingManager->stop();
     auto size = MessagesBuffer::getInstance().size();
-    if (size != 0)
+    if (size != 0) {
       AMS_DBG(RMQInterface, "Rank {} did not ack {} messages", _rId, size)
+    }
   }
 
   ~RMQInterface()
@@ -1668,10 +1705,10 @@ public:
   bool connect(std::string& path)
   {
     connected = true;
-    fs::path Path(path);
+    std::experimental::filesystem::path Path(path);
     std::error_code ec;
 
-    if (!fs::exists(Path, ec)) {
+    if (!std::experimental::filesystem::exists(Path, ec)) {
       THROW(std::runtime_error,
             ("Path: :'" + path + "' does not exist").c_str());
       exit(-1);
@@ -1760,37 +1797,10 @@ public:
   * @param[in] rId a unique Id for each process taking part in a distributed
   * execution (rank-id)
   */
+  // Declared here, implemented in basedb.cpp to avoid including jsondb.hpp in header
   std::shared_ptr<BaseDB> createDB(std::string& domainName,
                                    AMSDBType dbType,
-                                   uint64_t rId = 0)
-  {
-
-    AMS_DBG(DBManager, "Instantiating data base");
-
-    if ((dbType == AMSDBType::AMS_HDF5) && !fs_interface.isConnected()) {
-      THROW(std::runtime_error,
-            "File System is not configured, Please specify output directory");
-    } else if (dbType == AMSDBType::AMS_RMQ && !rmq_interface.isConnected()) {
-      THROW(std::runtime_error, "Rabbit MQ data base is not configured");
-    }
-
-    switch (dbType) {
-#ifdef __AMS_ENABLE_HDF5__
-      case AMSDBType::AMS_HDF5:
-        return std::make_shared<hdf5DB>(fs_interface.path(), domainName, rId);
-#endif
-#ifdef __AMS_ENABLE_RMQ__
-      case AMSDBType::AMS_RMQ:
-        return std::make_shared<RabbitMQDB>(rmq_interface,
-                                            domainName,
-                                            rId,
-                                            updateSurrogate);
-#endif
-      default:
-        return nullptr;
-    }
-    return nullptr;
-  }
+                                   uint64_t rId = 0);
 
   /**
   * @brief get a data base object referred by this string.
@@ -1904,10 +1914,10 @@ public:
                           std::string& routing_key,
                           bool update_surrogate)
   {
-    fs::path Path(rmq_cert);
+    std::experimental::filesystem::path Path(rmq_cert);
     std::error_code ec;
     AMS_CWARNING(AMS,
-                 !fs::exists(Path, ec),
+                 !std::experimental::filesystem::exists(Path, ec),
                  "Certificate file '{}' for RMQ server does not exist. AMS "
                  "will "
                  "try to connect without it.",

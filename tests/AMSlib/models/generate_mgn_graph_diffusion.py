@@ -56,6 +56,7 @@ import argparse
 import copy
 import json
 import os
+import struct
 import sys
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple

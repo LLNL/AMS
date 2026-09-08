@@ -491,26 +491,6 @@ void callAMS(ams::AMSWorkflow* executor,
 }
 
 // ============================================================================
-// Graph-based callApplication overloads
-// ============================================================================
-
-void callApplication(ams::HomogeneousGraphDomainFn CallBack,
-                     const ams::AMSHomogeneousGraph& graph,
-                     ams::AMSHomogeneousGraphFields& outputs)
-{
-  // Directly invoke the user's physics callback with graph-native types
-  CallBack(graph, outputs);
-}
-
-void callApplication(ams::HeterogeneousGraphDomainFn CallBack,
-                     const ams::AMSHeterogeneousGraph& graph,
-                     ams::AMSHeterogeneousGraphFields& outputs)
-{
-  // Directly invoke the user's physics callback with graph-native types
-  CallBack(graph, outputs);
-}
-
-// ============================================================================
 // Graph surrogate execution (in ams namespace for friend access)
 // ============================================================================
 
@@ -675,16 +655,8 @@ void callAMS(ams::AMSWorkflow* executor,
              const ams::AMSHomogeneousGraph& graph_input,
              ams::AMSHomogeneousGraphFields& outputs)
 {
-  // Try graph surrogate execution first
-  bool surrogate_used = tryGraphSurrogate(executor, graph_input, outputs);
-
-  // If surrogate succeeded, we're done
-  if (surrogate_used) {
-    return;
-  }
-
-  // Otherwise, fallback to original physics computation
-  callApplication(Physics, graph_input, outputs);
+  // Delegate to public evaluate method (mirrors tensor pattern)
+  executor->evaluate(Physics, graph_input, outputs);
 }
 
 void callAMS(ams::AMSWorkflow* executor,
@@ -692,14 +664,6 @@ void callAMS(ams::AMSWorkflow* executor,
              const ams::AMSHeterogeneousGraph& graph_input,
              ams::AMSHeterogeneousGraphFields& outputs)
 {
-  // Try graph surrogate execution first
-  bool surrogate_used = tryGraphSurrogate(executor, graph_input, outputs);
-
-  // If surrogate succeeded, we're done
-  if (surrogate_used) {
-    return;
-  }
-
-  // Otherwise, fallback to original physics computation
-  callApplication(Physics, graph_input, outputs);
+  // Delegate to public evaluate method (mirrors tensor pattern)
+  executor->evaluate(Physics, graph_input, outputs);
 }

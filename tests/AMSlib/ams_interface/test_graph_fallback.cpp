@@ -116,6 +116,25 @@ CATCH_TEST_CASE("AMSTensorFieldMap explicit field API", "[wf][graph]")
   CATCH_REQUIRE_THROWS_AS(fields.insert("flux", makeTensor<float>({2, 1})),
                           std::runtime_error);
   CATCH_REQUIRE_THROWS_AS(fields.at("absent"), std::out_of_range);
+
+  const AMSTensorFieldMap& const_fields = fields;
+  CATCH_REQUIRE(const_fields.cbegin() != const_fields.cend());
+  std::size_t visited = 0;
+  bool saw_prediction = false;
+  bool saw_flux = false;
+  for (const auto& [name, tensor] : const_fields) {
+    ++visited;
+    if (name == "prediction") {
+      saw_prediction = true;
+      CATCH_REQUIRE(tensor.shape()[0] == 3);
+    } else if (name == "flux") {
+      saw_flux = true;
+      CATCH_REQUIRE(tensor.shape()[0] == 2);
+    }
+  }
+  CATCH_REQUIRE(visited == 2);
+  CATCH_REQUIRE(saw_prediction);
+  CATCH_REQUIRE(saw_flux);
 }
 
 CATCH_TEST_CASE("AMSHomogeneousGraph validates construction",

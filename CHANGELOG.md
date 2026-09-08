@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- JSON-backed storage can emit binary tensor files in rank-qualified case
+  directories or self-contained base64 manifests, with a separate manifest for
+  each domain and rank (#205).
+
 ### Changed
 
 - Workflow environments can now use active system Flux Python bindings instead

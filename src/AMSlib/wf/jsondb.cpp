@@ -1,0 +1,603 @@
+/*
+ * Copyright 2021-2023 Lawrence Livermore National Security, LLC and other
+ * AMSLib Project Developers
+ *
+ * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+ */
+
+#include "wf/jsondb.hpp"
+
+#include <torch/torch.h>
+
+#include <algorithm>
+#include <cstring>
+#include <experimental/filesystem>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
+#include <utility>
+
+#include "wf/debug.h"
+
+using namespace ams::db;
+using namespace ams;
+
+// ----------------------------------------------------------------------
+// Helper functions
+// ----------------------------------------------------------------------
+
+namespace
+{
+
+namespace fs = std::experimental::filesystem;
+
+// Check system endianness
+bool isLittleEndian()
+{
+  uint32_t test = 0x01020304;
+  return (*reinterpret_cast<uint8_t*>(&test)) == 0x04;
+}
+
+// Base64 encoding for pure JSON mode
+std::string base64Encode(const uint8_t* data, size_t len)
+{
+  static const char* base64_chars =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+  std::string ret;
+  int i = 0;
+  uint8_t char_array_3[3];
+  uint8_t char_array_4[4];
+
+  while (len--) {
+    char_array_3[i++] = *(data++);
+    if (i == 3) {
+      char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
+      char_array_4[1] =
+          ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
+      char_array_4[2] =
+          ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
+      char_array_4[3] = char_array_3[2] & 0x3f;
+
+      for (i = 0; i < 4; i++)
+        ret += base64_chars[char_array_4[i]];
+      i = 0;
+    }
+  }
+
+  if (i) {
+    for (int j = i; j < 3; j++)
+      char_array_3[j] = '\0';
+
+    char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
+    char_array_4[1] =
+        ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
+    char_array_4[2] =
+        ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
+
+    for (int j = 0; j < i + 1; j++)
+      ret += base64_chars[char_array_4[j]];
+
+    while (i++ < 3)
+      ret += '=';
+  }
+
+  return ret;
+}
+
+}  // anonymous namespace
+
+// ----------------------------------------------------------------------
+// JSONDB Implementation
+// ----------------------------------------------------------------------
+
+JSONDB::JSONDB(std::string path,
+               std::string domain_name,
+               uint64_t rId,
+               std::string json_mode)
+    : FileDB(path, domain_name, "_jsondb.json", rId),
+      json_mode_(json_mode),
+      case_counter_(0),
+      finalized_(false)
+{
+  if (!isLittleEndian()) {
+    AMS_WARNING(JSONDB,
+                "System is not little-endian. Binary output may not be "
+                "compatible with Python loaders.");
+  }
+
+  if (json_mode_ != "binary" && json_mode_ != "json") {
+    THROW(std::invalid_argument,
+          ("Invalid json_mode: " + json_mode_ + ". Must be 'binary' or 'json'.")
+              .c_str());
+  }
+
+  AMS_DBG(JSONDB, "Created JSONDB at '{}' with mode '{}'", fp, json_mode_);
+}
+
+JSONDB::~JSONDB()
+{
+  if (!finalized_) {
+    try {
+      close();
+    } catch (const std::exception& e) {
+      AMS_WARNING(JSONDB,
+                  "Exception while automatically closing JSONDB: {}",
+                  e.what());
+    }
+  }
+}
+
+std::string JSONDB::dtypeToString(AMSDType dtype) const
+{
+  switch (dtype) {
+    case AMS_SINGLE:
+      return "float32";
+    case AMS_DOUBLE:
+      return "float64";
+    case AMS_INT32:
+      return "int32";
+    case AMS_INT64:
+      return "int64";
+    default:
+      return "unknown";
+  }
+}
+
+std::string JSONDB::torchDTypeToString(torch::Dtype dtype) const
+{
+  if (dtype == torch::kFloat32 || dtype == torch::kFloat) return "float32";
+  if (dtype == torch::kFloat64 || dtype == torch::kDouble) return "float64";
+  if (dtype == torch::kInt32) return "int32";
+  if (dtype == torch::kInt64 || dtype == torch::kLong) return "int64";
+  return "unknown";
+}
+
+size_t JSONDB::writeBinaryTensor(const AMSTensor& tensor,
+                                 const std::string& path)
+{
+  // Get tensor properties
+  const void* data = tensor.raw_data();
+  size_t byte_size = tensor.elements() * tensor.element_size();
+  AMSResourceType location = tensor.location();
+
+  // AMSTensor device transfers are not implemented here yet.
+  if (location != AMSResourceType::AMS_HOST) {
+    AMS_WARNING(JSONDB, "GPU tensor serialization is not implemented");
+    THROW(std::runtime_error, "GPU tensor serialization not yet implemented");
+    // TODO: Implement cudaMemcpy/hipMemcpy here
+  }
+
+  // Ensure contiguous layout
+  if (!tensor.contiguous()) {
+    AMS_WARNING(JSONDB,
+                "Non-contiguous tensor detected. Creating contiguous copy.");
+    // For non-contiguous, we need to iterate with strides
+    // For now, throw an error
+    THROW(std::runtime_error,
+          "Non-contiguous tensor serialization not yet implemented");
+  }
+
+  // Write binary file
+  fs::path full_path = fs::path(fp) / path;
+  fs::create_directories(full_path.parent_path());
+
+  std::ofstream file(full_path.string(), std::ios::binary);
+  if (!file.is_open()) {
+    THROW(std::runtime_error,
+          ("Failed to open file for writing: " + full_path.string()).c_str());
+  }
+
+  file.write(static_cast<const char*>(data), byte_size);
+  file.close();
+
+  AMS_DBG(JSONDB, "Wrote binary tensor to '{}' ({} bytes)", path, byte_size);
+
+  return byte_size;
+}
+
+size_t JSONDB::writeBinaryTensor(const torch::Tensor& tensor,
+                                 const std::string& path)
+{
+  // Ensure tensor is contiguous and on CPU
+  torch::Tensor cpu_tensor = tensor.contiguous().cpu();
+
+  size_t byte_size = cpu_tensor.nbytes();
+
+  // Write binary file
+  fs::path full_path = fs::path(fp) / path;
+  fs::create_directories(full_path.parent_path());
+
+  std::ofstream file(full_path.string(), std::ios::binary);
+  if (!file.is_open()) {
+    THROW(std::runtime_error,
+          ("Failed to open file for writing: " + full_path.string()).c_str());
+  }
+
+  file.write(static_cast<const char*>(cpu_tensor.data_ptr()), byte_size);
+  file.close();
+
+  AMS_DBG(JSONDB, "Wrote PyTorch tensor to '{}' ({} bytes)", path, byte_size);
+
+  return byte_size;
+}
+
+nlohmann::json JSONDB::encodeBase64Tensor(const AMSTensor& tensor)
+{
+  // For pure JSON mode, encode as base64
+  const uint8_t* data = static_cast<const uint8_t*>(tensor.raw_data());
+  size_t byte_size = tensor.elements() * tensor.element_size();
+
+  // Handle GPU/non-contiguous tensors
+  if (tensor.location() != AMSResourceType::AMS_HOST || !tensor.contiguous()) {
+    THROW(std::runtime_error,
+          "Base64 encoding only supports contiguous CPU tensors currently");
+  }
+
+  nlohmann::json result;
+  result["encoding"] = "base64";
+  result["data"] = base64Encode(data, byte_size);
+  result["dtype"] = dtypeToString(tensor.dType());
+  result["byte_size"] = byte_size;
+
+  // Add shape
+  auto shape_ref = tensor.shape();
+  result["shape"] = std::vector<int64_t>(shape_ref.begin(), shape_ref.end());
+
+  return result;
+}
+
+nlohmann::json JSONDB::encodeBase64Tensor(const torch::Tensor& tensor)
+{
+  torch::Tensor cpu_tensor = tensor.contiguous().cpu();
+  const uint8_t* data = static_cast<const uint8_t*>(cpu_tensor.data_ptr());
+  size_t byte_size = cpu_tensor.nbytes();
+
+  auto sizes = cpu_tensor.sizes();
+  std::vector<int64_t> shape(sizes.begin(), sizes.end());
+
+  return nlohmann::json{{"encoding", "base64"},
+                        {"data", base64Encode(data, byte_size)},
+                        {"dtype", torchDTypeToString(cpu_tensor.scalar_type())},
+                        {"shape", shape},
+                        {"byte_size", byte_size}};
+}
+
+nlohmann::json JSONDB::serializeTensor(const AMSTensor& tensor,
+                                       const std::string& binary_path)
+{
+  if (json_mode_ == "json") {
+    return encodeBase64Tensor(tensor);
+  }
+
+  auto shape_ref = tensor.shape();
+  std::vector<int64_t> shape(shape_ref.begin(), shape_ref.end());
+  size_t byte_size = writeBinaryTensor(tensor, binary_path);
+  return nlohmann::json{{"path", binary_path},
+                        {"dtype", dtypeToString(tensor.dType())},
+                        {"shape", shape},
+                        {"byte_size", byte_size}};
+}
+
+nlohmann::json JSONDB::serializeOutputFields(const AMSTensorFieldMap& fields,
+                                             const std::string& case_dir,
+                                             const std::string& association)
+{
+  std::vector<std::pair<std::string, const AMSTensor*>> sorted_fields;
+  sorted_fields.reserve(fields.size());
+  for (const auto& [name, tensor] : fields) {
+    sorted_fields.emplace_back(name, &tensor);
+  }
+  std::sort(sorted_fields.begin(),
+            sorted_fields.end(),
+            [](const auto& lhs, const auto& rhs) {
+              return lhs.first < rhs.first;
+            });
+
+  nlohmann::json output_json = nlohmann::json::object();
+  for (size_t i = 0; i < sorted_fields.size(); ++i) {
+    std::ostringstream filename;
+    filename << "field_" << std::setw(6) << std::setfill('0') << i << ".bin";
+    std::string binary_path =
+        case_dir + "/outputs/" + association + "/" + filename.str();
+    output_json[sorted_fields[i].first] =
+        serializeTensor(*sorted_fields[i].second, binary_path);
+  }
+  return output_json;
+}
+
+void JSONDB::validateEdgeIndex(const AMSTensor& edge_index, int64_t num_nodes)
+{
+  auto shape_ref = edge_index.shape();
+  if (shape_ref.size() != 2 || shape_ref[0] != 2) {
+    std::ostringstream oss;
+    oss << "edge_index must have shape [2, E], got [";
+    for (size_t i = 0; i < shape_ref.size(); ++i) {
+      oss << shape_ref[i];
+      if (i < shape_ref.size() - 1) oss << ", ";
+    }
+    oss << "]";
+    THROW(std::invalid_argument, oss.str().c_str());
+  }
+
+  // Check dtype is int64
+  if (edge_index.dType() != AMS_INT64) {
+    THROW(std::invalid_argument, "edge_index must have dtype int64");
+  }
+
+  // Validate indices are in range
+  const int64_t* indices = edge_index.data<int64_t>();
+  int64_t num_edges = shape_ref[1];
+
+  for (int64_t i = 0; i < 2 * num_edges; ++i) {
+    if (indices[i] < 0 || indices[i] >= num_nodes) {
+      std::ostringstream oss;
+      oss << "edge_index contains out-of-range index: " << indices[i]
+          << " (num_nodes=" << num_nodes << ")";
+      THROW(std::invalid_argument, oss.str().c_str());
+    }
+  }
+
+  // Check for self-loops
+  for (int64_t i = 0; i < num_edges; ++i) {
+    if (indices[i] == indices[i + num_edges]) {
+      std::ostringstream oss;
+      oss << "edge_index contains self-loop at edge " << i << ": " << indices[i]
+          << " -> " << indices[i + num_edges];
+      THROW(std::invalid_argument, oss.str().c_str());
+    }
+  }
+}
+
+// ----------------------------------------------------------------------
+// Store methods
+// ----------------------------------------------------------------------
+
+void JSONDB::store(ArrayRef<torch::Tensor> Inputs,
+                   ArrayRef<torch::Tensor> Outputs)
+{
+  // Create case directory
+  std::ostringstream case_name;
+  case_name << "case_" << getId() << "_" << std::setw(6) << std::setfill('0')
+            << case_counter_;
+  std::string case_dir = case_name.str();
+
+  nlohmann::json case_json;
+  case_json["name"] = case_dir;
+  case_json["case_index"] = case_counter_;
+
+  nlohmann::json tensors_json;
+
+  // Store inputs
+  for (size_t i = 0; i < Inputs.size(); ++i) {
+    std::ostringstream tensor_name;
+    tensor_name << "input_" << i;
+    std::string name = tensor_name.str();
+
+    if (json_mode_ == "binary") {
+      std::string rel_path = case_dir + "/" + name + ".bin";
+      size_t byte_size = writeBinaryTensor(Inputs[i], rel_path);
+
+      auto sizes = Inputs[i].sizes();
+      std::vector<int64_t> shape(sizes.begin(), sizes.end());
+
+      tensors_json[name] =
+          nlohmann::json{{"path", rel_path},
+                         {"dtype", torchDTypeToString(Inputs[i].scalar_type())},
+                         {"shape", shape},
+                         {"byte_size", byte_size}};
+    } else {  // Pure json mode
+      tensors_json[name] = encodeBase64Tensor(Inputs[i]);
+    }
+  }
+
+  // Store outputs
+  for (size_t i = 0; i < Outputs.size(); ++i) {
+    std::ostringstream tensor_name;
+    tensor_name << "output_" << i;
+    std::string name = tensor_name.str();
+
+    if (json_mode_ == "binary") {
+      std::string rel_path = case_dir + "/" + name + ".bin";
+      size_t byte_size = writeBinaryTensor(Outputs[i], rel_path);
+
+      auto sizes = Outputs[i].sizes();
+      std::vector<int64_t> shape(sizes.begin(), sizes.end());
+
+      tensors_json[name] =
+          nlohmann::json{{"path", rel_path},
+                         {"dtype",
+                          torchDTypeToString(Outputs[i].scalar_type())},
+                         {"shape", shape},
+                         {"byte_size", byte_size}};
+    } else {  // Pure json mode
+      tensors_json[name] = encodeBase64Tensor(Outputs[i]);
+    }
+  }
+
+  case_json["tensors"] = tensors_json;
+  cases_.push_back(case_json);
+
+  case_counter_++;
+
+  AMS_DBG(JSONDB,
+          "Stored tensor data for case {} ({} inputs, {} outputs)",
+          case_dir,
+          Inputs.size(),
+          Outputs.size());
+}
+
+void JSONDB::store(const ams::AMSHomogeneousGraph& graph,
+                   const ams::AMSHomogeneousGraphFields& outputs)
+{
+  // Create case directory
+  std::ostringstream case_name;
+  case_name << "step_" << getId() << "_" << std::setw(6) << std::setfill('0')
+            << case_counter_;
+  std::string case_dir = case_name.str();
+
+  // Extract graph dimensions
+  auto node_shape = graph.node_features.shape();
+  auto edge_shape = graph.edge_index.shape();
+
+  int64_t num_nodes = node_shape[0];
+  int64_t num_edges = edge_shape[1];
+  int64_t node_feature_dim = node_shape[1];
+  int64_t edge_feature_dim = 0;
+  int64_t global_feature_dim = 0;
+
+  if (graph.edge_features.elements() > 0) {
+    auto ef_shape = graph.edge_features.shape();
+    edge_feature_dim = ef_shape[1];
+  }
+
+  if (graph.global_features.elements() > 0) {
+    auto gf_shape = graph.global_features.shape();
+    global_feature_dim = gf_shape[0];
+  }
+
+  // Validate edge_index
+  validateEdgeIndex(graph.edge_index, num_nodes);
+
+  // Build case metadata
+  nlohmann::json case_json;
+  case_json["name"] = case_dir;
+  case_json["step_index"] = case_counter_;
+  case_json["num_nodes"] = num_nodes;
+  case_json["num_edges"] = num_edges;
+  case_json["node_feature_dim"] = node_feature_dim;
+  case_json["edge_feature_dim"] = edge_feature_dim;
+  case_json["global_feature_dim"] = global_feature_dim;
+
+  nlohmann::json tensors_json;
+
+  // Write node_features
+  if (json_mode_ == "binary") {
+    std::string rel_path = case_dir + "/node_features.bin";
+    size_t byte_size = writeBinaryTensor(graph.node_features, rel_path);
+
+    tensors_json["node_features"] = {
+        {"path", rel_path},
+        {"dtype", dtypeToString(graph.node_features.dType())},
+        {"shape", std::vector<int64_t>{num_nodes, node_feature_dim}},
+        {"byte_size", byte_size}};
+  } else {  // Pure json mode
+    tensors_json["node_features"] = encodeBase64Tensor(graph.node_features);
+  }
+
+  // Write edge_index
+  if (json_mode_ == "binary") {
+    std::string rel_path = case_dir + "/edge_index.bin";
+    size_t byte_size = writeBinaryTensor(graph.edge_index, rel_path);
+
+    tensors_json["edge_index"] = {{"path", rel_path},
+                                  {"dtype", "int64"},
+                                  {"shape", std::vector<int64_t>{2, num_edges}},
+                                  {"byte_size", byte_size}};
+  } else {  // Pure json mode
+    tensors_json["edge_index"] = encodeBase64Tensor(graph.edge_index);
+  }
+
+  // Write edge_features
+  if (edge_feature_dim > 0) {
+    if (json_mode_ == "binary") {
+      std::string rel_path = case_dir + "/edge_features.bin";
+      size_t byte_size = writeBinaryTensor(graph.edge_features, rel_path);
+
+      tensors_json["edge_features"] = {
+          {"path", rel_path},
+          {"dtype", dtypeToString(graph.edge_features.dType())},
+          {"shape", std::vector<int64_t>{num_edges, edge_feature_dim}},
+          {"byte_size", byte_size}};
+    } else {  // Pure json mode
+      tensors_json["edge_features"] = encodeBase64Tensor(graph.edge_features);
+    }
+  }
+
+  // Write global_features
+  if (global_feature_dim > 0) {
+    if (json_mode_ == "binary") {
+      std::string rel_path = case_dir + "/global_features.bin";
+      size_t byte_size = writeBinaryTensor(graph.global_features, rel_path);
+
+      tensors_json["global_features"] = {
+          {"path", rel_path},
+          {"dtype", dtypeToString(graph.global_features.dType())},
+          {"shape", std::vector<int64_t>{global_feature_dim}},
+          {"byte_size", byte_size}};
+    } else {  // Pure json mode
+      tensors_json["global_features"] =
+          encodeBase64Tensor(graph.global_features);
+    }
+  }
+
+  case_json["tensors"] = tensors_json;
+  case_json["outputs"] = {
+      {"node", serializeOutputFields(outputs.node_fields, case_dir, "node")},
+      {"edge", serializeOutputFields(outputs.edge_fields, case_dir, "edge")},
+      {"global",
+       serializeOutputFields(outputs.global_fields, case_dir, "global")}};
+  cases_.push_back(case_json);
+
+  case_counter_++;
+
+  AMS_DBG(JSONDB,
+          "Stored graph data for step {} ({} nodes, {} edges)",
+          case_dir,
+          num_nodes,
+          num_edges);
+}
+
+void JSONDB::store(const ams::AMSHeterogeneousGraph&,
+                   const ams::AMSHeterogeneousGraphFields&)
+{
+  // Heterogeneous graph storage not yet implemented
+  THROW(std::runtime_error,
+        "Heterogeneous graph storage not yet implemented in JSONDB");
+}
+
+void JSONDB::close()
+{
+  if (finalized_) {
+    AMS_DBG(JSONDB, "Manifest already finalized, skipping");
+    return;
+  }
+
+  // Build complete manifest
+  nlohmann::json manifest;
+  manifest["format_version"] = 1;
+  manifest["endianness"] = isLittleEndian() ? "little" : "big";
+
+  // Add metadata if set
+  if (!metadata_.is_null()) {
+    manifest["metadata"] = metadata_;
+  }
+
+  // Add feature names if set
+  if (!feature_names_.is_null()) {
+    manifest["feature_names"] = feature_names_;
+  }
+
+  // Add all cases
+  manifest["cases"] = cases_;
+
+  // FileDB provides a domain- and rank-specific manifest filename.
+  fs::path manifest_path = fn;
+  std::ofstream manifest_file(manifest_path.string());
+  if (!manifest_file.is_open()) {
+    THROW(std::runtime_error,
+          ("Failed to open manifest file for writing: " +
+           manifest_path.string())
+              .c_str());
+  }
+
+  manifest_file << std::setw(2) << manifest << std::endl;
+  manifest_file.close();
+
+  finalized_ = true;
+
+  AMS_DBG(JSONDB,
+          "Finalized manifest with {} cases at '{}'",
+          cases_.size(),
+          manifest_path.string());
+}

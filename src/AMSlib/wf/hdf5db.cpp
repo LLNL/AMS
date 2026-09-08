@@ -13,6 +13,7 @@
 #include <torch/torch.h>
 #include <torch/types.h>
 
+#include <experimental/filesystem>
 #include <stdexcept>
 
 #include "ArrayRef.hpp"
@@ -21,6 +22,11 @@
 
 using namespace ams::db;
 using namespace ams;
+
+namespace
+{
+namespace fs = std::experimental::filesystem;
+}
 
 static std::string SmallVectorToString(ams::MutableArrayRef<hsize_t> shape)
 {

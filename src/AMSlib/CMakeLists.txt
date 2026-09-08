@@ -6,7 +6,7 @@
 # handle sources and headers
 set(AMS_LIB_SRC wf/debug.cpp wf/logger.cpp wf/utils.cpp wf/SmallVector.cpp ml/surrogate.cpp wf/basedb.cpp AMSTensor.cpp AMSGraph.cpp wf/interface.cpp wf/resource_manager.cpp ml/Model.cpp ml/AbstractModel.cpp AMS.cpp)
 
-  list(APPEND AMS_LIB_SRC wf/hdf5db.cpp)
+  list(APPEND AMS_LIB_SRC wf/hdf5db.cpp wf/jsondb.cpp)
 
 if (ENABLE_RMQ)
   list(APPEND AMS_LIB_SRC wf/rmqdb.cpp)

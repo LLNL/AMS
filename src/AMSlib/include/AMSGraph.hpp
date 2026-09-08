@@ -17,6 +17,8 @@ class AMSTensorFieldMap
   AMSTensorMap fields_;
 
 public:
+  using const_iterator = AMSTensorMap::const_iterator;
+
   // Explicit named tensor field store. There is intentionally no operator[]:
   // use set()/insert() to create fields and at()/find() to read them so missing
   // lookups never create invalid/default AMSTensors.
@@ -37,6 +39,11 @@ public:
 
   AMSTensor& insert(std::string name, AMSTensor tensor);
   AMSTensor& set(std::string name, AMSTensor tensor);
+
+  const_iterator begin() const noexcept { return fields_.begin(); }
+  const_iterator end() const noexcept { return fields_.end(); }
+  const_iterator cbegin() const noexcept { return fields_.cbegin(); }
+  const_iterator cend() const noexcept { return fields_.cend(); }
 
   bool empty() const noexcept { return fields_.empty(); }
   std::size_t size() const noexcept { return fields_.size(); }

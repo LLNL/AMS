@@ -20,6 +20,6 @@ typedef enum {
 
 typedef enum { AMS_UBALANCED = 0, AMS_BALANCED } AMSExecPolicy;
 
-typedef enum { AMS_NONE = 0, AMS_HDF5, AMS_RMQ } AMSDBType;
+typedef enum { AMS_NONE = 0, AMS_HDF5, AMS_RMQ, AMS_JSON } AMSDBType;
 
 }  // namespace ams

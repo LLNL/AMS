@@ -102,21 +102,39 @@ class AMSWorkflow
   void storeGraphData(const ams::AMSHomogeneousGraph& graph,
                       const ams::AMSHomogeneousGraphFields& outputs)
   {
-    // TODO: Implement graph storage when database supports it
-    // For now, this is a no-op placeholder
-    (void)graph;
-    (void)outputs;
-    AMS_DBG(Workflow, "Graph storage not yet implemented (homogeneous)");
+    if (!DB) {
+      AMS_WARNING(Workflow,
+                  "Cannot store graph data: database not initialized");
+      return;
+    }
+
+    try {
+      DB->store(graph, outputs);
+      AMS_DBG(Workflow, "Successfully stored homogeneous graph data");
+    } catch (const std::exception& e) {
+      AMS_WARNING(Workflow,
+                  "Failed to store homogeneous graph data: {}",
+                  e.what());
+    }
   }
 
   void storeGraphData(const ams::AMSHeterogeneousGraph& graph,
                       const ams::AMSHeterogeneousGraphFields& outputs)
   {
-    // TODO: Implement graph storage when database supports it
-    // For now, this is a no-op placeholder
-    (void)graph;
-    (void)outputs;
-    AMS_DBG(Workflow, "Graph storage not yet implemented (heterogeneous)");
+    if (!DB) {
+      AMS_WARNING(Workflow,
+                  "Cannot store graph data: database not initialized");
+      return;
+    }
+
+    try {
+      DB->store(graph, outputs);
+      AMS_DBG(Workflow, "Successfully stored heterogeneous graph data");
+    } catch (const std::exception& e) {
+      AMS_WARNING(Workflow,
+                  "Failed to store heterogeneous graph data: {}",
+                  e.what());
+    }
   }
 
   /** \brief Check if we can perform a surrogate model update.
@@ -442,6 +460,55 @@ public:
 
     REPORT_MEM_USAGE(Workflow, "End")
     CALIPER(CALI_MARK_END("AMSEvaluate");)
+  }
+
+  // Graph-based evaluate methods (mirror tensor pattern)
+  void evaluate(HomogeneousGraphDomainFn CallBack,
+                const AMSHomogeneousGraph& graph_input,
+                AMSHomogeneousGraphFields& outputs)
+  {
+    CALIPER(CALI_MARK_BEGIN("AMSEvaluateGraph");)
+
+    // Try surrogate first
+    bool surrogate_used = tryGraphSurrogate(this, graph_input, outputs);
+    if (surrogate_used) {
+      CALIPER(CALI_MARK_END("AMSEvaluateGraph");)
+      return;
+    }
+
+    // Fallback to physics
+    CALIPER(CALI_MARK_BEGIN("PHYSICS MODULE");)
+    CallBack(graph_input, outputs);
+    CALIPER(CALI_MARK_END("PHYSICS MODULE");)
+
+    // Store data after physics computation
+    storeGraphData(graph_input, outputs);
+
+    CALIPER(CALI_MARK_END("AMSEvaluateGraph");)
+  }
+
+  void evaluate(HeterogeneousGraphDomainFn CallBack,
+                const AMSHeterogeneousGraph& graph_input,
+                AMSHeterogeneousGraphFields& outputs)
+  {
+    CALIPER(CALI_MARK_BEGIN("AMSEvaluateGraph");)
+
+    // Try surrogate first
+    bool surrogate_used = tryGraphSurrogate(this, graph_input, outputs);
+    if (surrogate_used) {
+      CALIPER(CALI_MARK_END("AMSEvaluateGraph");)
+      return;
+    }
+
+    // Fallback to physics
+    CALIPER(CALI_MARK_BEGIN("PHYSICS MODULE");)
+    CallBack(graph_input, outputs);
+    CALIPER(CALI_MARK_END("PHYSICS MODULE");)
+
+    // Store data after physics computation
+    storeGraphData(graph_input, outputs);
+
+    CALIPER(CALI_MARK_END("AMSEvaluateGraph");)
   }
 
   std::string getDBName()
