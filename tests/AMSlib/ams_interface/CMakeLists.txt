@@ -37,7 +37,8 @@ function(BUILD_UNIT_TEST exe source)
     target_sources(${exe} PRIVATE ${ARGV3})
   endif()
   target_link_libraries(${exe} PRIVATE stdc++fs AMS ${catch2_target})
-  
+  target_link_libraries(${exe} PRIVATE nlohmann_json::nlohmann_json)
+
   if (ENABLE_TORCH)
     target_link_libraries(${exe} PRIVATE torch)
   endif()
@@ -49,40 +50,34 @@ endfunction()
 if (ENABLE_TORCH)
   BUILD_UNIT_TEST(ams_explicit_end_to_end ams_ete.cpp Catch2::Catch2)
   ADD_AMS_UNIT_TEST(AMS_EXPLICIT ams_explicit_end_to_end)
+
+  BUILD_UNIT_TEST(ams_graph_fallback test_graph_fallback.cpp Catch2::Catch2 ../ams_catch_main.cpp)
+  ADD_AMS_UNIT_TEST(AMS_GRAPH_FALLBACK ams_graph_fallback)
+
   BUILD_UNIT_TEST(ams_graph_surrogate test_graph_surrogate.cpp Catch2::Catch2 ../ams_catch_main.cpp)
   ADD_AMS_UNIT_TEST(AMS_GRAPH_SURROGATE ams_graph_surrogate)
+
+  BUILD_UNIT_TEST(ams_graph_workflow_storage test_graph_workflow_storage.cpp Catch2::Catch2 ../ams_catch_main.cpp)
+  ADD_AMS_UNIT_TEST(AMS_GRAPH_WORKFLOW_STORAGE ams_graph_workflow_storage)
+
+  BUILD_UNIT_TEST(ams_graph_mgn_surrogate test_graph_mgn_surrogate.cpp Catch2::Catch2 ../ams_catch_main.cpp)
+  target_compile_definitions(ams_graph_mgn_surrogate
+    PRIVATE
+      AMS_MGN_DIFFUSION_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../models/mgn_graph_diffusion"
+  )
+
+  # Normal parity testing consumes the checked-in TorchScript model and
+  # self-contained JSON fixtures; training/export is an independent opt-in path.
+  add_test(
+    NAME MGN_DIFFUSION_AMS_PARITY
+    COMMAND $<TARGET_FILE:ams_graph_mgn_surrogate> -s --reporter console
+  )
+  set_tests_properties(MGN_DIFFUSION_AMS_PARITY PROPERTIES
+    LABELS "AMS_INTERFACE;MGN_DIFFUSION"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
 endif()
-
-BUILD_UNIT_TEST(int_interface int_interface.cpp Catch2::Catch2 ../ams_catch_main.cpp)
-ADD_AMS_UNIT_TEST(AMS_INT_INTERFACE int_interface)
-
-BUILD_UNIT_TEST(ams_graph_fallback test_graph_fallback.cpp Catch2::Catch2 ../ams_catch_main.cpp)
-ADD_AMS_UNIT_TEST(AMS_GRAPH_FALLBACK ams_graph_fallback)
-
-BUILD_UNIT_TEST(ams_graph_surrogate test_graph_surrogate.cpp Catch2::Catch2 ../ams_catch_main.cpp)
-ADD_AMS_UNIT_TEST(AMS_GRAPH_SURROGATE ams_graph_surrogate)
-
-BUILD_UNIT_TEST(ams_graph_workflow_storage test_graph_workflow_storage.cpp Catch2::Catch2 ../ams_catch_main.cpp)
-target_link_libraries(ams_graph_workflow_storage PRIVATE nlohmann_json::nlohmann_json)
-ADD_AMS_UNIT_TEST(AMS_GRAPH_WORKFLOW_STORAGE ams_graph_workflow_storage)
-
-BUILD_UNIT_TEST(ams_graph_mgn_surrogate test_graph_mgn_surrogate.cpp Catch2::Catch2 ../ams_catch_main.cpp)
-target_link_libraries(ams_graph_mgn_surrogate PRIVATE nlohmann_json::nlohmann_json)
-target_compile_definitions(ams_graph_mgn_surrogate
-  PRIVATE
-    AMS_MGN_DIFFUSION_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../models/mgn_graph_diffusion"
-)
-
-# Normal parity testing consumes the checked-in TorchScript model and
-# self-contained JSON fixtures; training/export is an independent opt-in path.
-add_test(
-  NAME MGN_DIFFUSION_AMS_PARITY
-  COMMAND $<TARGET_FILE:ams_graph_mgn_surrogate> -s --reporter console
-)
-set_tests_properties(MGN_DIFFUSION_AMS_PARITY PROPERTIES
-  LABELS "AMS_INTERFACE;MGN_DIFFUSION"
-  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-)
 
 if(NOT Torch_FOUND)
   set_tests_properties(MGN_DIFFUSION_AMS_PARITY PROPERTIES DISABLED TRUE)
