@@ -80,6 +80,13 @@ static std::vector<uint8_t> decodeBase64(const std::string& encoded)
   return decoded;
 }
 
+static std::string nativeEndianness()
+{
+  const uint16_t test = 0x0102;
+  const auto* bytes = reinterpret_cast<const uint8_t*>(&test);
+  return bytes[0] == 0x02 ? "little" : "big";
+}
+
 static void requireInlineTensor(const nlohmann::json& tensor,
                                 const void* expected_data,
                                 size_t expected_byte_size,
@@ -283,12 +290,13 @@ CATCH_TEST_CASE("Homogeneous graph stores every named output in binary mode",
 
   // Verify essential structure exists
   CATCH_REQUIRE(manifest.contains("format_version"));
-  CATCH_REQUIRE(manifest.contains("endianness"));
+  CATCH_REQUIRE(manifest["endianness"] == nativeEndianness());
   CATCH_REQUIRE(manifest.contains("cases"));
   CATCH_REQUIRE(manifest["cases"].is_array());
   CATCH_REQUIRE(manifest["cases"].size() == 1);
 
   auto case0 = manifest["cases"][0];
+  CATCH_REQUIRE(case0["name"] == "step_0_000000");
   CATCH_REQUIRE(case0.contains("tensors"));
 
   // Verify all graph components stored
@@ -342,7 +350,7 @@ CATCH_TEST_CASE("Homogeneous graph stores every named output in binary mode",
                       pressure.elements() * pressure.element_size(),
                       "float32",
                       nlohmann::json::array({N, 2}),
-                      fs::path("step_000000/outputs/node/field_000000.bin"));
+                      fs::path("step_0_000000/outputs/node/field_000000.bin"));
 
   const auto& temperature = outputs.node_fields.at("temperature");
   requireBinaryTensor(test_dir,
@@ -351,7 +359,7 @@ CATCH_TEST_CASE("Homogeneous graph stores every named output in binary mode",
                       temperature.elements() * temperature.element_size(),
                       "float64",
                       nlohmann::json::array({N, 1}),
-                      fs::path("step_000000/outputs/node/field_000001.bin"));
+                      fs::path("step_0_000000/outputs/node/field_000001.bin"));
 
   const auto& flux = outputs.edge_fields.at("flux");
   requireBinaryTensor(test_dir,
@@ -360,7 +368,7 @@ CATCH_TEST_CASE("Homogeneous graph stores every named output in binary mode",
                       flux.elements() * flux.element_size(),
                       "float32",
                       nlohmann::json::array({E, 1}),
-                      fs::path("step_000000/outputs/edge/field_000000.bin"));
+                      fs::path("step_0_000000/outputs/edge/field_000000.bin"));
 
   const auto& loss = outputs.global_fields.at("loss");
   requireBinaryTensor(test_dir,
@@ -369,7 +377,8 @@ CATCH_TEST_CASE("Homogeneous graph stores every named output in binary mode",
                       loss.elements() * loss.element_size(),
                       "float64",
                       nlohmann::json::array({1, 2}),
-                      fs::path("step_000000/outputs/global/field_000000.bin"));
+                      fs::path("step_0_000000/outputs/global/"
+                               "field_000000.bin"));
 
   // Verify paths are relative to dataset root
   std::string node_path =
@@ -439,7 +448,7 @@ CATCH_TEST_CASE("Homogeneous graph without globals omits global storage",
   CATCH_REQUIRE(stored_case["global_feature_dim"].get<int64_t>() == 0);
   CATCH_REQUIRE_FALSE(stored_case["tensors"].contains("global_features"));
   CATCH_REQUIRE_FALSE(
-      fs::exists(test_dir / "step_000000" / "global_features.bin"));
+      fs::exists(test_dir / "step_0_000000" / "global_features.bin"));
   CATCH_REQUIRE(stored_case["outputs"]["node"].empty());
   CATCH_REQUIRE(stored_case["outputs"]["edge"].empty());
   CATCH_REQUIRE(stored_case["outputs"]["global"].empty());
@@ -480,7 +489,9 @@ CATCH_TEST_CASE("JSONDB pure JSON mode stores flat tensors inline",
   nlohmann::json manifest;
   manifest_file >> manifest;
 
+  CATCH_REQUIRE(manifest["endianness"] == nativeEndianness());
   CATCH_REQUIRE(manifest["cases"].size() == 1);
+  CATCH_REQUIRE(manifest["cases"][0]["name"] == "case_7_000000");
   const auto& tensors = manifest["cases"][0]["tensors"];
   requireInlineTensor(tensors["input_0"],
                       input.data_ptr(),
@@ -493,6 +504,82 @@ CATCH_TEST_CASE("JSONDB pure JSON mode stores flat tensors inline",
                       "int64",
                       nlohmann::json::array({2}));
   CATCH_REQUIRE_FALSE(containsBinaryFile(test_dir));
+
+  fs::remove_all(test_dir);
+}
+
+CATCH_TEST_CASE("JSONDB binary tensor paths distinguish rank IDs",
+                "[wf][graph][storage]")
+{
+  fs::path test_dir =
+      fs::temp_directory_path() / "ams_json_ranked_tensor_storage_test";
+  fs::remove_all(test_dir);
+  fs::create_directories(test_dir);
+
+  torch::Tensor rank_three_input =
+      torch::tensor({3.25f}, torch::TensorOptions().dtype(torch::kFloat32));
+  torch::Tensor rank_seven_input =
+      torch::tensor({7.5f}, torch::TensorOptions().dtype(torch::kFloat32));
+  std::vector<torch::Tensor> no_outputs;
+
+  fs::path rank_three_manifest;
+  {
+    ams::db::JSONDB db(test_dir.string(), "shared_domain", 3, "binary");
+    rank_three_manifest = db.getFilename();
+    std::vector<torch::Tensor> inputs{rank_three_input};
+    db.store(inputs, no_outputs);
+    db.close();
+  }
+
+  fs::path rank_seven_manifest;
+  {
+    ams::db::JSONDB db(test_dir.string(), "shared_domain", 7, "binary");
+    rank_seven_manifest = db.getFilename();
+    std::vector<torch::Tensor> inputs{rank_seven_input};
+    db.store(inputs, no_outputs);
+    db.close();
+  }
+
+  const fs::path rank_three_filename = "shared_domain_3_jsondb.json";
+  const fs::path rank_seven_filename = "shared_domain_7_jsondb.json";
+  CATCH_REQUIRE(rank_three_manifest.filename() == rank_three_filename);
+  CATCH_REQUIRE(rank_seven_manifest.filename() == rank_seven_filename);
+
+  std::ifstream rank_three_file(rank_three_manifest);
+  std::ifstream rank_seven_file(rank_seven_manifest);
+  CATCH_REQUIRE(rank_three_file.is_open());
+  CATCH_REQUIRE(rank_seven_file.is_open());
+
+  nlohmann::json rank_three_json;
+  nlohmann::json rank_seven_json;
+  rank_three_file >> rank_three_json;
+  rank_seven_file >> rank_seven_json;
+
+  CATCH_REQUIRE(rank_three_json["endianness"] == nativeEndianness());
+  CATCH_REQUIRE(rank_seven_json["endianness"] == nativeEndianness());
+  CATCH_REQUIRE(rank_three_json["cases"].size() == 1);
+  CATCH_REQUIRE(rank_seven_json["cases"].size() == 1);
+  const auto& rank_three_case = rank_three_json["cases"][0];
+  const auto& rank_seven_case = rank_seven_json["cases"][0];
+  CATCH_REQUIRE(rank_three_case["name"] == "case_3_000000");
+  CATCH_REQUIRE(rank_seven_case["name"] == "case_7_000000");
+
+  requireBinaryTensor(test_dir,
+                      rank_three_case["tensors"]["input_0"],
+                      rank_three_input.data_ptr(),
+                      rank_three_input.nbytes(),
+                      "float32",
+                      nlohmann::json::array({1}),
+                      fs::path("case_3_000000/input_0.bin"));
+  requireBinaryTensor(test_dir,
+                      rank_seven_case["tensors"]["input_0"],
+                      rank_seven_input.data_ptr(),
+                      rank_seven_input.nbytes(),
+                      "float32",
+                      nlohmann::json::array({1}),
+                      fs::path("case_7_000000/input_0.bin"));
+  CATCH_REQUIRE(rank_three_case["tensors"]["input_0"]["path"] !=
+                rank_seven_case["tensors"]["input_0"]["path"]);
 
   fs::remove_all(test_dir);
 }
@@ -577,6 +664,7 @@ CATCH_TEST_CASE("AMS pure JSON mode stores homogeneous graphs inline",
   manifest_file >> manifest;
 
   CATCH_REQUIRE(manifest["cases"].size() == 1);
+  CATCH_REQUIRE(manifest["cases"][0]["name"] == "step_3_000000");
   const auto& tensors = manifest["cases"][0]["tensors"];
   requireInlineTensor(tensors["node_features"],
                       graph.node_features.raw_data(),
