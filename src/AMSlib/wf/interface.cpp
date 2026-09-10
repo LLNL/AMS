@@ -566,10 +566,9 @@ bool tryGraphSurrogate(AMSWorkflow* executor,
 // ============================================================================
 
 void callAMS(ams::AMSWorkflow* executor,
-             DomainLambda Physics,
-             const ams::SmallVector<ams::AMSTensor>& ins,
-             ams::SmallVector<ams::AMSTensor>& inouts,
-             ams::SmallVector<ams::AMSTensor>& outs)
+             ams::HomogeneousGraphDomainFn Physics,
+             const ams::AMSHomogeneousGraph& graph_input,
+             ams::AMSHomogeneousGraphFields& outputs)
 {
   // Delegate to public evaluate method (mirrors tensor pattern)
   executor->evaluate(Physics, graph_input, outputs);

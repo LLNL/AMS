@@ -56,6 +56,10 @@ endfunction()
 BUILD_UNIT_TEST(db_hdf5_ams db_hdf5_ams.cpp Catch2::Catch2 ../ams_catch_main.cpp)
 ADD_DB_UNIT_TEST(DB::HDF5_AMSTENSOR db_hdf5_ams)
 
+BUILD_UNIT_TEST(db_json_ams db_json_ams.cpp Catch2::Catch2 ../ams_catch_main.cpp)
+target_link_libraries(db_json_ams PRIVATE nlohmann_json::nlohmann_json)
+ADD_DB_UNIT_TEST(DB::JSON_AMSTENSOR db_json_ams)
+
 # db_hdf5 test currently uses torch::Tensor for test data generation/validation.
 
 if (ENABLE_TORCH)

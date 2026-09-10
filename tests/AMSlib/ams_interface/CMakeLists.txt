@@ -23,6 +23,14 @@ function(BUILD_UNIT_TEST exe source)
     target_include_directories(${exe} PRIVATE ${caliper_INCLUDE_DIR})
   endif()
 
+  if (ENABLE_RMQ)
+    target_link_libraries(${exe} PRIVATE amqpcpp)
+    if (OPENSSL_FOUND)
+      target_link_libraries(${exe} PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+    endif()
+    target_link_libraries(${exe} PRIVATE ${LIBEVENT_LIBRARY} ${LIBEVENT_THREAD})
+  endif()
+
   target_include_directories(${exe} PRIVATE ${CMAKE_SOURCE_DIR}/src/AMSlib/)
   target_include_directories(${exe} PRIVATE ${CMAKE_BINARY_DIR}/include/)
   target_include_directories(${exe} PRIVATE ${AMS_TEST_ROOT})
@@ -79,6 +87,6 @@ if (ENABLE_TORCH)
 
 endif()
 
-if(NOT Torch_FOUND)
+if(ENABLE_TORCH AND NOT Torch_FOUND)
   set_tests_properties(MGN_DIFFUSION_AMS_PARITY PROPERTIES DISABLED TRUE)
 endif()
