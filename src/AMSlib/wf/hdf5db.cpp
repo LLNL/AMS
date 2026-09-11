@@ -10,8 +10,8 @@
 #include <H5public.h>
 
 #include <experimental/filesystem>
-#include <stdexcept>
 #include <sstream>
+#include <stdexcept>
 #include <vector>
 
 #include "AMSTensor.hpp"
