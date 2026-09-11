@@ -396,15 +396,6 @@ void callApplication(ams::DomainLambda CallBack,
   CallBack(AMSIns, AMSInOuts, AMSOuts);
 }
 
-void callAMS(ams::AMSWorkflow* executor,
-             DomainLambda Physics,
-             const ams::SmallVector<ams::AMSTensor>& ins,
-             ams::SmallVector<ams::AMSTensor>& inouts,
-             ams::SmallVector<ams::AMSTensor>& outs)
-{
-  executor->evaluate(Physics, ins, inouts, outs);
-}
-
 // ============================================================================
 // Graph surrogate execution (in ams namespace for friend access)
 // ============================================================================
@@ -422,7 +413,7 @@ bool tryGraphSurrogate(AMSWorkflow* executor,
   }
 
   try {
-    // Convert AMS graph → Torch Dict[str, Tensor]
+    // Convert AMS graph -> Torch Dict[str, Tensor]
     auto torch_graph =
         amsToTorchHomogeneousGraph(graph,
                                    executor->MLModel->torch_device,
@@ -485,7 +476,7 @@ bool tryGraphSurrogate(AMSWorkflow* executor,
   }
 
   try {
-    // Convert AMS graph → Torch GenericDict
+    // Convert AMS graph -> Torch GenericDict
     auto torch_graph = amsToTorchHeterogeneousGraph(graph);
 
     // Call model forward pass
@@ -561,16 +552,22 @@ bool tryGraphSurrogate(AMSWorkflow* executor,
 
 }  // namespace ams
 
-// ============================================================================
-// Graph-based callAMS overloads
-// ============================================================================
+#endif  // __AMS_ENABLE_TORCH__
+
+void callAMS(ams::AMSWorkflow* executor,
+             DomainLambda Physics,
+             const ams::SmallVector<ams::AMSTensor>& ins,
+             ams::SmallVector<ams::AMSTensor>& inouts,
+             ams::SmallVector<ams::AMSTensor>& outs)
+{
+  executor->evaluate(Physics, ins, inouts, outs);
+}
 
 void callAMS(ams::AMSWorkflow* executor,
              ams::HomogeneousGraphDomainFn Physics,
              const ams::AMSHomogeneousGraph& graph_input,
              ams::AMSHomogeneousGraphFields& outputs)
 {
-  // Delegate to public evaluate method (mirrors tensor pattern)
   executor->evaluate(Physics, graph_input, outputs);
 }
 
@@ -579,20 +576,5 @@ void callAMS(ams::AMSWorkflow* executor,
              const ams::AMSHeterogeneousGraph& graph_input,
              ams::AMSHeterogeneousGraphFields& outputs)
 {
-  // Delegate to public evaluate method (mirrors tensor pattern)
   executor->evaluate(Physics, graph_input, outputs);
 }
-
-#else
-
-void callAMS(ams::AMSWorkflow* executor,
-             DomainLambda Physics,
-             const ams::SmallVector<ams::AMSTensor>& ins,
-             ams::SmallVector<ams::AMSTensor>& inouts,
-             ams::SmallVector<ams::AMSTensor>& outs)
-{
-  // In training mode, we can directlty use AMSTensor, no conversion needed
-  executor->evaluate(Physics, ins, inouts, outs);
-}
-
-#endif  // __AMS_ENABLE_TORCH__

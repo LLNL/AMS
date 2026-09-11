@@ -592,55 +592,6 @@ public:
     CALIPER(CALI_MARK_END("AMSEvaluate");)
   }
 
-  // Graph-based evaluate methods (mirror tensor pattern)
-  void evaluate(HomogeneousGraphDomainFn CallBack,
-                const AMSHomogeneousGraph& graph_input,
-                AMSHomogeneousGraphFields& outputs)
-  {
-    CALIPER(CALI_MARK_BEGIN("AMSEvaluateGraph");)
-
-    // Try surrogate first
-    bool surrogate_used = tryGraphSurrogate(this, graph_input, outputs);
-    if (surrogate_used) {
-      CALIPER(CALI_MARK_END("AMSEvaluateGraph");)
-      return;
-    }
-
-    // Fallback to physics
-    CALIPER(CALI_MARK_BEGIN("PHYSICS MODULE");)
-    CallBack(graph_input, outputs);
-    CALIPER(CALI_MARK_END("PHYSICS MODULE");)
-
-    // Store data after physics computation
-    storeGraphData(graph_input, outputs);
-
-    CALIPER(CALI_MARK_END("AMSEvaluateGraph");)
-  }
-
-  void evaluate(HeterogeneousGraphDomainFn CallBack,
-                const AMSHeterogeneousGraph& graph_input,
-                AMSHeterogeneousGraphFields& outputs)
-  {
-    CALIPER(CALI_MARK_BEGIN("AMSEvaluateGraph");)
-
-    // Try surrogate first
-    bool surrogate_used = tryGraphSurrogate(this, graph_input, outputs);
-    if (surrogate_used) {
-      CALIPER(CALI_MARK_END("AMSEvaluateGraph");)
-      return;
-    }
-
-    // Fallback to physics
-    CALIPER(CALI_MARK_BEGIN("PHYSICS MODULE");)
-    CallBack(graph_input, outputs);
-    CALIPER(CALI_MARK_END("PHYSICS MODULE");)
-
-    // Store data after physics computation
-    storeGraphData(graph_input, outputs);
-
-    CALIPER(CALI_MARK_END("AMSEvaluateGraph");)
-  }
-
 #else  // !__AMS_ENABLE_TORCH__
   // -----------------------------------------------------------------------
   // Non-training evaluate path (AMSTensor)
@@ -659,10 +610,11 @@ public:
             InOuts.size(),
             Outs.size());
 
-    // Clone InOuts before physics overwrites them (for DB storage)
     SmallVector<AMSTensor> InOutsBefore;
-    for (auto& S : InOuts)
-      InOutsBefore.push_back(S.clone());
+    if (DB) {
+      for (auto& S : InOuts)
+        InOutsBefore.push_back(S.clone());
+    }
 
     CALIPER(CALI_MARK_BEGIN("PACK");)
 
@@ -686,19 +638,7 @@ public:
     CALIPER(CALI_MARK_END("PHYSICS MODULE");)
 
     if (DB) {
-      // TODO: remove useless copies
-      SmallVector<AMSTensor> storeIns;
-      for (auto& t : Ins)
-        storeIns.push_back(AMSTensor::view(t));
-
-      SmallVector<AMSTensor> storeOuts;
-      for (auto& t : Outs)
-        storeOuts.push_back(AMSTensor::view(t));
-
-      SmallVector<AMSTensor> storeInOuts;
-      for (auto& t : InOuts)
-        storeInOuts.push_back(AMSTensor::view(t));
-      storeComputedData(storeIns, InOutsBefore, storeOuts, storeInOuts);
+      storeComputedData(insVec, InOutsBefore, outsVec, inoutsVec);
     }
 
     REPORT_MEM_USAGE(Workflow, "End")
@@ -706,6 +646,50 @@ public:
   }
 
 #endif  // __AMS_ENABLE_TORCH__
+
+  void evaluate(HomogeneousGraphDomainFn CallBack,
+                const AMSHomogeneousGraph& graph_input,
+                AMSHomogeneousGraphFields& outputs)
+  {
+    CALIPER(CALI_MARK_BEGIN("AMSEvaluateGraph");)
+
+#if defined(__AMS_ENABLE_TORCH__)
+    if (tryGraphSurrogate(this, graph_input, outputs)) {
+      CALIPER(CALI_MARK_END("AMSEvaluateGraph");)
+      return;
+    }
+#endif
+
+    CALIPER(CALI_MARK_BEGIN("PHYSICS MODULE");)
+    CallBack(graph_input, outputs);
+    CALIPER(CALI_MARK_END("PHYSICS MODULE");)
+
+    storeGraphData(graph_input, outputs);
+
+    CALIPER(CALI_MARK_END("AMSEvaluateGraph");)
+  }
+
+  void evaluate(HeterogeneousGraphDomainFn CallBack,
+                const AMSHeterogeneousGraph& graph_input,
+                AMSHeterogeneousGraphFields& outputs)
+  {
+    CALIPER(CALI_MARK_BEGIN("AMSEvaluateGraph");)
+
+#if defined(__AMS_ENABLE_TORCH__)
+    if (tryGraphSurrogate(this, graph_input, outputs)) {
+      CALIPER(CALI_MARK_END("AMSEvaluateGraph");)
+      return;
+    }
+#endif
+
+    CALIPER(CALI_MARK_BEGIN("PHYSICS MODULE");)
+    CallBack(graph_input, outputs);
+    CALIPER(CALI_MARK_END("PHYSICS MODULE");)
+
+    storeGraphData(graph_input, outputs);
+
+    CALIPER(CALI_MARK_END("AMSEvaluateGraph");)
+  }
 };
 
 

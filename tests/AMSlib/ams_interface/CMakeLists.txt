@@ -87,6 +87,11 @@ if (ENABLE_TORCH)
 
 endif()
 
+if (NOT ENABLE_TORCH)
+  BUILD_UNIT_TEST(ams_no_torch_workflow test_no_torch_workflow.cpp Catch2::Catch2 ../ams_catch_main.cpp)
+  ADD_AMS_UNIT_TEST(AMS_NO_TORCH_WORKFLOW ams_no_torch_workflow)
+endif()
+
 if(ENABLE_TORCH AND NOT Torch_FOUND)
   set_tests_properties(MGN_DIFFUSION_AMS_PARITY PROPERTIES DISABLED TRUE)
 endif()

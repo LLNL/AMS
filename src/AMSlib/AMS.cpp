@@ -445,13 +445,9 @@ void AMSExecute(AMSExecutor executor,
           inouts.size(),
           outs.size());
 
-#ifdef __AMS_ENABLE_TORCH__
   auto currExec = _amsWrap->executors[index];
   ams::AMSWorkflow* workflow = reinterpret_cast<ams::AMSWorkflow*>(currExec);
   callAMS(workflow, OrigComputation, ins, inouts, outs);
-#else
-  OrigComputation(ins, inouts, outs);
-#endif
 }
 
 void AMSExecute(AMSExecutor executor,
@@ -465,13 +461,9 @@ void AMSExecute(AMSExecutor executor,
 
   AMS_DBG(AMS, "Calling AMS with homogeneous graph");
 
-#ifdef __AMS_ENABLE_TORCH__
   auto currExec = _amsWrap->executors[index];
   ams::AMSWorkflow* workflow = reinterpret_cast<ams::AMSWorkflow*>(currExec);
   callAMS(workflow, OrigComputation, graph_input, outputs);
-#else
-  OrigComputation(graph_input, outputs);
-#endif
 }
 
 void AMSExecute(AMSExecutor executor,
@@ -485,13 +477,9 @@ void AMSExecute(AMSExecutor executor,
 
   AMS_DBG(AMS, "Calling AMS with heterogeneous graph");
 
-#ifdef __AMS_ENABLE_TORCH__
   auto currExec = _amsWrap->executors[index];
   ams::AMSWorkflow* workflow = reinterpret_cast<ams::AMSWorkflow*>(currExec);
   callAMS(workflow, OrigComputation, graph_input, outputs);
-#else
-  OrigComputation(graph_input, outputs);
-#endif
 }
 
 void AMSCExecute(AMSExecutor executor,

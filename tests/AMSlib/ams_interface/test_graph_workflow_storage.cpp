@@ -21,31 +21,13 @@
 #include "AMS.h"
 #include "AMSGraph.hpp"
 #include "AMSTensor.hpp"
+#include "ams_tensor_test_utils.hpp"
 #include "nlohmann/json.hpp"
 #include "wf/jsondb.hpp"
 
 using namespace ams;
+using ams::test::makeTensor;
 namespace fs = std::filesystem;
-
-// Helper to create contiguous strides from shape
-static std::vector<int64_t> contiguousStrides(const std::vector<int64_t>& shape)
-{
-  std::vector<int64_t> strides(shape.size(), 1);
-  int64_t stride = 1;
-  for (std::size_t i = shape.size(); i-- > 0;) {
-    strides[i] = stride;
-    stride *= shape[i];
-  }
-  return strides;
-}
-
-// Helper to create tensor with automatic strides
-template <typename T>
-static AMSTensor makeTensor(std::vector<int64_t> shape)
-{
-  std::vector<int64_t> strides = contiguousStrides(shape);
-  return AMSTensor::create<T>(shape, strides, AMSResourceType::AMS_HOST);
-}
 
 static std::vector<uint8_t> decodeBase64(const std::string& encoded)
 {

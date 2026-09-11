@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Torch-disabled `AMSExecute` calls now preserve configured tensor and graph
+  workflow storage when falling back to physics.
+
 ### Added
 
 - JSON-backed storage now accepts AMSTensor directly, including strided and
