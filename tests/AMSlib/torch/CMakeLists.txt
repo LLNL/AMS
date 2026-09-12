@@ -14,6 +14,9 @@ function(BUILD_UNIT_TEST exe source)
     target_link_libraries(${exe} PRIVATE hip::host)
     target_link_libraries(${exe} PRIVATE Threads::Threads)
   endif()
+
+  target_link_libraries(${exe} PRIVATE fmt::fmt)
+  target_link_libraries(${exe} PRIVATE nlohmann_json::nlohmann_json)
   
   target_include_directories(${exe} PRIVATE ${CMAKE_SOURCE_DIR}/src/AMSlib/)
   target_include_directories(${exe} PRIVATE ${CMAKE_BINARY_DIR}/include/)
@@ -36,13 +39,10 @@ endfunction()
 
 
 BUILD_UNIT_TEST(ams_surrogate_tests evaluate_model.cpp Catch2::Catch2)
-target_link_libraries(ams_surrogate_tests PRIVATE fmt::fmt)
 ADD_TORCH_UNIT_TEST(Surrogate ams_surrogate_tests)
 
 BUILD_UNIT_TEST(ams_test_base_model test_model.cpp Catch2::Catch2 ../ams_catch_main.cpp)
-target_link_libraries(ams_test_base_model PRIVATE fmt::fmt nlohmann_json::nlohmann_json)
 ADD_TORCH_UNIT_TEST(BaseModel ams_test_base_model)
 
 BUILD_UNIT_TEST(ams_test_inference_model test_inference_model.cpp Catch2::Catch2 ../ams_catch_main.cpp)
-target_link_libraries(ams_test_inference_model PRIVATE fmt::fmt nlohmann_json::nlohmann_json)
 ADD_TORCH_UNIT_TEST(InferenceModel ams_test_inference_model)

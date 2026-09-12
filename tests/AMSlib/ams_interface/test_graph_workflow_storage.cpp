@@ -21,31 +21,13 @@
 #include "AMS.h"
 #include "AMSGraph.hpp"
 #include "AMSTensor.hpp"
+#include "ams_tensor_test_utils.hpp"
 #include "nlohmann/json.hpp"
 #include "wf/jsondb.hpp"
 
 using namespace ams;
+using ams::test::makeTensor;
 namespace fs = std::filesystem;
-
-// Helper to create contiguous strides from shape
-static std::vector<int64_t> contiguousStrides(const std::vector<int64_t>& shape)
-{
-  std::vector<int64_t> strides(shape.size(), 1);
-  int64_t stride = 1;
-  for (std::size_t i = shape.size(); i-- > 0;) {
-    strides[i] = stride;
-    stride *= shape[i];
-  }
-  return strides;
-}
-
-// Helper to create tensor with automatic strides
-template <typename T>
-static AMSTensor makeTensor(std::vector<int64_t> shape)
-{
-  std::vector<int64_t> strides = contiguousStrides(shape);
-  return AMSTensor::create<T>(shape, strides, AMSResourceType::AMS_HOST);
-}
 
 static std::vector<uint8_t> decodeBase64(const std::string& encoded)
 {
@@ -346,7 +328,7 @@ CATCH_TEST_CASE("Homogeneous graph stores every named output in binary mode",
   const auto& pressure = outputs.node_fields.at("pressure/drop");
   requireBinaryTensor(test_dir,
                       case0["outputs"]["node"]["pressure/drop"],
-                      pressure.raw_data(),
+                      pressure.data_ptr(),
                       pressure.elements() * pressure.element_size(),
                       "float32",
                       nlohmann::json::array({N, 2}),
@@ -355,7 +337,7 @@ CATCH_TEST_CASE("Homogeneous graph stores every named output in binary mode",
   const auto& temperature = outputs.node_fields.at("temperature");
   requireBinaryTensor(test_dir,
                       case0["outputs"]["node"]["temperature"],
-                      temperature.raw_data(),
+                      temperature.data_ptr(),
                       temperature.elements() * temperature.element_size(),
                       "float64",
                       nlohmann::json::array({N, 1}),
@@ -364,7 +346,7 @@ CATCH_TEST_CASE("Homogeneous graph stores every named output in binary mode",
   const auto& flux = outputs.edge_fields.at("flux");
   requireBinaryTensor(test_dir,
                       case0["outputs"]["edge"]["flux"],
-                      flux.raw_data(),
+                      flux.data_ptr(),
                       flux.elements() * flux.element_size(),
                       "float32",
                       nlohmann::json::array({E, 1}),
@@ -373,7 +355,7 @@ CATCH_TEST_CASE("Homogeneous graph stores every named output in binary mode",
   const auto& loss = outputs.global_fields.at("loss");
   requireBinaryTensor(test_dir,
                       case0["outputs"]["global"]["loss"],
-                      loss.raw_data(),
+                      loss.data_ptr(),
                       loss.elements() * loss.element_size(),
                       "float64",
                       nlohmann::json::array({1, 2}),
@@ -667,25 +649,25 @@ CATCH_TEST_CASE("AMS pure JSON mode stores homogeneous graphs inline",
   CATCH_REQUIRE(manifest["cases"][0]["name"] == "step_3_000000");
   const auto& tensors = manifest["cases"][0]["tensors"];
   requireInlineTensor(tensors["node_features"],
-                      graph.node_features.raw_data(),
+                      graph.node_features.data_ptr(),
                       graph.node_features.elements() *
                           graph.node_features.element_size(),
                       "float32",
                       nlohmann::json::array({3, 2}));
   requireInlineTensor(tensors["edge_index"],
-                      graph.edge_index.raw_data(),
+                      graph.edge_index.data_ptr(),
                       graph.edge_index.elements() *
                           graph.edge_index.element_size(),
                       "int64",
                       nlohmann::json::array({2, 2}));
   requireInlineTensor(tensors["edge_features"],
-                      graph.edge_features.raw_data(),
+                      graph.edge_features.data_ptr(),
                       graph.edge_features.elements() *
                           graph.edge_features.element_size(),
                       "float32",
                       nlohmann::json::array({2, 1}));
   requireInlineTensor(tensors["global_features"],
-                      graph.global_features.raw_data(),
+                      graph.global_features.data_ptr(),
                       graph.global_features.elements() *
                           graph.global_features.element_size(),
                       "float64",
@@ -694,25 +676,25 @@ CATCH_TEST_CASE("AMS pure JSON mode stores homogeneous graphs inline",
   const auto& stored_outputs = manifest["cases"][0]["outputs"];
   const auto& pressure = outputs.node_fields.at("pressure/drop");
   requireInlineTensor(stored_outputs["node"]["pressure/drop"],
-                      pressure.raw_data(),
+                      pressure.data_ptr(),
                       pressure.elements() * pressure.element_size(),
                       "float32",
                       nlohmann::json::array({3, 2}));
   const auto& temperature = outputs.node_fields.at("temperature");
   requireInlineTensor(stored_outputs["node"]["temperature"],
-                      temperature.raw_data(),
+                      temperature.data_ptr(),
                       temperature.elements() * temperature.element_size(),
                       "float64",
                       nlohmann::json::array({3, 1}));
   const auto& flux = outputs.edge_fields.at("flux");
   requireInlineTensor(stored_outputs["edge"]["flux"],
-                      flux.raw_data(),
+                      flux.data_ptr(),
                       flux.elements() * flux.element_size(),
                       "float32",
                       nlohmann::json::array({2, 1}));
   const auto& loss = outputs.global_fields.at("loss");
   requireInlineTensor(stored_outputs["global"]["loss"],
-                      loss.raw_data(),
+                      loss.data_ptr(),
                       loss.elements() * loss.element_size(),
                       "float64",
                       nlohmann::json::array({1, 2}));
@@ -802,7 +784,7 @@ CATCH_TEST_CASE(
 
   const auto& delta = outputs.node_fields.at("delta_u");
   CATCH_REQUIRE(delta.shape()[0] == 5);
-  CATCH_REQUIRE(delta.dType() == ams::AMS_DOUBLE);
+  CATCH_REQUIRE(delta.dtype() == ams::AMS_DOUBLE);
 
   // Verify output values
   const double* delta_data = delta.data<double>();
@@ -1294,7 +1276,7 @@ CATCH_TEST_CASE(
   CATCH_REQUIRE(outputs.node_fields.find("delta_u") != nullptr);
   const auto& delta = outputs.node_fields.at("delta_u");
   CATCH_REQUIRE(delta.shape()[0] == 6);
-  CATCH_REQUIRE(delta.dType() == ams::AMS_DOUBLE);
+  CATCH_REQUIRE(delta.dtype() == ams::AMS_DOUBLE);
 
   // Destroy executor to flush manifest (but don't call AMSFinalize)
   AMSDestroyExecutor(executor);

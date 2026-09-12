@@ -1,5 +1,7 @@
 #pragma once
 
+#if defined(__AMS_ENABLE_TORCH__)
+
 #include <memory>
 #include <vector>
 
@@ -53,3 +55,4 @@ private:
 };
 
 }  // namespace ams
+#endif  // __AMS_ENABLE_TORCH__

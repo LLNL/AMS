@@ -6,8 +6,10 @@
 #include "AMS.h"
 #include "AMSGraph.hpp"
 #include "AMSTensor.hpp"
+#include "ams_tensor_test_utils.hpp"
 
 using namespace ams;
+using ams::test::makeTensor;
 
 using Dim = AMSTensor::IntDimType;
 
@@ -19,24 +21,6 @@ static const char* BAD_KEY_GRAPH_MODEL_PATH =
     "../models/homogeneous_graph_bad_key.pt";
 static const char* BAD_SHAPE_GRAPH_MODEL_PATH =
     "../models/homogeneous_graph_bad_shape.pt";
-
-static std::vector<Dim> contiguousStrides(const std::vector<Dim>& shape)
-{
-  std::vector<Dim> strides(shape.size(), 1);
-  Dim stride = 1;
-  for (std::size_t i = shape.size(); i-- > 0;) {
-    strides[i] = stride;
-    stride *= shape[i];
-  }
-  return strides;
-}
-
-template <typename T>
-static AMSTensor makeTensor(std::vector<Dim> shape)
-{
-  std::vector<Dim> strides = contiguousStrides(shape);
-  return AMSTensor::create<T>(shape, strides, AMSResourceType::AMS_HOST);
-}
 
 static AMSTensor makeMessageNodeFeatures()
 {

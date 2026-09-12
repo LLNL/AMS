@@ -2,8 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Torch-disabled `AMSExecute` calls now preserve configured tensor and graph
+  workflow storage when falling back to physics.
+
 ### Added
 
+- JSON-backed storage now accepts AMSTensor directly, including strided and
+  accelerator-resident tensors, and works in builds without Torch.
 - JSON-backed storage can emit binary tensor files in rank-qualified case
   directories or self-contained base64 manifests, with a separate manifest for
   each domain and rank (#205).

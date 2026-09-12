@@ -13,6 +13,7 @@
 #include "AMS.h"
 #include "AMSGraph.hpp"
 #include "AMSTensor.hpp"
+#include "ams_tensor_test_utils.hpp"
 
 // This test is the C++ half of the MGN diffusion example.
 //
@@ -35,6 +36,7 @@
 // the same way Python did when its references were generated."
 
 using namespace ams;
+using ams::test::makeTensor;
 using json = nlohmann::json;
 
 using Dim = AMSTensor::IntDimType;
@@ -77,34 +79,6 @@ struct TensorMetadata {
   std::string dtype;
   std::vector<std::int64_t> shape;
 };
-
-static std::vector<Dim> contiguousStrides(const std::vector<Dim>& shape)
-{
-  // AMSTensor stores both shape and strides. These fixtures are written as
-  // simple row-major contiguous arrays, so the last dimension has stride 1 and
-  // each earlier stride is the product of dimensions to its right.
-  std::vector<Dim> strides(shape.size(), 1);
-  Dim stride = 1;
-  for (std::size_t i = shape.size(); i-- > 0;) {
-    strides[i] = stride;
-    stride *= shape[i];
-  }
-  return strides;
-}
-
-template <typename T>
-static AMSTensor makeTensor(std::vector<Dim> shape,
-                            const std::vector<T>& values)
-{
-  // Convert ordinary C++ vectors read from fixture JSON into owned
-  // AMSTensors. From this point on, the graph looks like application-provided
-  // AMS input rather than test-specific storage.
-  std::vector<Dim> strides = contiguousStrides(shape);
-  auto tensor = AMSTensor::create<T>(shape, strides, AMSResourceType::AMS_HOST);
-  CATCH_REQUIRE(values.size() == static_cast<std::size_t>(tensor.elements()));
-  std::copy(values.begin(), values.end(), tensor.template data<T>());
-  return tensor;
-}
 
 static Dim toDim(std::int64_t value)
 {

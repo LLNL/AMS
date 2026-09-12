@@ -17,6 +17,10 @@
 #include "AMSTensor.hpp"
 #include "wf/basedb.hpp"
 
+#if defined(__AMS_ENABLE_TORCH__)
+#include <torch/torch.h>
+#endif
+
 namespace ams
 {
 namespace db
@@ -68,27 +72,11 @@ private:
   size_t writeBinaryTensor(const AMSTensor& tensor, const std::string& path);
 
   /**
-   * @brief Write a PyTorch tensor to binary file
-   * @param[in] tensor The torch::Tensor to write
-   * @param[in] path Relative path from output directory
-   * @return Actual byte size written
-   */
-  size_t writeBinaryTensor(const torch::Tensor& tensor,
-                           const std::string& path);
-
-  /**
    * @brief Encode tensor as base64 JSON (for pure JSON mode)
    * @param[in] tensor The AMSTensor to encode
    * @return JSON object with encoded data
    */
   nlohmann::json encodeBase64Tensor(const AMSTensor& tensor);
-
-  /**
-   * @brief Encode a PyTorch tensor as base64 JSON (for pure JSON mode)
-   * @param[in] tensor The PyTorch tensor to encode
-   * @return JSON object with encoded data
-   */
-  nlohmann::json encodeBase64Tensor(const torch::Tensor& tensor);
 
   /**
    * @brief Serialize an AMSTensor using the configured JSON mode
@@ -124,13 +112,6 @@ private:
    */
   std::string dtypeToString(AMSDType dtype) const;
 
-  /**
-   * @brief Convert torch::Dtype to string
-   * @param[in] dtype The PyTorch data type
-   * @return String representation
-   */
-  std::string torchDTypeToString(torch::Dtype dtype) const;
-
 public:
   /**
    * @brief Construct a JSON database
@@ -158,8 +139,16 @@ public:
    * @param[in] Inputs Vector of input tensors
    * @param[in] Outputs Vector of output tensors
    */
-  void store(ArrayRef<torch::Tensor> Inputs,
-             ArrayRef<torch::Tensor> Outputs) override;
+  void store(ArrayRef<AMSTensor> Inputs, ArrayRef<AMSTensor> Outputs) override;
+
+#if defined(__AMS_ENABLE_TORCH__)
+  /**
+   * @brief Store PyTorch tensors through the canonical AMSTensor path
+   * @param[in] Inputs Vector of input tensors
+   * @param[in] Outputs Vector of output tensors
+   */
+  void store(ArrayRef<torch::Tensor> Inputs, ArrayRef<torch::Tensor> Outputs);
+#endif
 
   /**
    * @brief Store homogeneous graph data with outputs

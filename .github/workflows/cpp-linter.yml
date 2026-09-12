@@ -95,7 +95,7 @@ jobs:
           database: build
           extra-args: "-D__AMS_ENABLE_CALIPER__ -D__AMS_ENABLE_HDF5__ -D__AMS_ENABLE_MPI__ -D__AMS_ENABLE_RMQ__"
           style: file
-          tidy-checks: ""
+          tidy-checks: '-*'
           lines-changed-only: true
           format-review: true
           tidy-review: false

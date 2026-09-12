@@ -197,8 +197,11 @@ std::tuple<torch::Tensor, torch::Tensor> SurrogateModel::_evaluate(
 
 std::tuple<torch::Tensor, torch::Tensor> SurrogateModel::evaluate(
     ams::MutableArrayRef<at::Tensor> Inputs,
-    float threshold)
+    float threshold,
+    torch::Tensor* packedWorkspace,
+    bool* reusedWorkspace)
 {
+  if (reusedWorkspace) *reusedWorkspace = false;
   if (Inputs.size() == 0) {
     throw std::invalid_argument(
         "Input Vector should always contain at "
@@ -208,6 +211,8 @@ std::tuple<torch::Tensor, torch::Tensor> SurrogateModel::evaluate(
   torch::DeviceType InputDevice = Inputs[0].device().type();
   torch::Dtype InputDType = torch::typeMetaToScalarType(Inputs[0].dtype());
   auto CAxis = Inputs[0].sizes().size() - 1;
+  if (Inputs[0].dim() == 0)
+    throw std::invalid_argument("Surrogate inputs must have rank at least one");
 
   // Verify input/device matching
   for (auto& In : Inputs) {
@@ -223,17 +228,48 @@ std::tuple<torch::Tensor, torch::Tensor> SurrogateModel::evaluate(
           "domain tensors have different data "
           "types\n");
     }
-  }
-  c10::SmallVector<torch::Tensor> ConvertedInputs(Inputs.begin(), Inputs.end());
-  // If either the model's execution device or the data type differ
-  // in respect to the inputs we need to handle this separately.
-  if (InputDevice != torch_device || InputDType != torch_dtype) {
-    for (int i = 0; i < ConvertedInputs.size(); i++) {
-      ConvertedInputs[i] = ConvertedInputs[i].to(torch_device, torch_dtype);
-    }
+    if (In.dim() != Inputs[0].dim())
+      throw std::invalid_argument("Surrogate input ranks differ");
+    for (int64_t axis = 0; axis < In.dim() - 1; ++axis)
+      if (In.size(axis) != Inputs[0].size(axis))
+        throw std::invalid_argument(
+            "Surrogate input shapes differ outside the feature axis");
   }
 
-  auto ITensor = torch::cat(ConvertedInputs, CAxis);
+  torch::Tensor ITensor;
+  const bool direct = Inputs.size() == 1 && InputDevice == torch_device &&
+                      InputDType == torch_dtype;
+  if (direct) {
+    ITensor = Inputs[0];
+  } else {
+    std::vector<int64_t> packedShape(Inputs[0].sizes().begin(),
+                                     Inputs[0].sizes().end());
+    int64_t features = 0;
+    for (const auto& input : Inputs)
+      features += input.size(CAxis);
+    packedShape[CAxis] = features;
+    torch::Tensor localWorkspace;
+    torch::Tensor& workspace =
+        packedWorkspace ? *packedWorkspace : localWorkspace;
+    auto options =
+        torch::TensorOptions().dtype(torch_dtype).device(torch_device);
+    if (!workspace.defined() || workspace.scalar_type() != torch_dtype ||
+        workspace.device().type() != torch_device) {
+      workspace = torch::empty(packedShape, options);
+    } else {
+      void* oldPointer = workspace.data_ptr();
+      workspace.resize_(packedShape);
+      if (reusedWorkspace)
+        *reusedWorkspace = workspace.data_ptr() == oldPointer;
+    }
+    int64_t offset = 0;
+    for (const auto& input : Inputs) {
+      const int64_t width = input.size(CAxis);
+      workspace.narrow(CAxis, offset, width).copy_(input);
+      offset += width;
+    }
+    ITensor = workspace;
+  }
   AMS_DBG(Surrogate, "Input concatenated tensor is {}", shapeToString(ITensor));
 
   auto [OTensor, Predicate] = _evaluate(ITensor, threshold);

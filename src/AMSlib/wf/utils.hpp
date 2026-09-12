@@ -8,16 +8,21 @@
 #ifndef __AMS_UTILS_HPP__
 #define __AMS_UTILS_HPP__
 
+#if defined(__AMS_ENABLE_TORCH__)
 #include <ATen/core/TensorBody.h>
+#endif
+
 #include <fmt/format.h>
 
 #include <algorithm>
 #include <array>
 #include <iostream>
 #include <random>
+#include <sstream>
 #include <vector>
 
 #include "AMS.h"
+#include "AMSTensor.hpp"
 #include "SmallVector.hpp"
 
 // -----------------------------------------------------------------------------
@@ -76,6 +81,20 @@ static inline size_t dtype_to_size(ams::AMSDType dType)
   }
 }
 
+static inline std::string shapeToString(const ams::AMSTensor& tensor)
+{
+  std::ostringstream oss;
+  oss << "[";
+  auto shape = tensor.sizes();
+  for (size_t i = 0; i < shape.size(); ++i) {
+    oss << shape[i];
+    if (i < shape.size() - 1) oss << ", ";
+  }
+  oss << "]";
+  return oss.str();
+}
+
+#if defined(__AMS_ENABLE_TORCH__)
 static inline std::string shapeToString(const at::Tensor& tensor)
 {
   std::ostringstream oss;
@@ -91,6 +110,8 @@ SmallVector<at::Tensor> maskTensor(at::Tensor& Src, at::Tensor& Mask);
 }  // namespace tensor
 
 }  // namespace ams
+#endif  // __AMS_ENABLE_TORCH__
+
 
 template <>
 struct fmt::formatter<ams::AMSResourceType> : fmt::formatter<std::string_view> {

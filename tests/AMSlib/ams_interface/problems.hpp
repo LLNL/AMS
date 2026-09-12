@@ -15,8 +15,8 @@ struct Problem2D {
   }
 
   void run(long num_elements,
-           DType* input1,
-           DType* input2,
+           const DType* input1,
+           const DType* input2,
            DType* inout,
            DType* out1,
            DType* out2,
@@ -99,7 +99,7 @@ struct Problem2D {
                                              ams_inouts,
                                          ams::SmallVector<ams::AMSTensor>&
                                              ams_outs) {
-        DType* ins[num_inputs];
+        const DType* ins[num_inputs];
         DType* outs[num_outputs];
         DType* inout;
 
@@ -158,7 +158,7 @@ struct Problem {
   int multiplier;
   Problem(int ni, int no) : num_inputs(ni), num_outputs(no), multiplier(100) {}
 
-  void run(long num_elements, DType** inputs, DType** outputs)
+  void run(long num_elements, const DType* const* inputs, DType** outputs)
   {
     for (int i = 0; i < num_elements; i++) {
       DType sum = 0;
@@ -216,7 +216,7 @@ struct Problem {
           [&](const ams::SmallVector<ams::AMSTensor>& ams_ins,
               ams::SmallVector<ams::AMSTensor>& ams_inouts,
               ams::SmallVector<ams::AMSTensor>& ams_outs) {
-            DType* ins[num_inputs];
+            const DType* ins[num_inputs];
             DType* outs[num_outputs];
             if (num_inputs != ams_ins.size())
               throw std::runtime_error(
@@ -268,7 +268,10 @@ struct ProblemBroadcast {
   {
   }
 
-  void run(long num_elements, DType** inputs, DType** outputs, DType constant)
+  void run(long num_elements,
+           const DType* const* inputs,
+           DType** outputs,
+           DType constant)
   {
     for (int i = 0; i < num_elements; i++) {
       DType sum = constant;
@@ -333,7 +336,7 @@ struct ProblemBroadcast {
           [&](const ams::SmallVector<ams::AMSTensor>& ams_ins,
               ams::SmallVector<ams::AMSTensor>& ams_inouts,
               ams::SmallVector<ams::AMSTensor>& ams_outs) {
-            DType* ins[num_inputs - 1];
+            const DType* ins[num_inputs - 1];
             DType* outs[num_outputs];
             if (num_inputs != ams_ins.size())
               throw std::runtime_error(

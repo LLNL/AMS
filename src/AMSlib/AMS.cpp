@@ -23,7 +23,9 @@
 #include <vector>
 
 #include "AMS.h"
+#ifdef __AMS_ENABLE_TORCH__
 #include "ml/surrogate.hpp"
+#endif
 #include "wf/basedb.hpp"
 #include "wf/debug.h"
 #include "wf/logger.hpp"
@@ -411,7 +413,9 @@ void AMSFinalize()
   std::call_once(_amsFinalizeFlag, [&]() {
     AMS_DBG(AMS, "Finalization of AMS")
     _amsWrap.reset();
+#ifdef __AMS_ENABLE_TORCH__
     ::SurrogateModel::clearCache();
+#endif
   });
 }
 
@@ -434,15 +438,15 @@ void AMSExecute(AMSExecutor executor,
   int64_t index = static_cast<int64_t>(executor);
   if (index >= _amsWrap->executors.size())
     throw std::runtime_error("AMS Executor identifier does not exist\n");
-  auto currExec = _amsWrap->executors[index];
 
-  ams::AMSWorkflow* workflow = reinterpret_cast<ams::AMSWorkflow*>(currExec);
   AMS_DBG(AMS,
           "Calling AMS with in:{}, inout:{}, out:{}",
           ins.size(),
           inouts.size(),
           outs.size());
 
+  auto currExec = _amsWrap->executors[index];
+  ams::AMSWorkflow* workflow = reinterpret_cast<ams::AMSWorkflow*>(currExec);
   callAMS(workflow, OrigComputation, ins, inouts, outs);
 }
 
@@ -454,11 +458,11 @@ void AMSExecute(AMSExecutor executor,
   int64_t index = static_cast<int64_t>(executor);
   if (index >= _amsWrap->executors.size())
     throw std::runtime_error("AMS Executor identifier does not exist\n");
-  auto currExec = _amsWrap->executors[index];
 
-  ams::AMSWorkflow* workflow = reinterpret_cast<ams::AMSWorkflow*>(currExec);
   AMS_DBG(AMS, "Calling AMS with homogeneous graph");
 
+  auto currExec = _amsWrap->executors[index];
+  ams::AMSWorkflow* workflow = reinterpret_cast<ams::AMSWorkflow*>(currExec);
   callAMS(workflow, OrigComputation, graph_input, outputs);
 }
 
@@ -470,11 +474,11 @@ void AMSExecute(AMSExecutor executor,
   int64_t index = static_cast<int64_t>(executor);
   if (index >= _amsWrap->executors.size())
     throw std::runtime_error("AMS Executor identifier does not exist\n");
-  auto currExec = _amsWrap->executors[index];
 
-  ams::AMSWorkflow* workflow = reinterpret_cast<ams::AMSWorkflow*>(currExec);
   AMS_DBG(AMS, "Calling AMS with heterogeneous graph");
 
+  auto currExec = _amsWrap->executors[index];
+  ams::AMSWorkflow* workflow = reinterpret_cast<ams::AMSWorkflow*>(currExec);
   callAMS(workflow, OrigComputation, graph_input, outputs);
 }
 
@@ -485,7 +489,6 @@ void AMSCExecute(AMSExecutor executor,
                  ams::SmallVector<ams::AMSTensor>& inouts,
                  ams::SmallVector<ams::AMSTensor>& outs)
 {
-
   // Define the lambda and let the compiler deduce the type conversion to std::function
   DomainLambda OrigComputation =
       [&](const ams::SmallVector<ams::AMSTensor>& ams_ins,

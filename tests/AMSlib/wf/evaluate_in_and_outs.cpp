@@ -159,7 +159,7 @@ static void compute(ams::AMSWorkflow& wf,
 
     for (auto& V : pruned_ins) {
       c10::IntArrayRef shape(V.shape().begin(), V.shape().size());
-      in.push_back(torch::from_blob((void*)V.data<uint8_t>(),
+      in.push_back(torch::from_blob(const_cast<void*>(V.data_ptr()),
                                     shape,
                                     torch::TensorOptions().dtype(DType).device(
                                         DeviceType)));
@@ -167,13 +167,13 @@ static void compute(ams::AMSWorkflow& wf,
     for (auto& V : pruned_inouts) {
       c10::IntArrayRef shape(V.shape().begin(), V.shape().size());
       inout.push_back(torch::from_blob(
-          (void*)V.data<uint8_t>(),
+          V.data_ptr(),
           shape,
           torch::TensorOptions().dtype(DType).device(DeviceType)));
     }
     for (auto& V : pruned_outs) {
       c10::IntArrayRef shape(V.shape().begin(), V.shape().size());
-      out.push_back(torch::from_blob((void*)V.data<uint8_t>(),
+      out.push_back(torch::from_blob(V.data_ptr(),
                                      shape,
                                      torch::TensorOptions().dtype(DType).device(
                                          DeviceType)));

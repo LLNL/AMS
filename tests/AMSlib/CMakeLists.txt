@@ -4,6 +4,10 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 include(FetchAndAddCatch2)
+
+# Generated test headers and models live below this build-tree directory.
+set(AMS_TEST_ROOT "${CMAKE_CURRENT_BINARY_DIR}")
+
 set(_ams_catch2_args)
 if (AMS_CATCH2_DIR)
   list(APPEND _ams_catch2_args PATHS "${AMS_CATCH2_DIR}" NO_DEFAULT_PATH)
@@ -38,9 +42,11 @@ if (NOT _ams_catch2_ctest_adapter)
   message(STATUS "Catch2 CTest adapter not found; using explicit add_test registrations")
 endif()
 
-set(AMS_TEST_ROOT "${CMAKE_CURRENT_BINARY_DIR}")
-add_subdirectory(models)
-add_subdirectory(torch)
+if (ENABLE_TORCH)
+  add_subdirectory(models)
+  add_subdirectory(torch)
+endif()
+add_subdirectory(core)
 add_subdirectory(db)
 add_subdirectory(wf)
 add_subdirectory(ams_interface)

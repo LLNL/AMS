@@ -18,12 +18,13 @@ jobs:
       matrix:
         with_caliper: [ON, OFF]
         with_mpi: [ON, OFF]
+        with_torch: [ON, OFF]
 
     steps:
       - uses: actions/checkout@v7
       - name: Ensure git safe directory
         run: git config --global --add safe.directory '*'
-      - name: Build ENABLE_CALIPER=${{ matrix.with_caliper }} ENABLE_MPI=${{ matrix.with_mpi }}
+      - name: Build ENABLE_TORCH=${{ matrix.with_torch }} ENABLE_CALIPER=${{ matrix.with_caliper }} ENABLE_MPI=${{ matrix.with_mpi }}
         shell: bash -l {0}
         run: |
           source /etc/profile
@@ -42,6 +43,7 @@ jobs:
             -DENABLE_TESTS=On \
             -DAMS_ENABLE_DEBUG=On \
             -DENABLE_WORKFLOW=Off \
+            -DENABLE_TORCH=${{ matrix.with_torch }} \
             -DTorch_DIR=$AMS_TORCH_PATH \
             -Dcaliper_DIR=$AMS_CALIPER_PATH \
             -DAMS_FMT_DIR=$AMS_FMT_DIR \

@@ -7,12 +7,23 @@ function(BUILD_UNIT_TEST exe source)
   target_include_directories(${exe} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
   # DB tests use the AMS-owned main to avoid HIP shutdown finalizer crashes.
   target_sources(${exe} PRIVATE ../ams_catch_main.cpp)
-  target_link_libraries(${exe} PRIVATE stdc++fs AMS torch Catch2::Catch2)
+  target_link_libraries(${exe} PRIVATE stdc++fs AMS Catch2::Catch2)
+  if (ENABLE_TORCH)
+    target_link_libraries(${exe} PRIVATE torch)
+  endif()
+
   target_include_directories(${exe} PRIVATE ${AMS_TEST_ROOT})
   target_link_libraries(${exe} PRIVATE Threads::Threads)
+  target_link_libraries(${exe} PRIVATE fmt::fmt)
   target_compile_features(${exe} PRIVATE cxx_std_17)
 
   target_link_libraries(${exe} PRIVATE ${AMS_HDF5_LINK_TARGETS})
+
+  if (ENABLE_CUDA)
+    target_link_libraries(${exe} PRIVATE CUDA::cudart)
+  elseif (ENABLE_HIP)
+    target_link_libraries(${exe} PRIVATE hip::host)
+  endif()
 
   if (ENABLE_CALIPER)
     message(STATUS "Building with caliper ${exe}")
@@ -41,6 +52,17 @@ function(ADD_DB_UNIT_TEST name exec)
   set_tests_properties(${name} PROPERTIES LABELS HDF5_UNIT_TEST)
 endfunction()
 
-BUILD_UNIT_TEST(db_hdf5 db_hdf5.cpp)
-target_link_libraries(db_hdf5 PRIVATE fmt::fmt)
-ADD_DB_UNIT_TEST(DB::HDF5 db_hdf5)
+# AMSTensor-only tests (always built)
+BUILD_UNIT_TEST(db_hdf5_ams db_hdf5_ams.cpp Catch2::Catch2 ../ams_catch_main.cpp)
+ADD_DB_UNIT_TEST(DB::HDF5_AMSTENSOR db_hdf5_ams)
+
+BUILD_UNIT_TEST(db_json_ams db_json_ams.cpp Catch2::Catch2 ../ams_catch_main.cpp)
+target_link_libraries(db_json_ams PRIVATE nlohmann_json::nlohmann_json)
+ADD_DB_UNIT_TEST(DB::JSON_AMSTENSOR db_json_ams)
+
+# db_hdf5 test currently uses torch::Tensor for test data generation/validation.
+
+if (ENABLE_TORCH)
+  BUILD_UNIT_TEST(db_hdf5_torch db_hdf5_torch.cpp Catch2::Catch2 ../ams_catch_main.cpp)
+  ADD_DB_UNIT_TEST(DB::HDF5_TORCH db_hdf5_torch)
+endif()

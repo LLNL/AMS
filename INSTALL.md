@@ -198,6 +198,7 @@ source scripts/gitlab/setup-env.sh
 
 cmake -S . -B build \
   -DCMAKE_BUILD_TYPE=Release \
+<<<<<<< HEAD
   -DBUILD_SHARED_LIBS=On \
   -DCMAKE_INSTALL_RPATH_USE_LINK_PATH=On \
   -DENABLE_MPI=On \
@@ -213,6 +214,20 @@ cmake -S . -B build \
   -DAMS_FMT_DIR="$AMS_FMT_DIR" \
   -Dnlohmann_json_DIR="$AMS_NLOHMANN_JSON_DIR" \
   -Dtl-expected_DIR="$AMS_TL_EXPECTED_DIR"
+=======
+  -DWITH_CUDA=On \
+  -DUMPIRE_DIR=$AMS_UMPIRE_PATH \
+  -DMFEM_DIR=$AMS_MFEM_PATH \
+  -DWITH_FAISS=On \
+  -DWITH_MPI=On \
+  -DENABLE_TORCH=On \
+  -DWITH_TESTS=Off \
+  -DTorch_DIR=$AMS_TORCH_PATH \
+  -DFAISS_DIR=$AMS_FAISS_PATH \
+  -DAMS_CUDA_ARCH=${AMS_CUDA_ARCH} \
+  -DWITH_AMS_DEBUG=On \
+  ../
+>>>>>>> 4598085 (WIP. Removing Torch from the main path (all tests green with WITH_TORCH=On except integration tests))
 
 cmake --build build -j 6
 cmake --install build

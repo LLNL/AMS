@@ -7,7 +7,9 @@
 
 #include "wf/jsondb.hpp"
 
-#include <torch/torch.h>
+#if defined(__AMS_ENABLE_TORCH__)
+#include "AMSTorchInterop.hpp"
+#endif
 
 #include <algorithm>
 #include <cstring>
@@ -18,6 +20,7 @@
 #include <utility>
 
 #include "wf/debug.h"
+#include "wf/resource_manager.hpp"
 
 using namespace ams::db;
 using namespace ams;
@@ -85,6 +88,79 @@ std::string base64Encode(const uint8_t* data, size_t len)
   return ret;
 }
 
+SmallVector<AMSTensor::IntDimType> contiguousStrides(
+    ArrayRef<AMSTensor::IntDimType> shape)
+{
+  SmallVector<AMSTensor::IntDimType> strides(shape.size(), 1);
+  AMSTensor::IntDimType stride = 1;
+  for (size_t i = shape.size(); i-- > 0;) {
+    strides[i] = stride;
+    stride *= shape[i];
+  }
+  return strides;
+}
+
+size_t logicalOffset(size_t linear,
+                     ArrayRef<AMSTensor::IntDimType> shape,
+                     ArrayRef<AMSTensor::IntDimType> strides)
+{
+  size_t offset = 0;
+  for (size_t axis = shape.size(); axis-- > 0;) {
+    const size_t dim = static_cast<size_t>(shape[axis]);
+    const size_t index = dim == 0 ? 0 : linear % dim;
+    if (dim != 0) linear /= dim;
+    offset += index * static_cast<size_t>(strides[axis]);
+  }
+  return offset;
+}
+
+AMSTensor materializeContiguousHost(const AMSTensor& tensor)
+{
+  const auto shape = tensor.shape();
+  const auto strides = contiguousStrides(shape);
+  AMSTensor host = [&]() {
+    switch (tensor.dtype()) {
+      case AMS_SINGLE:
+        return AMSTensor::create<float>(shape, strides, AMS_HOST);
+      case AMS_DOUBLE:
+        return AMSTensor::create<double>(shape, strides, AMS_HOST);
+      case AMS_INT32:
+        return AMSTensor::create<int32_t>(shape, strides, AMS_HOST);
+      case AMS_INT64:
+        return AMSTensor::create<int64_t>(shape, strides, AMS_HOST);
+      default:
+        throw std::invalid_argument("Unsupported AMSTensor dtype for JSONDB");
+    }
+  }();
+
+  if (tensor.nbytes() == 0) return host;
+
+  auto* destination = static_cast<uint8_t*>(host.data_ptr());
+  auto* source = static_cast<const uint8_t*>(tensor.data_ptr());
+  if (tensor.contiguous()) {
+    internal::_raw_copy(const_cast<uint8_t*>(source),
+                        tensor.location(),
+                        destination,
+                        AMS_HOST,
+                        tensor.nbytes());
+    return host;
+  }
+
+  for (size_t i = 0; i < static_cast<size_t>(tensor.elements()); ++i) {
+    const size_t source_offset =
+        logicalOffset(i, tensor.shape(), tensor.strides()) *
+        static_cast<size_t>(tensor.element_size());
+    const size_t destination_offset =
+        i * static_cast<size_t>(tensor.element_size());
+    internal::_raw_copy(const_cast<uint8_t*>(source + source_offset),
+                        tensor.location(),
+                        destination + destination_offset,
+                        AMS_HOST,
+                        static_cast<size_t>(tensor.element_size()));
+  }
+  return host;
+}
+
 }  // anonymous namespace
 
 // ----------------------------------------------------------------------
@@ -140,43 +216,15 @@ std::string JSONDB::dtypeToString(AMSDType dtype) const
     case AMS_INT64:
       return "int64";
     default:
-      return "unknown";
+      throw std::invalid_argument("Unsupported AMSTensor dtype for JSONDB");
   }
-}
-
-std::string JSONDB::torchDTypeToString(torch::Dtype dtype) const
-{
-  if (dtype == torch::kFloat32 || dtype == torch::kFloat) return "float32";
-  if (dtype == torch::kFloat64 || dtype == torch::kDouble) return "float64";
-  if (dtype == torch::kInt32) return "int32";
-  if (dtype == torch::kInt64 || dtype == torch::kLong) return "int64";
-  return "unknown";
 }
 
 size_t JSONDB::writeBinaryTensor(const AMSTensor& tensor,
                                  const std::string& path)
 {
-  // Get tensor properties
-  const void* data = tensor.raw_data();
-  size_t byte_size = tensor.elements() * tensor.element_size();
-  AMSResourceType location = tensor.location();
-
-  // AMSTensor device transfers are not implemented here yet.
-  if (location != AMSResourceType::AMS_HOST) {
-    AMS_WARNING(JSONDB, "GPU tensor serialization is not implemented");
-    THROW(std::runtime_error, "GPU tensor serialization not yet implemented");
-    // TODO: Implement cudaMemcpy/hipMemcpy here
-  }
-
-  // Ensure contiguous layout
-  if (!tensor.contiguous()) {
-    AMS_WARNING(JSONDB,
-                "Non-contiguous tensor detected. Creating contiguous copy.");
-    // For non-contiguous, we need to iterate with strides
-    // For now, throw an error
-    THROW(std::runtime_error,
-          "Non-contiguous tensor serialization not yet implemented");
-  }
+  const void* data = tensor.data_ptr();
+  const size_t byte_size = tensor.nbytes();
 
   // Write binary file
   fs::path full_path = fs::path(fp) / path;
@@ -196,48 +244,15 @@ size_t JSONDB::writeBinaryTensor(const AMSTensor& tensor,
   return byte_size;
 }
 
-size_t JSONDB::writeBinaryTensor(const torch::Tensor& tensor,
-                                 const std::string& path)
-{
-  // Ensure tensor is contiguous and on CPU
-  torch::Tensor cpu_tensor = tensor.contiguous().cpu();
-
-  size_t byte_size = cpu_tensor.nbytes();
-
-  // Write binary file
-  fs::path full_path = fs::path(fp) / path;
-  fs::create_directories(full_path.parent_path());
-
-  std::ofstream file(full_path.string(), std::ios::binary);
-  if (!file.is_open()) {
-    THROW(std::runtime_error,
-          ("Failed to open file for writing: " + full_path.string()).c_str());
-  }
-
-  file.write(static_cast<const char*>(cpu_tensor.data_ptr()), byte_size);
-  file.close();
-
-  AMS_DBG(JSONDB, "Wrote PyTorch tensor to '{}' ({} bytes)", path, byte_size);
-
-  return byte_size;
-}
-
 nlohmann::json JSONDB::encodeBase64Tensor(const AMSTensor& tensor)
 {
-  // For pure JSON mode, encode as base64
-  const uint8_t* data = static_cast<const uint8_t*>(tensor.raw_data());
-  size_t byte_size = tensor.elements() * tensor.element_size();
-
-  // Handle GPU/non-contiguous tensors
-  if (tensor.location() != AMSResourceType::AMS_HOST || !tensor.contiguous()) {
-    THROW(std::runtime_error,
-          "Base64 encoding only supports contiguous CPU tensors currently");
-  }
+  const uint8_t* data = static_cast<const uint8_t*>(tensor.data_ptr());
+  const size_t byte_size = tensor.nbytes();
 
   nlohmann::json result;
   result["encoding"] = "base64";
   result["data"] = base64Encode(data, byte_size);
-  result["dtype"] = dtypeToString(tensor.dType());
+  result["dtype"] = dtypeToString(tensor.dtype());
   result["byte_size"] = byte_size;
 
   // Add shape
@@ -247,34 +262,19 @@ nlohmann::json JSONDB::encodeBase64Tensor(const AMSTensor& tensor)
   return result;
 }
 
-nlohmann::json JSONDB::encodeBase64Tensor(const torch::Tensor& tensor)
-{
-  torch::Tensor cpu_tensor = tensor.contiguous().cpu();
-  const uint8_t* data = static_cast<const uint8_t*>(cpu_tensor.data_ptr());
-  size_t byte_size = cpu_tensor.nbytes();
-
-  auto sizes = cpu_tensor.sizes();
-  std::vector<int64_t> shape(sizes.begin(), sizes.end());
-
-  return nlohmann::json{{"encoding", "base64"},
-                        {"data", base64Encode(data, byte_size)},
-                        {"dtype", torchDTypeToString(cpu_tensor.scalar_type())},
-                        {"shape", shape},
-                        {"byte_size", byte_size}};
-}
-
 nlohmann::json JSONDB::serializeTensor(const AMSTensor& tensor,
                                        const std::string& binary_path)
 {
+  AMSTensor host = materializeContiguousHost(tensor);
   if (json_mode_ == "json") {
-    return encodeBase64Tensor(tensor);
+    return encodeBase64Tensor(host);
   }
 
-  auto shape_ref = tensor.shape();
+  auto shape_ref = host.shape();
   std::vector<int64_t> shape(shape_ref.begin(), shape_ref.end());
-  size_t byte_size = writeBinaryTensor(tensor, binary_path);
+  size_t byte_size = writeBinaryTensor(host, binary_path);
   return nlohmann::json{{"path", binary_path},
-                        {"dtype", dtypeToString(tensor.dType())},
+                        {"dtype", dtypeToString(host.dtype())},
                         {"shape", shape},
                         {"byte_size", byte_size}};
 }
@@ -321,12 +321,13 @@ void JSONDB::validateEdgeIndex(const AMSTensor& edge_index, int64_t num_nodes)
   }
 
   // Check dtype is int64
-  if (edge_index.dType() != AMS_INT64) {
+  if (edge_index.dtype() != AMS_INT64) {
     THROW(std::invalid_argument, "edge_index must have dtype int64");
   }
 
   // Validate indices are in range
-  const int64_t* indices = edge_index.data<int64_t>();
+  AMSTensor host = materializeContiguousHost(edge_index);
+  const int64_t* indices = host.data<int64_t>();
   int64_t num_edges = shape_ref[1];
 
   for (int64_t i = 0; i < 2 * num_edges; ++i) {
@@ -353,8 +354,7 @@ void JSONDB::validateEdgeIndex(const AMSTensor& edge_index, int64_t num_nodes)
 // Store methods
 // ----------------------------------------------------------------------
 
-void JSONDB::store(ArrayRef<torch::Tensor> Inputs,
-                   ArrayRef<torch::Tensor> Outputs)
+void JSONDB::store(ArrayRef<AMSTensor> Inputs, ArrayRef<AMSTensor> Outputs)
 {
   // Create case directory
   std::ostringstream case_name;
@@ -374,21 +374,8 @@ void JSONDB::store(ArrayRef<torch::Tensor> Inputs,
     tensor_name << "input_" << i;
     std::string name = tensor_name.str();
 
-    if (json_mode_ == "binary") {
-      std::string rel_path = case_dir + "/" + name + ".bin";
-      size_t byte_size = writeBinaryTensor(Inputs[i], rel_path);
-
-      auto sizes = Inputs[i].sizes();
-      std::vector<int64_t> shape(sizes.begin(), sizes.end());
-
-      tensors_json[name] =
-          nlohmann::json{{"path", rel_path},
-                         {"dtype", torchDTypeToString(Inputs[i].scalar_type())},
-                         {"shape", shape},
-                         {"byte_size", byte_size}};
-    } else {  // Pure json mode
-      tensors_json[name] = encodeBase64Tensor(Inputs[i]);
-    }
+    std::string rel_path = case_dir + "/" + name + ".bin";
+    tensors_json[name] = serializeTensor(Inputs[i], rel_path);
   }
 
   // Store outputs
@@ -397,22 +384,8 @@ void JSONDB::store(ArrayRef<torch::Tensor> Inputs,
     tensor_name << "output_" << i;
     std::string name = tensor_name.str();
 
-    if (json_mode_ == "binary") {
-      std::string rel_path = case_dir + "/" + name + ".bin";
-      size_t byte_size = writeBinaryTensor(Outputs[i], rel_path);
-
-      auto sizes = Outputs[i].sizes();
-      std::vector<int64_t> shape(sizes.begin(), sizes.end());
-
-      tensors_json[name] =
-          nlohmann::json{{"path", rel_path},
-                         {"dtype",
-                          torchDTypeToString(Outputs[i].scalar_type())},
-                         {"shape", shape},
-                         {"byte_size", byte_size}};
-    } else {  // Pure json mode
-      tensors_json[name] = encodeBase64Tensor(Outputs[i]);
-    }
+    std::string rel_path = case_dir + "/" + name + ".bin";
+    tensors_json[name] = serializeTensor(Outputs[i], rel_path);
   }
 
   case_json["tensors"] = tensors_json;
@@ -426,6 +399,22 @@ void JSONDB::store(ArrayRef<torch::Tensor> Inputs,
           Inputs.size(),
           Outputs.size());
 }
+
+#if defined(__AMS_ENABLE_TORCH__)
+void JSONDB::store(ArrayRef<torch::Tensor> Inputs,
+                   ArrayRef<torch::Tensor> Outputs)
+{
+  std::vector<AMSTensor> ams_inputs;
+  std::vector<AMSTensor> ams_outputs;
+  ams_inputs.reserve(Inputs.size());
+  ams_outputs.reserve(Outputs.size());
+  for (const auto& tensor : Inputs)
+    ams_inputs.emplace_back(ams::fromTorchView(tensor));
+  for (const auto& tensor : Outputs)
+    ams_outputs.emplace_back(ams::fromTorchView(tensor));
+  store(ams_inputs, ams_outputs);
+}
+#endif
 
 void JSONDB::store(const ams::AMSHomogeneousGraph& graph,
                    const ams::AMSHomogeneousGraphFields& outputs)
@@ -471,64 +460,23 @@ void JSONDB::store(const ams::AMSHomogeneousGraph& graph,
 
   nlohmann::json tensors_json;
 
-  // Write node_features
-  if (json_mode_ == "binary") {
-    std::string rel_path = case_dir + "/node_features.bin";
-    size_t byte_size = writeBinaryTensor(graph.node_features, rel_path);
+  tensors_json["node_features"] =
+      serializeTensor(graph.node_features, case_dir + "/node_features.bin");
 
-    tensors_json["node_features"] = {
-        {"path", rel_path},
-        {"dtype", dtypeToString(graph.node_features.dType())},
-        {"shape", std::vector<int64_t>{num_nodes, node_feature_dim}},
-        {"byte_size", byte_size}};
-  } else {  // Pure json mode
-    tensors_json["node_features"] = encodeBase64Tensor(graph.node_features);
-  }
-
-  // Write edge_index
-  if (json_mode_ == "binary") {
-    std::string rel_path = case_dir + "/edge_index.bin";
-    size_t byte_size = writeBinaryTensor(graph.edge_index, rel_path);
-
-    tensors_json["edge_index"] = {{"path", rel_path},
-                                  {"dtype", "int64"},
-                                  {"shape", std::vector<int64_t>{2, num_edges}},
-                                  {"byte_size", byte_size}};
-  } else {  // Pure json mode
-    tensors_json["edge_index"] = encodeBase64Tensor(graph.edge_index);
-  }
+  tensors_json["edge_index"] =
+      serializeTensor(graph.edge_index, case_dir + "/edge_index.bin");
 
   // Write edge_features
   if (edge_feature_dim > 0) {
-    if (json_mode_ == "binary") {
-      std::string rel_path = case_dir + "/edge_features.bin";
-      size_t byte_size = writeBinaryTensor(graph.edge_features, rel_path);
-
-      tensors_json["edge_features"] = {
-          {"path", rel_path},
-          {"dtype", dtypeToString(graph.edge_features.dType())},
-          {"shape", std::vector<int64_t>{num_edges, edge_feature_dim}},
-          {"byte_size", byte_size}};
-    } else {  // Pure json mode
-      tensors_json["edge_features"] = encodeBase64Tensor(graph.edge_features);
-    }
+    tensors_json["edge_features"] =
+        serializeTensor(graph.edge_features, case_dir + "/edge_features.bin");
   }
 
   // Write global_features
   if (global_feature_dim > 0) {
-    if (json_mode_ == "binary") {
-      std::string rel_path = case_dir + "/global_features.bin";
-      size_t byte_size = writeBinaryTensor(graph.global_features, rel_path);
-
-      tensors_json["global_features"] = {
-          {"path", rel_path},
-          {"dtype", dtypeToString(graph.global_features.dType())},
-          {"shape", std::vector<int64_t>{global_feature_dim}},
-          {"byte_size", byte_size}};
-    } else {  // Pure json mode
-      tensors_json["global_features"] =
-          encodeBase64Tensor(graph.global_features);
-    }
+    tensors_json["global_features"] =
+        serializeTensor(graph.global_features,
+                        case_dir + "/global_features.bin");
   }
 
   case_json["tensors"] = tensors_json;
@@ -551,9 +499,8 @@ void JSONDB::store(const ams::AMSHomogeneousGraph& graph,
 void JSONDB::store(const ams::AMSHeterogeneousGraph&,
                    const ams::AMSHeterogeneousGraphFields&)
 {
-  // Heterogeneous graph storage not yet implemented
-  THROW(std::runtime_error,
-        "Heterogeneous graph storage not yet implemented in JSONDB");
+  throw std::runtime_error(
+      "Heterogeneous graph storage not yet implemented in JSONDB");
 }
 
 void JSONDB::close()

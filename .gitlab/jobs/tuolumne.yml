@@ -40,8 +40,9 @@ build-run-tuolumne:
 .build-variants:
   parallel:
     matrix:
-      - WITH_MPI: ["on", "off"]
-        WITH_WORKFLOW: ["on", "off"]
+      - WITH_MPI: ["ON", "OFF"]
+        WITH_WORKFLOW: ["ON", "OFF"]
+        WITH_TORCH: ["ON", "OFF"]
 
 build-run-tuolumne:
   extends: [.base-job, .build-variants]
