@@ -77,7 +77,7 @@ build_and_test() {
     -DENABLE_HIP=${WITH_HIP} \
     -DENABLE_MPI=${WITH_MPI} \
     -DAMS_ENABLE_DEBUG=On \
-    -DWITH_TORCH=${WITH_TORCH} \
+    -DENABLE_TORCH=${WITH_TORCH} \
     -DTorch_DIR="$AMS_TORCH_PATH" \
     -DZLIB_DIR="$AMS_ZLIB_PATH" \
     -Dcaliper_DIR="$AMS_CALIPER_PATH" \
