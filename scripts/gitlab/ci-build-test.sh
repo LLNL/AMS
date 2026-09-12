@@ -91,7 +91,8 @@ build_and_test() {
     -DCMAKE_CXX_COMPILER="$CXX_COMPILER" \
     ${CI_PROJECT_DIR} || { echo "CMake failed"; exit 1; }
 
-  make -j || { echo "Building failed"; exit 1; }
+  make || { echo "Building failed"; exit 1; }
+  echo "========== TEST =========="
   make test || { echo "Tests failed"; exit 1; }
   popd
 
